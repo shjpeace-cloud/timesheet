@@ -199,6 +199,68 @@ const CATEGORIES=[
 {code:"M3",label:"시간통계",group:"M",gn:"Maintenance",color:"#d8b4fe"}
 ];
 const GC={D:"#3b82f6",R:"#f59e0b",E:"#10b981",A:"#ef4444",M:"#a855f7"};
+// Korean public holidays 2026-2040
+const HOLIDAYS={
+2026:{"1-1":"신정","2-16":"설날연휴","2-17":"설날","2-18":"설날연휴","3-1":"삼일절","3-2":"대체공휴일","5-5":"어린이날","5-24":"부처님오신날","5-25":"대체공휴일","6-6":"현충일","7-17":"제헌절","8-15":"광복절","8-17":"대체공휴일","9-24":"추석연휴","9-25":"추석","9-26":"추석연휴","10-3":"개천절","10-5":"대체공휴일","10-9":"한글날","12-25":"크리스마스"},
+2027:{"1-1":"신정","2-6":"설날연휴","2-7":"설날","2-8":"설날연휴","2-9":"대체공휴일","3-1":"삼일절","5-5":"어린이날","5-13":"부처님오신날","6-6":"현충일","7-17":"제헌절","8-15":"광복절","8-16":"대체공휴일","9-14":"추석연휴","9-15":"추석","9-16":"추석연휴","10-3":"개천절","10-4":"대체공휴일","10-9":"한글날","10-11":"대체공휴일","12-25":"크리스마스","12-27":"대체공휴일"},
+2028:{"1-1":"신정","1-26":"설날연휴","1-27":"설날","1-28":"설날연휴","3-1":"삼일절","5-2":"부처님오신날","5-5":"어린이날","6-6":"현충일","7-17":"제헌절","8-15":"광복절","10-2":"추석연휴","10-3":"추석","10-4":"추석연휴","10-9":"한글날","12-25":"크리스마스"},
+2029:{"1-1":"신정","2-12":"설날연휴","2-13":"설날","2-14":"설날연휴","3-1":"삼일절","5-5":"어린이날","5-7":"대체공휴일","5-20":"부처님오신날","6-6":"현충일","7-17":"제헌절","8-15":"광복절","9-21":"추석연휴","9-22":"추석","9-23":"추석연휴","9-24":"대체공휴일","10-3":"개천절","10-9":"한글날","12-25":"크리스마스"},
+2030:{"1-1":"신정","2-2":"설날연휴","2-3":"설날","2-4":"설날연휴","3-1":"삼일절","5-5":"어린이날","5-6":"대체공휴일","5-9":"부처님오신날","6-6":"현충일","7-17":"제헌절","8-15":"광복절","9-11":"추석연휴","9-12":"추석","9-13":"추석연휴","10-3":"개천절","10-9":"한글날","12-25":"크리스마스"},
+2031:{"1-1":"신정","1-22":"설날연휴","1-23":"설날","1-24":"설날연휴","3-1":"삼일절","3-3":"대체공휴일","4-28":"부처님오신날","5-5":"어린이날","6-6":"현충일","7-17":"제헌절","8-15":"광복절","10-1":"추석연휴","10-2":"추석","10-3":"추석연휴","10-9":"한글날","12-25":"크리스마스"},
+2032:{"1-1":"신정","2-10":"설날연휴","2-11":"설날","2-12":"설날연휴","3-1":"삼일절","5-5":"어린이날","5-16":"부처님오신날","6-6":"현충일","7-17":"제헌절","8-15":"광복절","8-17":"대체공휴일","9-19":"추석연휴","9-20":"추석","9-21":"추석연휴","10-3":"개천절","10-4":"대체공휴일","10-9":"한글날","10-11":"대체공휴일","12-25":"크리스마스","12-27":"대체공휴일"},
+2033:{"1-1":"신정","1-30":"설날연휴","1-31":"설날","2-1":"설날연휴","3-1":"삼일절","5-5":"어린이날","5-6":"부처님오신날","6-6":"현충일","7-17":"제헌절","7-18":"대체공휴일","8-15":"광복절","9-7":"추석연휴","9-8":"추석","9-9":"추석연휴","10-3":"개천절","10-9":"한글날","10-10":"대체공휴일","12-25":"크리스마스","12-26":"대체공휴일"},
+2034:{"1-1":"신정","1-2":"대체공휴일","2-18":"설날연휴","2-19":"설날","2-20":"설날연휴","3-1":"삼일절","5-5":"어린이날","5-25":"부처님오신날","6-6":"현충일","7-17":"제헌절","8-15":"광복절","9-26":"추석연휴","9-27":"추석","9-28":"추석연휴","10-3":"개천절","10-9":"한글날","12-25":"크리스마스"},
+2035:{"1-1":"신정","2-7":"설날연휴","2-8":"설날","2-9":"설날연휴","3-1":"삼일절","5-5":"어린이날","5-15":"부처님오신날","6-6":"현충일","7-17":"제헌절","8-15":"광복절","9-15":"추석연휴","9-16":"추석","9-17":"추석연휴","10-3":"개천절","10-9":"한글날","12-25":"크리스마스"},
+2036:{"1-1":"신정","1-27":"설날연휴","1-28":"설날","1-29":"설날연휴","3-1":"삼일절","3-3":"대체공휴일","5-3":"부처님오신날","5-5":"어린이날","6-6":"현충일","7-17":"제헌절","8-15":"광복절","10-3":"추석연휴","10-4":"추석","10-5":"추석연휴","10-9":"한글날","12-25":"크리스마스"},
+2037:{"1-1":"신정","2-14":"설날연휴","2-15":"설날","2-16":"설날연휴","3-1":"삼일절","3-2":"대체공휴일","5-5":"어린이날","5-22":"부처님오신날","6-6":"현충일","7-17":"제헌절","8-15":"광복절","8-17":"대체공휴일","9-23":"추석연휴","9-24":"추석","9-25":"추석연휴","10-3":"개천절","10-5":"대체공휴일","10-9":"한글날","12-25":"크리스마스"},
+2038:{"1-1":"신정","2-3":"설날연휴","2-4":"설날","2-5":"설날연휴","3-1":"삼일절","5-5":"어린이날","5-11":"부처님오신날","6-6":"현충일","7-17":"제헌절","7-19":"대체공휴일","8-15":"광복절","8-16":"대체공휴일","9-13":"추석연휴","9-14":"추석","9-15":"추석연휴","10-3":"개천절","10-4":"대체공휴일","10-9":"한글날","10-11":"대체공휴일","12-25":"크리스마스","12-27":"대체공휴일"},
+2039:{"1-1":"신정","1-23":"설날연휴","1-24":"설날","1-25":"설날연휴","3-1":"삼일절","4-30":"부처님오신날","5-5":"어린이날","6-6":"현충일","7-17":"제헌절","7-18":"대체공휴일","8-15":"광복절","10-2":"추석연휴","10-3":"추석","10-4":"추석연휴","10-9":"한글날","10-10":"대체공휴일","12-25":"크리스마스","12-26":"대체공휴일"},
+2040:{"1-1":"신정","1-2":"대체공휴일","2-11":"설날연휴","2-12":"설날","2-13":"설날연휴","3-1":"삼일절","5-5":"어린이날","5-18":"부처님오신날","6-6":"현충일","7-17":"제헌절","8-15":"광복절","9-20":"추석연휴","9-21":"추석","9-22":"추석연휴","10-3":"개천절","10-9":"한글날","12-25":"크리스마스"}
+};
+function isHoliday(y,m,d){return HOLIDAYS[y]&&HOLIDAYS[y][m+"-"+d]||null}
+// Christian liturgical calendar (부활절 기반 계산)
+function computeEaster(y){
+  // Anonymous Gregorian algorithm
+  var a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4;
+  var f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30;
+  var i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7;
+  var m2=Math.floor((a+11*h+22*l)/451),month=Math.floor((h+l-7*m2+114)/31),day=((h+l-7*m2+114)%31)+1;
+  return{m:month,d:day};
+}
+function getChurchDays(y){
+  var e=computeEaster(y);
+  var ed=new Date(y,e.m-1,e.d);
+  function addDays(dt,n){var r=new Date(dt);r.setDate(r.getDate()+n);return r}
+  function fmt(dt){return(dt.getMonth()+1)+"-"+dt.getDate()}
+  var days={};
+  // 주현절 (1/6 고정)
+  days["1-6"]="주현절";
+  // 성회수요일 (부활절-46일)
+  var ash=addDays(ed,-46);days[fmt(ash)]="성회수요일";
+  // 사순절시작 = 성회수요일 다음 주일
+  // 종려주일 (부활절-7일)
+  var palm=addDays(ed,-7);days[fmt(palm)]="종려주일";
+  // 성금요일 (부활절-2일)
+  var gf=addDays(ed,-2);days[fmt(gf)]="성금요일";
+  // 부활절
+  days[fmt(ed)]="부활절";
+  // 승천일 (부활절+39일)
+  var asc=addDays(ed,39);days[fmt(asc)]="승천일";
+  // 성령강림절 (부활절+49일)
+  var pent=addDays(ed,49);days[fmt(pent)]="성령강림절";
+  // 삼위일체주일 (부활절+56일)
+  var trin=addDays(ed,56);days[fmt(trin)]="삼위일체주일";
+  // 종교개혁일 (10/31 고정)
+  days["10-31"]="종교개혁일";
+  // 대림절 첫째주일 (11/30에 가장 가까운 주일)
+  var nov30=new Date(y,10,30);
+  var advDow=nov30.getDay();
+  var advOff=advDow===0?0:(advDow<=3?-advDow:(7-advDow));
+  var adv1=addDays(nov30,advOff);days[fmt(adv1)]="대림절";
+  // 성탄절 (12/25 - 이미 공휴일에 포함)
+  return days;
+}
+function isChurchDay(y,m,d){var cd=getChurchDays(y);return cd[m+"-"+d]||null}
 const GN={D:"Devotion",R:"Research & Teaching",E:"Enrichment",A:"Attachment",M:"Maintenance"};
 const GROUPS=["D","R","E","A","M"];
 const SLOTS=[];
@@ -427,13 +489,15 @@ function exportCSV(){
 }
 
 function exportBookCSV(){
-  let csv="연도,월,영어책,한글책,합계,책목록\n";
+  let csv="연도,월,구분,책제목,감상\n";
   for(let m=1;m<=12;m++){
     const books=state.bookData[String(m)]||[];
-    const en=books.filter(b=>b.type==='en');
-    const kr=books.filter(b=>b.type==='kr');
-    const titles=books.map(b=>(b.type==='en'?'[EN]':'[KR]')+b.title).join(' / ').replace(/"/g,'""');
-    if(books.length>0)csv+=`${state.year},${m},${en.length},${kr.length},${books.length},"${titles}"\n`;
+    books.forEach(b=>{
+      const type=b.type==='en'?'EN':'KR';
+      const title=(b.title||'').replace(/"/g,'""');
+      const memo=(b.memo||'').replace(/"/g,'""');
+      csv+=`${state.year},${m},${type},"${title}","${memo}"\n`;
+    });
   }
   const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"});
   const url=URL.createObjectURL(blob);
@@ -622,10 +686,18 @@ function renderDateBar(){
   const dd=h("button",{className:"date-display",onClick:()=>{state.showDatePicker=!state.showDatePicker;render()}});
   const dayNames=["일","월","화","수","목","금","토"];
   const dow=new Date(state.year,state.month-1,state.day).getDay();
-  const dowColor=dow===0?"#ef4444":dow===6?"#3b82f6":"#94a3b8";
+  const hol=isHoliday(state.year,state.month,state.day);
+  const dowColor=(dow===0||hol)?"#ef4444":dow===6?"#3b82f6":"#94a3b8";
   dd.appendChild(h("span",{className:"date-month"},state.month+"월"));
   dd.appendChild(h("span",{className:"date-day"},String(state.day)+"일"));
   dd.appendChild(h("span",{style:"font-size:14px;font-weight:700;color:"+dowColor+";margin-left:2px"},"("+dayNames[dow]+")"));
+  if(hol){
+    bar.appendChild(h("span",{style:"font-size:11px;color:#ef4444;font-weight:600;margin-left:4px"},hol));
+  }
+  const church=isChurchDay(state.year,state.month,state.day);
+  if(church){
+    bar.appendChild(h("span",{style:"font-size:11px;color:#c084fc;font-weight:600;margin-left:4px"},"✝ "+church));
+  }
   bar.appendChild(dd);
   bar.appendChild(h("button",{className:"date-arrow",onClick:()=>{
     const maxD=daysInMonth(state.year,state.month);
@@ -658,12 +730,27 @@ function renderDatePicker(){
   }
   box.appendChild(mg);
   const dg=h("div",{className:"day-grid"});
+  // Day-of-week headers
+  ["일","월","화","수","목","금","토"].forEach((dn,i)=>{
+    const color=i===0?"#ef4444":i===6?"#3b82f6":"#64748b";
+    dg.appendChild(h("span",{style:"text-align:center;padding:6px 0;font-size:11px;font-weight:700;color:"+color},dn));
+  });
+  // Empty cells for first day offset
+  const firstDow=new Date(state.year,state.month-1,1).getDay();
+  for(let e=0;e<firstDow;e++){dg.appendChild(h("span",{}))}
   const maxD=daysInMonth(state.year,state.month);
   for(let d=1;d<=maxD;d++){
     const k=state.month+"-"+d;
     const hasData=state.data.entries[k]&&Object.keys(state.data.entries[k]).length>0;
+    const dow=new Date(state.year,state.month-1,d).getDay();
+    const hol=isHoliday(state.year,state.month,d);
+    const church=isChurchDay(state.year,state.month,d);
     let cls="day-btn";if(d===state.day)cls+=" active";if(hasData)cls+=" has-data";
-    dg.appendChild(h("button",{className:cls,onClick:()=>{state.day=d;state.showDatePicker=false;render()}},String(d)));
+    const dayColor=(dow===0||hol)?"color:#ef4444":dow===6?"color:#3b82f6":church?"color:#c084fc":"";
+    const tipText=hol?(church?hol+" / ✝"+church:hol):(church?"✝ "+church:"");
+    const titleAttr=tipText?{title:tipText}:{};
+    const btn=h("button",Object.assign({className:cls,style:dayColor,onClick:()=>{state.day=d;state.showDatePicker=false;render()}},titleAttr),String(d));
+    dg.appendChild(btn);
   }
   box.appendChild(dg);
   ov.appendChild(box);
@@ -1059,9 +1146,15 @@ function renderCharts(ys){
 function addBook(month,type,title){
   const mk=String(month);
   if(!state.bookData[mk])state.bookData[mk]=[];
-  state.bookData[mk].push({type:type,title:title,id:Date.now()});
+  state.bookData[mk].push({type:type,title:title,memo:"",id:Date.now()});
   saveBookData();
   render();
+}
+function updateBookMemo(month,id,memo){
+  const mk=String(month);
+  if(!state.bookData[mk])return;
+  const book=state.bookData[mk].find(b=>b.id===id);
+  if(book){book.memo=memo;saveBookData();}
 }
 function removeBook(month,id){
   const mk=String(month);
@@ -1215,10 +1308,20 @@ function renderBooks(){
   if(monthBooks.length>0){
     const list=h("div",{className:"book-list"});
     monthBooks.forEach(book=>{
-      const item=h("div",{className:"book-item"});
+      const item=h("div",{className:"book-item",style:"flex-wrap:wrap"});
       item.appendChild(h("span",{className:"book-type-tag "+(book.type==="en"?"en":"kr")},book.type==="en"?"EN":"KR"));
       item.appendChild(h("span",{className:"book-item-title"},book.title));
       item.appendChild(h("button",{className:"book-del-btn",onClick:()=>removeBook(state.bookMonth,book.id)},"✕"));
+      // Memo/감상
+      const memoInput=h("input",{style:"width:100%;margin-top:6px;padding:6px 10px;border-radius:8px;border:1px solid #1e293b;background:#111827;color:#94a3b8;font-size:11px;font-family:'Noto Sans KR',sans-serif;outline:none",placeholder:"한줄 감상 입력...",value:book.memo||""});
+      let memoTimer=null;
+      memoInput.addEventListener("input",e=>{
+        clearTimeout(memoTimer);
+        memoTimer=setTimeout(()=>{updateBookMemo(state.bookMonth,book.id,e.target.value)},800);
+      });
+      memoInput.addEventListener("focus",e=>{e.target.style.borderColor="#f59e0b"});
+      memoInput.addEventListener("blur",e=>{e.target.style.borderColor="#1e293b"});
+      item.appendChild(memoInput);
       list.appendChild(item);
     });
     inputSec.appendChild(list);

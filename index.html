@@ -620,8 +620,12 @@ function renderDateBar(){
     render();
   }},"◀"));
   const dd=h("button",{className:"date-display",onClick:()=>{state.showDatePicker=!state.showDatePicker;render()}});
+  const dayNames=["일","월","화","수","목","금","토"];
+  const dow=new Date(state.year,state.month-1,state.day).getDay();
+  const dowColor=dow===0?"#ef4444":dow===6?"#3b82f6":"#94a3b8";
   dd.appendChild(h("span",{className:"date-month"},state.month+"월"));
   dd.appendChild(h("span",{className:"date-day"},String(state.day)+"일"));
+  dd.appendChild(h("span",{style:"font-size:14px;font-weight:700;color:"+dowColor+";margin-left:2px"},"("+dayNames[dow]+")"));
   bar.appendChild(dd);
   bar.appendChild(h("button",{className:"date-arrow",onClick:()=>{
     const maxD=daysInMonth(state.year,state.month);

@@ -641,8 +641,6 @@ function renderHeader(){
     const row=h("div",{style:"display:flex;gap:6px"});
     const inp=h("input",{style:"flex:1;padding:8px 12px;border-radius:8px;border:1px solid #334155;background:#111827;color:#e2e8f0;font-size:12px;outline:none",placeholder:"https://script.google.com/macros/s/..../exec",value:CLOUD_URL});
     inp.addEventListener("input",e=>{CLOUD_URL=e.target.value});
-    inp.addEventListener("focus",()=>{_isEditing=true});
-    inp.addEventListener("blur",()=>{_isEditing=false});
     row.appendChild(inp);
     const saveBtn=h("button",{style:"padding:8px 14px;border-radius:8px;border:none;background:#6366f1;color:#fff;font-size:12px;font-weight:600;cursor:pointer",onClick:()=>{
       localStorage.setItem('timesheet-cloud-url',CLOUD_URL);
@@ -813,8 +811,6 @@ function renderInput(){
   diary.appendChild(charCount);
   const ta=h("textarea",{style:"width:100%;min-height:120px;padding:12px;border-radius:10px;border:1px solid #334155;background:#0c0f1a;color:#e2e8f0;font-size:13px;font-family:'Noto Sans KR',sans-serif;outline:none;resize:vertical;line-height:1.6",placeholder:"오늘 하루를 기록하세요...",maxlength:"2000"});
   ta.value=currentDiary;
-  ta.addEventListener("focus",()=>{_isEditing=true});
-  ta.addEventListener("blur",()=>{_isEditing=false});
   let diaryTimer=null;
   ta.addEventListener("input",e=>{
     const val=e.target.value.slice(0,2000);
@@ -1292,8 +1288,6 @@ function renderBooks(){
   const inputRow=h("div",{className:"book-input-row"});
   const titleInput=h("input",{className:"book-input",placeholder:"책 제목을 입력하세요",value:state.bookNewTitle});
   titleInput.addEventListener("input",e=>{state.bookNewTitle=e.target.value});
-  titleInput.addEventListener("focus",()=>{_isEditing=true});
-  titleInput.addEventListener("blur",()=>{_isEditing=false});
   titleInput.addEventListener("keydown",e=>{
     if(e.key==="Enter"&&state.bookNewTitle.trim()){
       addBook(state.bookMonth,state.bookNewType,state.bookNewTitle.trim());
@@ -1325,8 +1319,8 @@ function renderBooks(){
         clearTimeout(memoTimer);
         memoTimer=setTimeout(()=>{updateBookMemo(state.bookMonth,book.id,e.target.value)},800);
       });
-      memoInput.addEventListener("focus",e=>{e.target.style.borderColor="#f59e0b";_isEditing=true});
-      memoInput.addEventListener("blur",e=>{e.target.style.borderColor="#1e293b";_isEditing=false});
+      memoInput.addEventListener("focus",e=>{e.target.style.borderColor="#f59e0b"});
+      memoInput.addEventListener("blur",e=>{e.target.style.borderColor="#1e293b"});
       item.appendChild(memoInput);
       list.appendChild(item);
     });
@@ -1410,8 +1404,6 @@ function renderCatPicker(){
   const mrow=h("div",{className:"memo-row"});
   const mfield=h("input",{className:"memo-field",placeholder:"메모 (선택사항)",value:state.memoInput});
   mfield.addEventListener("input",e=>{state.memoInput=e.target.value});
-  mfield.addEventListener("focus",()=>{_isEditing=true});
-  mfield.addEventListener("blur",()=>{_isEditing=false});
   mfield.addEventListener("keydown",e=>{
     if(e.key==="Enter"&&state.memoInput.trim()){
       setSlot(state.activeSlot,state.mode==="plan"?"planMemo":"actualMemo",state.memoInput.trim());
@@ -1451,6 +1443,18 @@ function renderCatPicker(){
 
 // Track if user is actively typing in an input/textarea
 var _isEditing=false;
+document.addEventListener("focusin",e=>{
+  if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA")_isEditing=true;
+});
+document.addEventListener("focusout",e=>{
+  if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA"){
+    // Small delay: blur fires before click, so let click handlers run first
+    setTimeout(()=>{
+      var ae=document.activeElement;
+      if(!ae||ae.tagName==="BODY"||ae.tagName==="BUTTON"||ae.tagName==="DIV")_isEditing=false;
+    },100);
+  }
+});
 function render(force){
   if(_isEditing&&!force)return;
   const app=document.getElementById("app");

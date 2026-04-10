@@ -1650,7 +1650,7 @@ function renderDailyGoals(){
   }},"▶"));
   wrap.appendChild(nav);
 
-  // Context: show active weekly/monthly/longterm goals for current day
+  // Context: show active weekly/monthly/longterm goals for current day (장기→월간→주간 순)
   const curWeek=weekIdxOfDay(state.year,state.month,state.day);
   const weeklyActive=(state.goalData.weekly||[]).filter(g=>g.year===state.year&&g.month===state.month&&g.weekIdx===curWeek&&(g.progress||0)<100);
   const monthlyActive=(state.goalData.monthly||[]).filter(g=>{
@@ -1667,11 +1667,17 @@ function renderDailyGoals(){
   if(weeklyActive.length+monthlyActive.length+longtermActive.length>0){
     const ctx=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:10px;margin-bottom:10px;border:1px solid #1e293b"});
     ctx.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:6px;letter-spacing:.5px"},"이 시기의 목표"));
-    [
-      {label:"📆 주간",list:weeklyActive,color:"#0d9488"},
-      {label:"🗓 월간",list:monthlyActive,color:"#0d9488"},
-      {label:"🎯 장기",list:longtermActive,color:"#0d9488"}
-    ].forEach(grp=>{
+    const ctxGroups=[
+      {label:"🎯 장기",list:longtermActive},
+      {label:"🗓 월간",list:monthlyActive},
+      {label:"📆 주간",list:weeklyActive}
+    ];
+    let renderedGroupCount=0;
+    ctxGroups.forEach(grp=>{
+      if(grp.list.length===0)return;
+      if(renderedGroupCount>0){
+        ctx.appendChild(h("div",{style:"border-top:1px solid #1e293b;margin:6px 0"}));
+      }
       grp.list.forEach(g=>{
         const cat=catByCode(g.cat);
         const row=h("div",{style:"display:flex;align-items:center;gap:6px;padding:4px 0;font-size:11px"});
@@ -1685,6 +1691,7 @@ function renderDailyGoals(){
         row.appendChild(h("span",{style:"font-size:10px;color:#0d9488;font-family:monospace;font-weight:700;width:30px;text-align:right"},pct+"%"));
         ctx.appendChild(row);
       });
+      renderedGroupCount++;
     });
     wrap.appendChild(ctx);
   }
@@ -1708,16 +1715,61 @@ function renderDailyGoals(){
   form.appendChild(row);
   wrap.appendChild(form);
 
+  // Carryover: find incomplete daily goals from previous days
+  const carryoverGoals=[];
+  (function(){
+    const curDate=new Date(state.year,state.month-1,state.day);
+    // Look back up to 30 days for incomplete goals
+    for(let i=1;i<=30;i++){
+      const prev=new Date(curDate);
+      prev.setDate(prev.getDate()-i);
+      if(prev.getFullYear()!==state.year)break;
+      const pk=(prev.getMonth()+1)+"-"+prev.getDate();
+      const plist=state.goalData.daily[pk]||[];
+      plist.forEach(g=>{
+        if(!g.done)carryoverGoals.push({goal:g,fromDate:pk,origKey:pk});
+      });
+    }
+  })();
+
   // List
   const k=state.month+"-"+state.day;
   const list=state.goalData.daily[k]||[];
-  if(list.length===0){
+  const hasAny=list.length>0||carryoverGoals.length>0;
+  if(!hasAny){
     wrap.appendChild(h("div",{className:"goal-empty"},"오늘 목표가 없습니다"));
   }else{
     const ul=h("div",{className:"goal-list"});
     const doneCount=list.filter(g=>g.done).length;
     const stat=h("div",{style:"font-size:11px;color:#64748b;margin-bottom:6px;text-align:right"},doneCount+"/"+list.length+" 완료");
     ul.appendChild(stat);
+
+    // Show carryover goals first (in red)
+    if(carryoverGoals.length>0){
+      ul.appendChild(h("div",{style:"font-size:10px;color:#ef4444;font-weight:700;padding:4px 0;margin-bottom:4px;border-bottom:1px solid #7f1d1d"},"🔴 이연된 목표 ("+carryoverGoals.length+")"));
+      carryoverGoals.forEach(co=>{
+        const g=co.goal;
+        const cat=catByCode(g.cat);
+        const item=h("div",{className:"goal-item",style:"border:1px solid #7f1d1d;background:#1a0505"});
+        const r=h("div",{className:"goal-item-row"});
+        const chk=h("button",{className:"goal-check",style:"border-color:#ef4444",onClick:()=>{
+          // Toggle done on original date's goal
+          const origList=state.goalData.daily[co.origKey]||[];
+          const og=origList.find(x=>x.id===g.id);
+          if(og){og.done=true;saveGoalData();render();}
+        }},"");
+        r.appendChild(chk);
+        r.appendChild(h("span",{className:"goal-cat-tag",style:"background:"+(cat?cat.color:"#475569")},g.cat));
+        r.appendChild(h("span",{className:"goal-name",style:"color:#fca5a5"},g.name));
+        r.appendChild(h("span",{style:"font-size:9px;color:#ef4444;font-family:monospace;flex-shrink:0"},co.fromDate));
+        item.appendChild(r);
+        ul.appendChild(item);
+      });
+      if(list.length>0){
+        ul.appendChild(h("div",{style:"border-top:1px solid #1e293b;margin:8px 0"}));
+      }
+    }
+
     list.forEach(g=>{
       const cat=catByCode(g.cat);
       const item=h("div",{className:"goal-item"+(g.done?" done":"")});
@@ -1875,10 +1927,87 @@ function renderPeriodGoals(scope){
     return !(ey<state.goalLtStartYear||sy>state.goalLtEndYear);
   });
 
-  if(filtered.length===0){
+  // Weekly carryover: show incomplete goals from previous weeks in red
+  let weeklyCarryover=[];
+  if(scope==="weekly"){
+    const allWeekly=state.goalData.weekly||[];
+    // Look for incomplete weekly goals from earlier weeks in same year
+    weeklyCarryover=allWeekly.filter(g=>{
+      if(g.year!==state.year||(g.progress||0)>=100)return false;
+      // Must be from a previous period (earlier month, or same month but earlier week)
+      if(g.month<state.goalWeekMonth)return true;
+      if(g.month===state.goalWeekMonth&&g.weekIdx<state.goalWeekIdx)return true;
+      return false;
+    });
+  }
+
+  const hasCarryover=weeklyCarryover.length>0;
+  if(filtered.length===0&&!hasCarryover){
     wrap.appendChild(h("div",{className:"goal-empty"},"목표가 없습니다"));
   }else{
     const ul=h("div",{className:"goal-list"});
+
+    // Render weekly carryover items in red
+    if(hasCarryover){
+      ul.appendChild(h("div",{style:"font-size:10px;color:#ef4444;font-weight:700;padding:4px 0;margin-bottom:4px;border-bottom:1px solid #7f1d1d"},"🔴 이연된 주간 목표 ("+weeklyCarryover.length+")"));
+      weeklyCarryover.forEach(g=>{
+        const cat=catByCode(g.cat);
+        const item=h("div",{className:"goal-item",style:"border:1px solid #7f1d1d;background:#1a0505"});
+        const expKey=scope+"-"+g.id;
+        const isExpanded=!!state.goalExpanded[expKey];
+        const hasSub=g.subtasks&&g.subtasks.length>0;
+        const r=h("div",{className:"goal-item-row"});
+        const toggleBtn=h("button",{className:"goal-del",style:"font-size:11px;padding:2px 4px;color:#fca5a5",onClick:()=>toggleGoalExpand(scope,g.id)},isExpanded?"▼":"▶");
+        r.appendChild(toggleBtn);
+        r.appendChild(h("span",{className:"goal-cat-tag",style:"background:"+(cat?cat.color:"#475569")},g.cat));
+        r.appendChild(h("span",{className:"goal-name",style:"color:#fca5a5"},g.name));
+        r.appendChild(h("span",{style:"font-size:9px;color:#ef4444;font-family:monospace;flex-shrink:0"},g.month+"월"+g.weekIdx+"주"));
+        if(hasSub){
+          const doneCount=g.subtasks.filter(s=>s.done).length;
+          r.appendChild(h("span",{style:"font-size:10px;color:#fca5a5;font-family:monospace"},doneCount+"/"+g.subtasks.length));
+        }
+        item.appendChild(r);
+        // Progress bar
+        const pr=h("div",{className:"goal-progress-row"});
+        const pct=g.progress||0;
+        if(hasSub){
+          const track=h("div",{style:"flex:1;height:6px;background:#1e293b;border-radius:3px;overflow:hidden"});
+          track.appendChild(h("div",{style:"height:100%;width:"+pct+"%;background:#ef4444;transition:width .3s"}));
+          pr.appendChild(track);
+          pr.appendChild(h("span",{className:"goal-progress-val",style:"color:#ef4444"},pct+"%"));
+        }else{
+          const slider=h("input",{type:"range",min:"0",max:"100",step:"5",value:String(pct),className:"goal-progress-slider"});
+          const valSpan=h("span",{className:"goal-progress-val",style:"color:#ef4444"},pct+"%");
+          slider.addEventListener("input",e=>{
+            const v=parseInt(e.target.value);
+            valSpan.textContent=v+"%";
+            updateGoalProgress(scope,g.id,v);
+          });
+          pr.appendChild(slider);
+          pr.appendChild(valSpan);
+        }
+        item.appendChild(pr);
+        // Subtasks when expanded (same logic)
+        if(isExpanded&&hasSub){
+          const subWrap=h("div",{style:"margin-top:6px;padding:8px;background:#111827;border-radius:8px;border:1px dashed #7f1d1d"});
+          g.subtasks.forEach(s=>{
+            const sr=h("div",{style:"display:flex;align-items:center;gap:6px;padding:3px 0;font-size:11px"});
+            const chk=h("button",{className:"goal-check"+(s.done?" checked":""),style:"width:16px;height:16px;font-size:10px;border-width:1.5px",onClick:()=>toggleSubtask(scope,g.id,s.id)},s.done?"✓":"");
+            sr.appendChild(chk);
+            sr.appendChild(h("span",{style:"flex:1;color:"+(s.done?"#64748b":"#fca5a5")+";text-decoration:"+(s.done?"line-through":"none")},s.name));
+            sr.appendChild(h("span",{style:"font-size:10px;color:#ef4444;font-family:monospace;font-weight:700"},(s.weight||0)+"%"));
+            sr.appendChild(h("button",{className:"goal-del",style:"font-size:12px",onClick:()=>removeSubtask(scope,g.id,s.id)},"✕"));
+            subWrap.appendChild(sr);
+          });
+          item.appendChild(subWrap);
+        }
+        ul.appendChild(item);
+      });
+      if(filtered.length>0){
+        ul.appendChild(h("div",{style:"border-top:1px solid #1e293b;margin:8px 0"}));
+      }
+    }
+
     filtered.forEach(g=>{
       const cat=catByCode(g.cat);
       const item=h("div",{className:"goal-item"});

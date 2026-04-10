@@ -2280,6 +2280,39 @@ function renderDailyGoals(){
         // Hours
         const coHrs=calcGoalTotalHours(g.id);
         if(coHrs>0)r.appendChild(h("span",{style:"font-size:10px;color:#f59e0b;font-family:'JetBrains Mono',monospace;font-weight:700;flex-shrink:0"},fmtHours(coHrs)));
+        // Date move button
+        r.appendChild(h("button",{className:"goal-del",style:"font-size:11px;padding:2px 4px;color:#fca5a5",onClick:e=>{
+          e.stopPropagation();
+          const ov=document.createElement("div");
+          ov.style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:200;display:flex;align-items:center;justify-content:center";
+          ov.addEventListener("click",()=>ov.remove());
+          const box=document.createElement("div");
+          box.style="background:#1e293b;border-radius:16px;padding:16px;max-width:320px;width:90%;border:1px solid #334155";
+          box.addEventListener("click",ev=>ev.stopPropagation());
+          box.appendChild(h("div",{style:"font-size:13px;font-weight:700;margin-bottom:12px;color:#e2e8f0"},"📅 날짜 이동 (원래: "+co.fromDate+")"));
+          const dateRow=h("div",{style:"display:flex;gap:8px;align-items:center;margin-bottom:12px"});
+          const mSel=h("select",{className:"goal-cat-select",style:"padding:6px 8px"});
+          for(let m=1;m<=12;m++){const o=h("option",{value:String(m)},m+"월");if(m===state.month)o.selected=true;mSel.appendChild(o)}
+          dateRow.appendChild(mSel);
+          const dSel=h("select",{className:"goal-cat-select",style:"padding:6px 8px"});
+          for(let d=1;d<=31;d++){const o=h("option",{value:String(d)},d+"일");if(d===state.day)o.selected=true;dSel.appendChild(o)}
+          dateRow.appendChild(dSel);
+          box.appendChild(dateRow);
+          const moveBtn=h("button",{className:"goal-add-btn",style:"width:100%;padding:10px",onClick:()=>{
+            const newM=parseInt(mSel.value);const newD=parseInt(dSel.value);
+            const maxD=daysInMonth(state.year,newM);const finalD=Math.min(newD,maxD);
+            const newKey=newM+"-"+finalD;
+            if(newKey===co.origKey){ov.remove();return;}
+            if(!state.goalData.daily[newKey])state.goalData.daily[newKey]=[];
+            state.goalData.daily[newKey].push(g);
+            state.goalData.daily[co.origKey]=state.goalData.daily[co.origKey].filter(x=>x.id!==g.id);
+            if(state.goalData.daily[co.origKey].length===0)delete state.goalData.daily[co.origKey];
+            saveGoalData();ov.remove();render();
+          }},"이동");
+          box.appendChild(moveBtn);
+          ov.appendChild(box);
+          document.body.appendChild(ov);
+        }},"📅"));
         r.appendChild(h("button",{className:"goal-del",onClick:()=>{
           state.goalData.daily[co.origKey]=state.goalData.daily[co.origKey].filter(x=>x.id!==g.id);
           if(state.goalData.daily[co.origKey].length===0)delete state.goalData.daily[co.origKey];

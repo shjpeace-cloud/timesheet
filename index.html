@@ -349,7 +349,9 @@ let state={
   goalExpanded:{},
   // Edit state: tracks which goal/book is being edited
   editingGoal:null, // {scope, id, field} or null
-  editingBook:null   // {month, id} or null
+  editingBook:null,  // {month, id} or null
+  // Parent goal selection for hierarchy (per-scope)
+  goalNewParentIds:{}  // {longterm: id, monthly: id, weekly: id}
 };
 
 // Cloud sync config
@@ -542,12 +544,83 @@ function setSlot(time,field,val){
   state.data.entries[k][time][field]=val;
   save();render();
 }
+
+// Show goal picker overlay for linking a time slot to a goal
+function showGoalPicker(time,goalField,catCode){
+  const goals=getActiveGoalsForCat(catCode);
+  const ov=document.createElement("div");
+  ov.style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:200;display:flex;align-items:center;justify-content:center";
+  ov.addEventListener("click",()=>ov.remove());
+  const box=document.createElement("div");
+  box.style="background:#1e293b;border-radius:16px;padding:16px;max-width:340px;width:90%;max-height:70vh;overflow-y:auto;border:1px solid #334155";
+  box.addEventListener("click",ev=>ev.stopPropagation());
+  box.appendChild(h("div",{style:"font-size:13px;font-weight:700;margin-bottom:10px;color:#e2e8f0"},"🎯 목표 연결 · "+time+" · "+catCode));
+
+  // "없음" option to clear
+  const noneBtn=h("button",{style:"width:100%;padding:10px;margin-bottom:6px;border-radius:8px;border:1px solid #334155;background:#111827;color:#94a3b8;font-size:12px;cursor:pointer;text-align:left;font-family:'Noto Sans KR',sans-serif",onClick:()=>{
+    const k=dateKey();
+    if(state.data.entries[k]&&state.data.entries[k][time]){
+      delete state.data.entries[k][time][goalField];
+    }
+    save();ov.remove();render();
+  }},"없음 (연결 해제)");
+  box.appendChild(noneBtn);
+
+  // Direct text input for custom goal
+  const customRow=h("div",{style:"display:flex;gap:6px;margin-bottom:8px"});
+  const customInp=h("input",{style:"flex:1;padding:8px 10px;border-radius:8px;border:1px solid #334155;background:#111827;color:#e2e8f0;font-size:12px;font-family:'Noto Sans KR',sans-serif;outline:none",placeholder:"직접 입력..."});
+  customInp.addEventListener("focus",function(){customInp.style.borderColor="#0d9488"});
+  customInp.addEventListener("blur",function(){customInp.style.borderColor="#334155"});
+  customInp.addEventListener("keydown",function(e){
+    if(e.key==="Enter"&&customInp.value.trim()){
+      setSlot(time,goalField,customInp.value.trim());
+      ov.remove();
+    }
+  });
+  customRow.appendChild(customInp);
+  const customBtn=h("button",{style:"padding:8px 12px;border-radius:8px;border:none;background:#0d9488;color:#fff;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0",onClick:function(){
+    if(customInp.value.trim()){
+      setSlot(time,goalField,customInp.value.trim());
+      ov.remove();
+    }
+  }},"확인");
+  customRow.appendChild(customBtn);
+  box.appendChild(customRow);
+
+  if(goals.length===0){
+    box.appendChild(h("div",{style:"text-align:center;padding:20px 0;color:#475569;font-size:12px"},"이 카테고리의 활성 목표가 없습니다"));
+  }else{
+    // Group by scope
+    SCOPE_ORDER.forEach(function(s){
+      var scopeGoals=goals.filter(function(g){return g.scope===s});
+      if(scopeGoals.length===0)return;
+      box.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin:8px 0 4px;letter-spacing:.5px"},SCOPE_LABELS[s]));
+      scopeGoals.forEach(function(item){
+        var g=item.goal;
+        var btn=h("button",{style:"width:100%;padding:8px 10px;margin-bottom:4px;border-radius:8px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:12px;cursor:pointer;text-align:left;font-family:'Noto Sans KR',sans-serif;display:flex;align-items:center;gap:6px",onClick:function(){
+          setSlot(time,goalField,g.id);
+          ov.remove();
+        }});
+        var cat=catByCode(g.cat);
+        btn.appendChild(h("span",{style:"font-size:10px;font-weight:700;color:"+(cat?cat.color:"#94a3b8")+";font-family:'JetBrains Mono',monospace;flex-shrink:0"},g.cat));
+        btn.appendChild(h("span",{style:"flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},g.name));
+        if(g.progress!=null&&s!=="daily"){
+          btn.appendChild(h("span",{style:"font-size:9px;color:#0d9488;font-family:monospace"},(g.progress||0)+"%"));
+        }
+        box.appendChild(btn);
+      });
+    });
+  }
+
+  ov.appendChild(box);
+  document.body.appendChild(ov);
+}
 function clearSlot(time,field){
   const k=dateKey();
   if(!state.data.entries[k]||!state.data.entries[k][time])return;
   delete state.data.entries[k][time][field];
-  if(field==="plan")delete state.data.entries[k][time]["planMemo"];
-  if(field==="actual")delete state.data.entries[k][time]["actualMemo"];
+  if(field==="plan"){delete state.data.entries[k][time]["planMemo"];delete state.data.entries[k][time]["planGoalId"]}
+  if(field==="actual"){delete state.data.entries[k][time]["actualMemo"];delete state.data.entries[k][time]["actualGoalId"]}
   if(Object.keys(state.data.entries[k][time]).length===0)delete state.data.entries[k][time];
   save();render();
 }
@@ -581,14 +654,25 @@ function yearSummary(){
 }
 
 function exportCSV(){
-  let csv="연도,월,일,D1,D2,D3,R1,R2,R3,E1,E2,E3,A1,A2,A3,M1,M2,M3,합계,일기\n";
+  let csv="연도,월,일,시간,카테고리,목표\n";
   Object.entries(state.data.entries).forEach(([k,ds])=>{
     const[m,d]=k.split("-");
-    const cats={};CATEGORIES.forEach(c=>{cats[c.code]=0});
-    const diary=(ds._diary||"").replace(/"/g,'""');
-    Object.entries(ds).forEach(([sk,s])=>{if(sk!=="_diary"&&s.actual)cats[s.actual]=(cats[s.actual]||0)+0.5});
-    const total=Object.values(cats).reduce((a,b)=>a+b,0);
-    if(total>0||diary)csv+=`${state.year},${m},${d},${CATEGORIES.map(c=>cats[c.code]).join(",")},${total},"${diary}"\n`;
+    Object.entries(ds).forEach(([time,s])=>{
+      if(time==="_diary")return;
+      if(!s.actual)return;
+      const cat=s.actual;
+      let goalName="";
+      if(s.actualGoalId){
+        if(typeof s.actualGoalId==="string"){
+          goalName=s.actualGoalId;
+        }else{
+          const found=findGoalById(s.actualGoalId);
+          if(found)goalName=found.goal.name;
+        }
+      }
+      goalName=goalName.replace(/"/g,'""');
+      csv+=`${state.year},${m},${d},${time},${cat},"${goalName}"\n`;
+    });
   });
   const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"});
   const url=URL.createObjectURL(blob);
@@ -626,13 +710,13 @@ function exportGoalCSV(){
   Object.entries(state.goalData.daily||{}).forEach(([k,list])=>{
     const[m,d]=k.split("-");
     list.forEach(g=>{
-      all.push({scope:"일간",cat:g.cat,name:g.name||"",progress:"",done:g.done?"O":"X",period:m+"/"+d,memo:""});
+      all.push({scope:"일간",cat:g.cat,name:g.name||"",progress:"",done:g.done?"O":"X",period:m+"/"+d,memo:"",goalId:g.id});
     });
   });
   // Weekly
   (state.goalData.weekly||[]).forEach(g=>{
     const period=(g.year||state.year)+" "+(g.month||"")+"월 "+(g.weekIdx||"")+"주";
-    all.push({scope:"주간",cat:g.cat,name:g.name||"",progress:(g.progress||0)+"%",done:"",period:period,memo:g.memo||"",subtasks:g.subtasks||[]});
+    all.push({scope:"주간",cat:g.cat,name:g.name||"",progress:(g.progress||0)+"%",done:"",period:period,memo:g.memo||"",subtasks:g.subtasks||[],goalId:g.id});
   });
   // Monthly
   (state.goalData.monthly||[]).forEach(g=>{
@@ -640,14 +724,14 @@ function exportGoalCSV(){
     const em=g.endMonth||g.month;
     const monthTxt=sm===em?(sm+"월"):(sm+"~"+em+"월");
     const period=(g.year||state.year)+" "+monthTxt;
-    all.push({scope:"월간",cat:g.cat,name:g.name||"",progress:(g.progress||0)+"%",done:"",period:period,memo:g.memo||"",subtasks:g.subtasks||[]});
+    all.push({scope:"월간",cat:g.cat,name:g.name||"",progress:(g.progress||0)+"%",done:"",period:period,memo:g.memo||"",subtasks:g.subtasks||[],goalId:g.id});
   });
   // Long-term
   (state.goalData.longterm||[]).forEach(g=>{
     const sy=g.startYear||g.targetYear||"";
     const ey=g.endYear||g.targetYear||"";
     const period=sy===ey?(sy+"년"):(sy+"~"+ey+"년");
-    all.push({scope:"장기",cat:g.cat,name:g.name||"",progress:(g.progress||0)+"%",done:"",period:period,memo:g.memo||"",subtasks:g.subtasks||[]});
+    all.push({scope:"장기",cat:g.cat,name:g.name||"",progress:(g.progress||0)+"%",done:"",period:period,memo:g.memo||"",subtasks:g.subtasks||[],goalId:g.id});
   });
 
   // Group by category code, then sort scope: 장기→월간→주간→일간 (top-down hierarchy)
@@ -660,21 +744,22 @@ function exportGoalCSV(){
   Object.values(grouped).forEach(list=>list.sort((a,b)=>scopeOrder[a.scope]-scopeOrder[b.scope]));
 
   // Build CSV ordered by CATEGORIES sequence (D1,D2,...,M3)
-  let csv="카테고리,구분,목표명,진행률,완료,기간,메모\n";
+  let csv="카테고리,구분,목표명,진행률,완료,기간,투입시간,메모\n";
   CATEGORIES.forEach(c=>{
     const list=grouped[c.code];
     if(!list||list.length===0)return;
     // Section header row
-    csv+=`[${c.code}] ${c.label},,,,,,\n`;
+    csv+=`[${c.code}] ${c.label},,,,,,,\n`;
     list.forEach(g=>{
       const name=g.name.replace(/"/g,'""');
       const memo=g.memo.replace(/"/g,'""');
-      csv+=`,${g.scope},"${name}",${g.progress},${g.done},${g.period},"${memo}"\n`;
+      const hrs=g.goalId?fmtHours(calcGoalTotalHours(g.goalId)):"";
+      csv+=`,${g.scope},"${name}",${g.progress},${g.done},${g.period},${hrs},"${memo}"\n`;
       // Subtasks as indented rows
       if(g.subtasks&&g.subtasks.length>0){
         g.subtasks.forEach(s=>{
           const sname=(s.name||"").replace(/"/g,'""');
-          csv+=`,,"  └ ${sname}",${s.weight||0}%,${s.done?"O":"X"},,\n`;
+          csv+=`,,"  └ ${sname}",${s.weight||0}%,${s.done?"O":"X"},,,\n`;
         });
       }
     });
@@ -982,13 +1067,50 @@ function renderInput(){
     }
     slot.appendChild(content);
 
+    // Goal link column (뒷칸): show linked goal or picker button
+    const goalField=state.mode==="plan"?"planGoalId":"actualGoalId";
+    const linkedGoalId=sd[goalField];
+    // Also check for legacy memo text
+    const legacyMemo=sd[memoField];
+    const goalCol=h("div",{style:"flex-shrink:0;display:flex;align-items:center;min-width:80px;max-width:140px"});
+    if(cat){
+      if(linkedGoalId){
+        const found=findGoalById(linkedGoalId);
+        if(found){
+          const goalTag=h("span",{style:"font-size:12px;color:#e2e8f0;background:#1e293b;padding:3px 8px;border-radius:6px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:135px;display:block;border:1px solid #334155",onClick:e=>{
+            e.stopPropagation();
+            showGoalPicker(time,goalField,cat.code);
+          }},found.goal.name);
+          goalCol.appendChild(goalTag);
+        }else{
+          goalCol.appendChild(h("span",{style:"font-size:12px;color:#475569;cursor:pointer",onClick:e=>{e.stopPropagation();showGoalPicker(time,goalField,cat.code)}},"🎯"));
+        }
+      }else if(typeof linkedGoalId==="string"){
+        // Direct text input (custom goal text)
+        const goalTag=h("span",{style:"font-size:12px;color:#e2e8f0;background:#1e293b;padding:3px 8px;border-radius:6px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:135px;display:block;border:1px solid #334155",onClick:e=>{
+          e.stopPropagation();
+          showGoalPicker(time,goalField,cat.code);
+        }},linkedGoalId);
+        goalCol.appendChild(goalTag);
+      }else if(legacyMemo){
+        // Show legacy memo as goal text
+        const goalTag=h("span",{style:"font-size:12px;color:#94a3b8;background:#1e293b;padding:3px 8px;border-radius:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:135px;display:block;border:1px solid #1e293b;cursor:pointer",onClick:e=>{
+          e.stopPropagation();
+          showGoalPicker(time,goalField,cat.code);
+        }},legacyMemo);
+        goalCol.appendChild(goalTag);
+      }else{
+        goalCol.appendChild(h("span",{style:"font-size:12px;color:#475569;cursor:pointer",onClick:e=>{e.stopPropagation();showGoalPicker(time,goalField,cat.code)}},"🎯"));
+      }
+    }
+    slot.appendChild(goalCol);
+
     const acts=h("div",{className:"slot-actions"});
     if(cat){
       acts.appendChild(h("button",{className:"clear-btn",onClick:e=>{e.stopPropagation();clearSlot(time,field)}},"✕"));
     }
     slot.appendChild(acts);
 
-    if(memo)slot.appendChild(h("div",{className:"memo-tag"},"📝 "+memo));
     list.appendChild(slot);
   });
   wrap.appendChild(list);
@@ -1233,6 +1355,42 @@ function renderDashboard(){
   wrap.appendChild(barSection);
 
   setTimeout(()=>renderCharts(ys),0);
+
+  // Goal hours summary section
+  const goalSec=h("div",{className:"dash-section"});
+  goalSec.appendChild(h("h3",{className:"dash-title"},"🎯 목표별 투입시간"));
+  const allScopes=["longterm","monthly","weekly"];
+  let hasGoalHours=false;
+  allScopes.forEach(scope=>{
+    const goals=(state.goalData[scope]||[]).filter(g=>(g.progress||0)<100);
+    if(goals.length===0)return;
+    const scopeLabel={longterm:"장기",monthly:"월간",weekly:"주간"}[scope];
+    goals.forEach(g=>{
+      const totalHrs=calcGoalTotalHours(g.id);
+      const directHrs=calcGoalDirectHours(g.id);
+      if(totalHrs===0&&directHrs===0)return;
+      hasGoalHours=true;
+      const cat=catByCode(g.cat);
+      const row=h("div",{style:"display:flex;align-items:center;gap:6px;padding:6px 8px;font-size:12px;border-bottom:1px solid #0f172a"});
+      row.appendChild(h("span",{style:"font-size:9px;color:#64748b;width:28px;flex-shrink:0"},scopeLabel));
+      row.appendChild(h("span",{style:"font-size:10px;font-weight:700;color:"+(cat?cat.color:"#94a3b8")+";font-family:'JetBrains Mono',monospace;width:22px;flex-shrink:0"},g.cat));
+      row.appendChild(h("span",{style:"flex:1;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},g.name));
+      // Hours bar
+      const maxHrs=Math.max.apply(null,allScopes.flatMap(s=>(state.goalData[s]||[]).map(x=>calcGoalTotalHours(x.id))).concat([1]));
+      const barW=Math.max(4,Math.round(totalHrs/maxHrs*80));
+      const track=h("div",{style:"width:80px;height:8px;background:#1e293b;border-radius:4px;overflow:hidden;flex-shrink:0"});
+      track.appendChild(h("div",{style:"height:100%;width:"+barW+"px;background:#f59e0b;border-radius:4px"}));
+      row.appendChild(track);
+      // Hours text
+      const hrsText=totalHrs===directHrs?fmtHours(totalHrs):fmtHours(directHrs)+"(+"+fmtHours(totalHrs-directHrs)+")";
+      row.appendChild(h("span",{style:"font-size:11px;color:#f59e0b;font-family:'JetBrains Mono',monospace;font-weight:700;width:60px;text-align:right;flex-shrink:0"},hrsText));
+      goalSec.appendChild(row);
+    });
+  });
+  if(!hasGoalHours){
+    goalSec.appendChild(h("div",{style:"text-align:center;padding:20px 0;color:#475569;font-size:12px"},"입력탭에서 시간 슬롯에 목표를 연결하면 여기에 통계가 표시됩니다"));
+  }
+  wrap.appendChild(goalSec);
 
   return wrap;
 }
@@ -1540,8 +1698,12 @@ function addDailyGoal(){
   if(!state.goalNewName.trim())return;
   const k=state.month+"-"+state.day;
   if(!state.goalData.daily[k])state.goalData.daily[k]=[];
-  state.goalData.daily[k].push({id:Date.now(),cat:state.goalNewCat,name:state.goalNewName.trim(),done:false});
-  state.goalNewName="";
+  const item={id:Date.now(),cat:state.goalNewCat,name:state.goalNewName.trim(),done:false};
+  // Multi-scope parent links
+  const pids=buildNewParentIds("daily");
+  if(Object.keys(pids).length>0)item.parentIds=pids;
+  state.goalData.daily[k].push(item);
+  state.goalNewName="";state.goalNewParentIds={};
   saveGoalData();render();
 }
 function toggleDailyGoal(id){
@@ -1561,6 +1723,9 @@ function removeDailyGoal(id){
 function addPeriodGoal(scope){
   if(!state.goalNewName.trim())return;
   const item={id:Date.now(),cat:state.goalNewCat,name:state.goalNewName.trim(),memo:state.goalNewMemo.trim(),progress:0,subtasks:[]};
+  // Multi-scope parent links
+  const pids=buildNewParentIds(scope);
+  if(Object.keys(pids).length>0)item.parentIds=pids;
   if(scope==="weekly"){
     item.period=currentMonthWeekKey();
     item.month=state.goalWeekMonth;
@@ -1577,7 +1742,7 @@ function addPeriodGoal(scope){
     item.endYear=state.goalLtEndYear;
   }
   state.goalData[scope].push(item);
-  state.goalNewName="";state.goalNewMemo="";state.goalNewDeadline="";
+  state.goalNewName="";state.goalNewMemo="";state.goalNewDeadline="";state.goalNewParentIds={};
   saveGoalData();render();
 }
 function updateGoalProgress(scope,id,progress){
@@ -1661,6 +1826,238 @@ function updateBookField(month,id,field,value){
   const b=list.find(x=>x.id===id);
   if(b){b[field]=value;saveBookData();}
 }
+
+// Render an inline editable name span (tap to edit)
+
+// ── Goal Hierarchy Helpers ──────────────────────────────────
+// Scope order: longterm > monthly > weekly > daily
+var SCOPE_ORDER=["longterm","monthly","weekly","daily"];
+var SCOPE_LABELS={longterm:"장기",monthly:"월간",weekly:"주간",daily:"일간"};
+
+// Get upper scopes for a given scope
+function upperScopes(scope){
+  var idx=SCOPE_ORDER.indexOf(scope);
+  return idx>0?SCOPE_ORDER.slice(0,idx):[];
+}
+
+// Find a goal by id across all scopes
+function findGoalById(id){
+  if(!id)return null;
+  for(var s=0;s<SCOPE_ORDER.length;s++){
+    var scope=SCOPE_ORDER[s];
+    if(scope==="daily"){
+      var keys=Object.keys(state.goalData.daily||{});
+      for(var k=0;k<keys.length;k++){
+        var list=state.goalData.daily[keys[k]]||[];
+        var g=list.find(function(x){return x.id===id});
+        if(g)return{goal:g,scope:"daily",dateKey:keys[k]};
+      }
+    }else{
+      var arr=state.goalData[scope]||[];
+      var g=arr.find(function(x){return x.id===id});
+      if(g)return{goal:g,scope:scope};
+    }
+  }
+  return null;
+}
+
+// Get parentIds object from a goal (handles both old parentId and new parentIds)
+function getParentIds(goal){
+  if(goal.parentIds)return goal.parentIds;
+  if(goal.parentId){
+    var found=findGoalById(goal.parentId);
+    if(found){var obj={};obj[found.scope]=goal.parentId;return obj;}
+  }
+  return {};
+}
+
+// Build ancestry display: "장기: X > 월간: Y > 주간: Z"
+function renderAncestry(goal){
+  var pids=getParentIds(goal);
+  var parts=[];
+  SCOPE_ORDER.forEach(function(s){
+    if(pids[s]){
+      var found=findGoalById(pids[s]);
+      if(found)parts.push(SCOPE_LABELS[s]+": "+found.goal.name);
+    }
+  });
+  if(parts.length===0)return null;
+  return h("div",{style:"font-size:9px;color:#64748b;padding:2px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},"📎 "+parts.join(" > "));
+}
+
+// Get candidate parent goals for a specific upper scope, filtered by category
+function getCandidatesForScope(upperScope,cat){
+  var arr=state.goalData[upperScope]||[];
+  if(!cat)return arr.filter(function(g){return(g.progress||0)<100});
+  return arr.filter(function(g){return g.cat===cat&&(g.progress||0)<100});
+}
+
+// Get children of a goal
+function getChildGoals(goalId){
+  var children=[];
+  SCOPE_ORDER.forEach(function(scope){
+    if(scope==="daily"){
+      Object.keys(state.goalData.daily||{}).forEach(function(k){
+        (state.goalData.daily[k]||[]).forEach(function(g){
+          var pids=getParentIds(g);
+          var vals=Object.values(pids);
+          if(vals.indexOf(goalId)>=0)children.push({scope:"daily",goal:g,dateKey:k});
+        });
+      });
+    }else{
+      (state.goalData[scope]||[]).forEach(function(g){
+        var pids=getParentIds(g);
+        var vals=Object.values(pids);
+        if(vals.indexOf(goalId)>=0)children.push({scope:scope,goal:g});
+      });
+    }
+  });
+  return children;
+}
+
+// Get all active (non-100%) goals matching a category, for slot goal linking
+function getActiveGoalsForCat(cat){
+  var results=[];
+  // Collect from all scopes, ordered longterm > monthly > weekly > daily(today)
+  ["longterm","monthly","weekly"].forEach(function(scope){
+    (state.goalData[scope]||[]).forEach(function(g){
+      if(g.cat===cat&&(g.progress||0)<100){
+        results.push({scope:scope,goal:g});
+      }
+    });
+  });
+  // Daily: current date
+  var dk=state.month+"-"+state.day;
+  (state.goalData.daily[dk]||[]).forEach(function(g){
+    if(g.cat===cat&&!g.done){
+      results.push({scope:"daily",goal:g});
+    }
+  });
+  return results;
+}
+
+// ── 목표별 투입시간 집계 ─────────────────────────────────────
+// Calculate hours directly linked to a specific goal ID
+function calcGoalDirectHours(goalId){
+  var total=0;
+  var entries=state.data.entries||{};
+  var keys=Object.keys(entries);
+  for(var i=0;i<keys.length;i++){
+    var dk=keys[i];
+    var daySlots=entries[dk];
+    var slotKeys=Object.keys(daySlots);
+    for(var j=0;j<slotKeys.length;j++){
+      if(slotKeys[j]==="_diary")continue;
+      var sd=daySlots[slotKeys[j]];
+      if(sd.actualGoalId===goalId)total+=0.5;
+    }
+  }
+  return total;
+}
+
+// Calculate total hours for a goal INCLUDING all descendant goals' hours
+function calcGoalTotalHours(goalId){
+  var direct=calcGoalDirectHours(goalId);
+  var children=getChildGoals(goalId);
+  var childHours=0;
+  for(var i=0;i<children.length;i++){
+    childHours+=calcGoalTotalHours(children[i].goal.id);
+  }
+  return direct+childHours;
+}
+
+// Format hours display
+function fmtHours(hrs){
+  if(hrs===0)return "";
+  if(hrs===Math.floor(hrs))return hrs+"h";
+  return hrs.toFixed(1)+"h";
+}
+
+// Build parentIds from state.goalNewParentIds for new goal creation
+function buildNewParentIds(scope){
+  var result={};
+  upperScopes(scope).forEach(function(s){
+    if(state.goalNewParentIds[s])result[s]=state.goalNewParentIds[s];
+  });
+  return result;
+}
+
+// Render parent selectors for new goal form (one dropdown per upper scope)
+function renderParentSelectors(scope,cat){
+  var uppers=upperScopes(scope);
+  if(uppers.length===0)return null;
+  var wrap=h("div",{style:"display:flex;flex-direction:column;gap:4px;padding-top:2px"});
+  var hasAny=false;
+  uppers.forEach(function(us){
+    var candidates=getCandidatesForScope(us,cat);
+    if(candidates.length===0)return;
+    hasAny=true;
+    var row=h("div",{style:"display:flex;gap:6px;align-items:center"});
+    row.appendChild(h("span",{style:"font-size:10px;color:#64748b;width:32px;flex-shrink:0;text-align:right"},SCOPE_LABELS[us]+":"));
+    var sel=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px;flex:1"});
+    var noneOpt=h("option",{value:""},"없음");
+    if(!state.goalNewParentIds[us])noneOpt.selected=true;
+    sel.appendChild(noneOpt);
+    candidates.forEach(function(g){
+      var opt=h("option",{value:String(g.id)},g.name);
+      if(state.goalNewParentIds[us]===g.id)opt.selected=true;
+      sel.appendChild(opt);
+    });
+    sel.addEventListener("change",(function(upperScope){return function(e){
+      if(e.target.value)state.goalNewParentIds[upperScope]=parseInt(e.target.value);
+      else delete state.goalNewParentIds[upperScope];
+    }})(us));
+    row.appendChild(sel);
+    wrap.appendChild(row);
+  });
+  if(!hasAny)return null;
+  return wrap;
+}
+
+// Render parent edit selectors for existing goal (in expanded section)
+function renderParentEditSelectors(scope,goal){
+  var uppers=upperScopes(scope);
+  if(uppers.length===0)return null;
+  var pids=getParentIds(goal);
+  var wrap=h("div",{style:"margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #1e293b"});
+  wrap.appendChild(h("div",{style:"font-size:10px;color:#64748b;margin-bottom:4px"},"📎 상위 목표 연결"));
+  var hasAny=false;
+  uppers.forEach(function(us){
+    var candidates=getCandidatesForScope(us,goal.cat);
+    if(pids[us]){
+      var currentParent=candidates.find(function(g){return g.id===pids[us]});
+      if(!currentParent){
+        var found=findGoalById(pids[us]);
+        if(found)candidates=[found.goal].concat(candidates);
+      }
+    }
+    if(candidates.length===0)return;
+    hasAny=true;
+    var row=h("div",{style:"display:flex;gap:6px;align-items:center;padding:2px 0"});
+    row.appendChild(h("span",{style:"font-size:10px;color:#64748b;width:32px;flex-shrink:0;text-align:right"},SCOPE_LABELS[us]+":"));
+    var sel=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px;flex:1"});
+    var noneOpt=h("option",{value:""},"없음");
+    if(!pids[us])noneOpt.selected=true;
+    sel.appendChild(noneOpt);
+    candidates.forEach(function(g){
+      var opt=h("option",{value:String(g.id)},g.name);
+      if(pids[us]===g.id)opt.selected=true;
+      sel.appendChild(opt);
+    });
+    sel.addEventListener("change",(function(upperScope){return function(e){
+      if(!goal.parentIds)goal.parentIds={};
+      if(e.target.value)goal.parentIds[upperScope]=parseInt(e.target.value);
+      else delete goal.parentIds[upperScope];
+      if(goal.parentId)delete goal.parentId;
+      saveGoalData();render();
+    }})(us));
+    row.appendChild(sel);
+    wrap.appendChild(row);
+  });
+  if(!hasAny)return null;
+  return wrap;
+}
+
 
 // Render an inline editable name span (tap to edit)
 function renderEditableName(text,onSave,style){
@@ -1777,6 +2174,9 @@ function renderDailyGoals(){
         row.appendChild(h("span",{style:"font-size:9px;color:#64748b;width:30px"},grp.label.split(" ")[0]));
         row.appendChild(h("span",{className:"goal-cat-tag",style:"background:"+(cat?cat.color:"#475569")+";font-size:9px;padding:1px 5px"},g.cat));
         row.appendChild(h("span",{style:"flex:1;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},g.name));
+        // Hours
+        const ctxHrs=calcGoalTotalHours(g.id);
+        if(ctxHrs>0)row.appendChild(h("span",{style:"font-size:9px;color:#f59e0b;font-family:monospace;font-weight:700;flex-shrink:0"},fmtHours(ctxHrs)));
         const pct=g.progress||0;
         const track=h("div",{style:"width:50px;height:4px;background:#1e293b;border-radius:2px;overflow:hidden"});
         track.appendChild(h("div",{style:"height:100%;width:"+pct+"%;background:#0d9488"}));
@@ -1798,7 +2198,7 @@ function renderDailyGoals(){
     if(c.code===state.goalNewCat)opt.selected=true;
     sel.appendChild(opt);
   });
-  sel.addEventListener("change",e=>{state.goalNewCat=e.target.value});
+  sel.addEventListener("change",e=>{state.goalNewCat=e.target.value;state.goalNewParentId=null;render()});
   row.appendChild(sel);
   const inp=h("input",{className:"goal-input",placeholder:"오늘의 목표",value:state.goalNewName});
   inp.addEventListener("input",e=>{state.goalNewName=e.target.value});
@@ -1806,6 +2206,14 @@ function renderDailyGoals(){
   row.appendChild(inp);
   row.appendChild(h("button",{className:"goal-add-btn",onClick:addDailyGoal},"+"));
   form.appendChild(row);
+  // Parent goal selectors (one per upper scope)
+  const parentSels=renderParentSelectors("daily",state.goalNewCat);
+  if(parentSels){
+    const prow=h("div",{className:"goal-form-row",style:"padding-top:0;flex-direction:column"});
+    prow.appendChild(h("span",{style:"font-size:10px;color:#64748b;margin-bottom:2px"},"📎 상위 목표:"));
+    prow.appendChild(parentSels);
+    form.appendChild(prow);
+  }
   wrap.appendChild(form);
 
   // Carryover: find incomplete daily goals from days that have ALREADY PASSED (based on today)
@@ -1851,18 +2259,43 @@ function renderDailyGoals(){
         const g=co.goal;
         const cat=catByCode(g.cat);
         const item=h("div",{className:"goal-item",style:"border:1px solid #7f1d1d;background:#1a0505"});
+        const expKey="daily-"+g.id;
+        const isExpanded=!!state.goalExpanded[expKey];
         const r=h("div",{className:"goal-item-row"});
+        // Expand toggle
+        r.appendChild(h("button",{className:"goal-del",style:"font-size:11px;padding:2px 4px;color:#fca5a5",onClick:()=>{state.goalExpanded[expKey]=!state.goalExpanded[expKey];render()}},isExpanded?"▼":"▶"));
         const chk=h("button",{className:"goal-check",style:"border-color:#ef4444",onClick:()=>{
-          // Toggle done on original date's goal
           const origList=state.goalData.daily[co.origKey]||[];
           const og=origList.find(x=>x.id===g.id);
           if(og){og.done=true;saveGoalData();render();}
         }},"");
         r.appendChild(chk);
-        r.appendChild(h("span",{className:"goal-cat-tag",style:"background:"+(cat?cat.color:"#475569")},g.cat));
-        r.appendChild(h("span",{className:"goal-name",style:"color:#fca5a5"},g.name));
+        r.appendChild(renderEditableCat(g.cat,newCat=>{
+          updateDailyGoalField(co.origKey,g.id,"cat",newCat);render();
+        }));
+        r.appendChild(renderEditableName(g.name,newName=>{
+          updateDailyGoalField(co.origKey,g.id,"name",newName);
+        },"color:#fca5a5;"));
         r.appendChild(h("span",{style:"font-size:9px;color:#ef4444;font-family:monospace;flex-shrink:0"},co.fromDate));
+        // Hours
+        const coHrs=calcGoalTotalHours(g.id);
+        if(coHrs>0)r.appendChild(h("span",{style:"font-size:10px;color:#f59e0b;font-family:'JetBrains Mono',monospace;font-weight:700;flex-shrink:0"},fmtHours(coHrs)));
+        r.appendChild(h("button",{className:"goal-del",onClick:()=>{
+          state.goalData.daily[co.origKey]=state.goalData.daily[co.origKey].filter(x=>x.id!==g.id);
+          if(state.goalData.daily[co.origKey].length===0)delete state.goalData.daily[co.origKey];
+          saveGoalData();render();
+        }},"✕"));
         item.appendChild(r);
+        // Ancestry
+        const coAnc=renderAncestry(g);
+        if(coAnc)item.appendChild(coAnc);
+        // Expanded: parent edit
+        if(isExpanded){
+          const subWrap=h("div",{style:"margin-top:6px;padding:8px;background:#111827;border-radius:8px;border:1px dashed #7f1d1d"});
+          const parentEditEl=renderParentEditSelectors("daily",g);
+          if(parentEditEl)subWrap.appendChild(parentEditEl);
+          if(subWrap.children.length>0)item.appendChild(subWrap);
+        }
         ul.appendChild(item);
       });
       if(list.length>0){
@@ -1873,7 +2306,12 @@ function renderDailyGoals(){
     list.forEach(g=>{
       const cat=catByCode(g.cat);
       const item=h("div",{className:"goal-item"+(g.done?" done":"")});
+      const expKey="daily-"+g.id;
+      const isExpanded=!!state.goalExpanded[expKey];
       const r=h("div",{className:"goal-item-row"});
+      // Expand toggle
+      const toggleBtn=h("button",{className:"goal-del",style:"font-size:11px;padding:2px 4px;color:#94a3b8",onClick:()=>{state.goalExpanded[expKey]=!state.goalExpanded[expKey];render()}},isExpanded?"▼":"▶");
+      r.appendChild(toggleBtn);
       const chk=h("button",{className:"goal-check"+(g.done?" checked":""),onClick:()=>toggleDailyGoal(g.id)},g.done?"✓":"");
       r.appendChild(chk);
       r.appendChild(renderEditableCat(g.cat,newCat=>{
@@ -1885,7 +2323,6 @@ function renderDailyGoals(){
       // Date move button
       r.appendChild(h("button",{className:"goal-del",style:"font-size:11px;padding:2px 4px;color:#94a3b8",onClick:e=>{
         e.stopPropagation();
-        // Show date move overlay
         const ov=document.createElement("div");
         ov.style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:200;display:flex;align-items:center;justify-content:center";
         ov.addEventListener("click",()=>ov.remove());
@@ -1908,7 +2345,6 @@ function renderDailyGoals(){
           const finalD=Math.min(newD,maxD);
           const newKey=newM+"-"+finalD;
           if(newKey===k){ov.remove();return;}
-          // Move goal: remove from current date, add to new date
           if(!state.goalData.daily[newKey])state.goalData.daily[newKey]=[];
           state.goalData.daily[newKey].push(g);
           state.goalData.daily[k]=state.goalData.daily[k].filter(x=>x.id!==g.id);
@@ -1919,8 +2355,21 @@ function renderDailyGoals(){
         ov.appendChild(box);
         document.body.appendChild(ov);
       }},"📅"));
+      // Hours display
+      const dailyHrs=calcGoalTotalHours(g.id);
+      if(dailyHrs>0)r.appendChild(h("span",{style:"font-size:10px;color:#f59e0b;font-family:'JetBrains Mono',monospace;font-weight:700;flex-shrink:0"},fmtHours(dailyHrs)));
       r.appendChild(h("button",{className:"goal-del",onClick:()=>removeDailyGoal(g.id)},"✕"));
       item.appendChild(r);
+      // Ancestry breadcrumb
+      const anc=renderAncestry(g);
+      if(anc)item.appendChild(anc);
+      // Expanded: parent edit
+      if(isExpanded){
+        const subWrap=h("div",{style:"margin-top:6px;padding:8px;background:#111827;border-radius:8px;border:1px dashed #1e293b"});
+        const parentEditEl=renderParentEditSelectors("daily",g);
+        if(parentEditEl)subWrap.appendChild(parentEditEl);
+        if(subWrap.children.length>0)item.appendChild(subWrap);
+      }
       ul.appendChild(item);
     });
     wrap.appendChild(ul);
@@ -2009,12 +2458,23 @@ function renderPeriodGoals(scope){
     if(c.code===state.goalNewCat)opt.selected=true;
     sel.appendChild(opt);
   });
-  sel.addEventListener("change",e=>{state.goalNewCat=e.target.value});
+  sel.addEventListener("change",e=>{state.goalNewCat=e.target.value;state.goalNewParentId=null;render()});
   row1.appendChild(sel);
   const inp=h("input",{className:"goal-input",placeholder:placeholder,value:state.goalNewName});
   inp.addEventListener("input",e=>{state.goalNewName=e.target.value});
   row1.appendChild(inp);
   form.appendChild(row1);
+
+  // Parent goal selectors (one per upper scope, not for longterm)
+  if(scope!=="longterm"){
+    const parentSels=renderParentSelectors(scope,state.goalNewCat);
+    if(parentSels){
+      const prow=h("div",{className:"goal-form-row",style:"padding-top:0;flex-direction:column"});
+      prow.appendChild(h("span",{style:"font-size:10px;color:#64748b;margin-bottom:2px"},"📎 상위 목표:"));
+      prow.appendChild(parentSels);
+      form.appendChild(prow);
+    }
+  }
 
   const row2=h("div",{className:"goal-form-row"});
   if(scope==="monthly"){
@@ -2111,14 +2571,28 @@ function renderPeriodGoals(scope){
         const r=h("div",{className:"goal-item-row"});
         const toggleBtn=h("button",{className:"goal-del",style:"font-size:11px;padding:2px 4px;color:#fca5a5",onClick:()=>toggleGoalExpand(scope,g.id)},isExpanded?"▼":"▶");
         r.appendChild(toggleBtn);
-        r.appendChild(h("span",{className:"goal-cat-tag",style:"background:"+(cat?cat.color:"#475569")},g.cat));
-        r.appendChild(h("span",{className:"goal-name",style:"color:#fca5a5"},g.name));
+        r.appendChild(renderEditableCat(g.cat,newCat=>{
+          updatePeriodGoalField(scope,g.id,"cat",newCat);render();
+        }));
+        r.appendChild(renderEditableName(g.name,newName=>{
+          updatePeriodGoalField(scope,g.id,"name",newName);
+        },"color:#fca5a5;"));
         r.appendChild(h("span",{style:"font-size:9px;color:#ef4444;font-family:monospace;flex-shrink:0"},g.month+"월"+g.weekIdx+"주"));
         if(hasSub){
           const doneCount=g.subtasks.filter(s=>s.done).length;
           r.appendChild(h("span",{style:"font-size:10px;color:#fca5a5;font-family:monospace"},doneCount+"/"+g.subtasks.length));
         }
+        // Hours
+        const coWkHrs=calcGoalTotalHours(g.id);
+        if(coWkHrs>0)r.appendChild(h("span",{style:"font-size:10px;color:#f59e0b;font-family:'JetBrains Mono',monospace;font-weight:700;flex-shrink:0"},fmtHours(coWkHrs)));
+        r.appendChild(h("button",{className:"goal-del",onClick:()=>{
+          if(hasSub&&!confirm("서브태스크도 함께 삭제됩니다. 계속할까요?"))return;
+          removePeriodGoal(scope,g.id);
+        }},"✕"));
         item.appendChild(r);
+        // Ancestry
+        const coWkAnc=renderAncestry(g);
+        if(coWkAnc)item.appendChild(coWkAnc);
         // Progress bar
         const pr=h("div",{className:"goal-progress-row"});
         const pct=g.progress||0;
@@ -2139,18 +2613,49 @@ function renderPeriodGoals(scope){
           pr.appendChild(valSpan);
         }
         item.appendChild(pr);
-        // Subtasks when expanded (same logic)
-        if(isExpanded&&hasSub){
+        // Expanded: subtasks + parent edit + period edit
+        if(isExpanded){
           const subWrap=h("div",{style:"margin-top:6px;padding:8px;background:#111827;border-radius:8px;border:1px dashed #7f1d1d"});
-          g.subtasks.forEach(s=>{
-            const sr=h("div",{style:"display:flex;align-items:center;gap:6px;padding:3px 0;font-size:11px"});
-            const chk=h("button",{className:"goal-check"+(s.done?" checked":""),style:"width:16px;height:16px;font-size:10px;border-width:1.5px",onClick:()=>toggleSubtask(scope,g.id,s.id)},s.done?"✓":"");
-            sr.appendChild(chk);
-            sr.appendChild(h("span",{style:"flex:1;color:"+(s.done?"#64748b":"#fca5a5")+";text-decoration:"+(s.done?"line-through":"none")},s.name));
-            sr.appendChild(h("span",{style:"font-size:10px;color:#ef4444;font-family:monospace;font-weight:700"},(s.weight||0)+"%"));
-            sr.appendChild(h("button",{className:"goal-del",style:"font-size:12px",onClick:()=>removeSubtask(scope,g.id,s.id)},"✕"));
-            subWrap.appendChild(sr);
-          });
+          // Period edit
+          const periodRow=h("div",{style:"display:flex;gap:6px;align-items:center;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #1e293b;font-size:11px"});
+          periodRow.appendChild(h("span",{style:"color:#64748b;font-size:10px;flex-shrink:0"},"📆 기간:"));
+          const mSel=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px"});
+          for(let m=1;m<=12;m++){const o=h("option",{value:String(m)},m+"월");if(m===g.month)o.selected=true;mSel.appendChild(o)}
+          mSel.addEventListener("change",e=>{const nm=parseInt(e.target.value);updatePeriodGoalField(scope,g.id,"month",nm);const wm2=weeksInMonth(state.year,nm);if(g.weekIdx>wm2)updatePeriodGoalField(scope,g.id,"weekIdx",wm2);render()});
+          periodRow.appendChild(mSel);
+          const wSel=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px"});
+          const wm2=weeksInMonth(state.year,g.month);
+          for(let w=1;w<=wm2;w++){const o=h("option",{value:String(w)},w+"주");if(w===g.weekIdx)o.selected=true;wSel.appendChild(o)}
+          wSel.addEventListener("change",e=>{updatePeriodGoalField(scope,g.id,"weekIdx",parseInt(e.target.value));render()});
+          periodRow.appendChild(wSel);
+          subWrap.appendChild(periodRow);
+          // Parent edit
+          const parentEditEl=renderParentEditSelectors(scope,g);
+          if(parentEditEl)subWrap.appendChild(parentEditEl);
+          // Subtasks
+          if(hasSub){
+            g.subtasks.forEach(s=>{
+              const sr=h("div",{style:"display:flex;align-items:center;gap:6px;padding:3px 0;font-size:11px"});
+              const chk=h("button",{className:"goal-check"+(s.done?" checked":""),style:"width:16px;height:16px;font-size:10px;border-width:1.5px",onClick:()=>toggleSubtask(scope,g.id,s.id)},s.done?"✓":"");
+              sr.appendChild(chk);
+              sr.appendChild(h("span",{style:"flex:1;color:"+(s.done?"#64748b":"#fca5a5")+";text-decoration:"+(s.done?"line-through":"none")},s.name));
+              sr.appendChild(h("span",{style:"font-size:10px;color:#ef4444;font-family:monospace;font-weight:700"},(s.weight||0)+"%"));
+              sr.appendChild(h("button",{className:"goal-del",style:"font-size:12px",onClick:()=>removeSubtask(scope,g.id,s.id)},"✕"));
+              subWrap.appendChild(sr);
+            });
+          }
+          // Add subtask form
+          const subFormKey=scope+"-"+g.id;
+          const addRow=h("div",{style:"display:flex;gap:4px;margin-top:6px;padding-top:6px;border-top:1px solid #1e293b"});
+          const subInp=h("input",{className:"goal-input",placeholder:"세부 단계",value:state.goalSubInputs[subFormKey]||"",style:"flex:1;font-size:11px;padding:6px 8px"});
+          subInp.addEventListener("input",e=>{state.goalSubInputs[subFormKey]=e.target.value});
+          subInp.addEventListener("keydown",e=>{if(e.key==="Enter")addSubtask(scope,g.id)});
+          addRow.appendChild(subInp);
+          const wInp=h("input",{className:"goal-input",type:"number",placeholder:"%",value:state.goalSubWeights[subFormKey]||"",style:"width:50px;font-size:11px;padding:6px 4px;text-align:center",min:"1",max:"100"});
+          wInp.addEventListener("input",e=>{state.goalSubWeights[subFormKey]=e.target.value});
+          addRow.appendChild(wInp);
+          addRow.appendChild(h("button",{className:"goal-add-btn",style:"padding:6px 10px;font-size:11px",onClick:()=>addSubtask(scope,g.id)},"+"));
+          subWrap.appendChild(addRow);
           item.appendChild(subWrap);
         }
         ul.appendChild(item);
@@ -2181,11 +2686,26 @@ function renderPeriodGoals(scope){
         const doneCount=g.subtasks.filter(s=>s.done).length;
         r.appendChild(h("span",{style:"font-size:10px;color:#64748b;font-family:monospace"},doneCount+"/"+g.subtasks.length));
       }
+      // Hours display
+      const totalHrs=calcGoalTotalHours(g.id);
+      const directHrs=calcGoalDirectHours(g.id);
+      if(totalHrs>0){
+        const hrsText=totalHrs===directHrs?fmtHours(totalHrs):fmtHours(directHrs)+"(+"+fmtHours(totalHrs-directHrs)+")";
+        r.appendChild(h("span",{style:"font-size:10px;color:#f59e0b;font-family:'JetBrains Mono',monospace;font-weight:700;flex-shrink:0"},hrsText));
+      }
       r.appendChild(h("button",{className:"goal-del",onClick:()=>{
         if(hasSub&&!confirm("서브태스크 "+g.subtasks.length+"개도 함께 삭제됩니다. 계속할까요?"))return;
         removePeriodGoal(scope,g.id);
       }},"✕"));
       item.appendChild(r);
+      // Ancestry breadcrumb
+      const anc=renderAncestry(g);
+      if(anc)item.appendChild(anc);
+      // Child goals count
+      const children=getChildGoals(g.id);
+      if(children.length>0){
+        item.appendChild(h("div",{style:"font-size:9px;color:#0d9488;padding:2px 0"},"└ 하위 목표 "+children.length+"개"));
+      }
       // Progress: auto bar (with subtasks) or manual slider (without)
       const pr=h("div",{className:"goal-progress-row"});
       if(hasSub){
@@ -2323,6 +2843,13 @@ function renderPeriodGoals(scope){
           subWrap.appendChild(periodRow);
         }
         // Editable memo field (always shown in expanded)
+
+        // Parent goal edit (multi-scope, not for longterm)
+        if(scope!=="longterm"){
+          const parentEditEl=renderParentEditSelectors(scope,g);
+          if(parentEditEl)subWrap.appendChild(parentEditEl);
+        }
+
         if(!g.memo){
           const memoRow=h("div",{style:"margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #1e293b"});
           const memoInp=h("input",{className:"goal-input",placeholder:"메모 추가...",value:"",style:"width:100%;font-size:11px;padding:6px 8px"});
@@ -2574,24 +3101,6 @@ function renderCatPicker(){
   phdr.appendChild(h("span",{className:"picker-title"},"📋 카테고리 선택"));
   phdr.appendChild(h("span",{className:"picker-time"},state.activeSlot+" · "+(state.mode==="plan"?"Plan":"Actual")));
   sheet.appendChild(phdr);
-
-  const mrow=h("div",{className:"memo-row"});
-  const mfield=h("input",{className:"memo-field",placeholder:"메모 (선택사항)",value:state.memoInput});
-  mfield.addEventListener("input",e=>{state.memoInput=e.target.value});
-  mfield.addEventListener("keydown",e=>{
-    if(e.key==="Enter"&&state.memoInput.trim()){
-      setSlot(state.activeSlot,state.mode==="plan"?"planMemo":"actualMemo",state.memoInput.trim());
-      state.memoInput="";render();
-    }
-  });
-  mrow.appendChild(mfield);
-  if(state.memoInput){
-    mrow.appendChild(h("button",{className:"memo-save-btn",onClick:()=>{
-      setSlot(state.activeSlot,state.mode==="plan"?"planMemo":"actualMemo",state.memoInput.trim());
-      state.memoInput="";render();
-    }},"저장"));
-  }
-  sheet.appendChild(mrow);
 
   const grid=h("div",{className:"cat-grid"});
   GROUPS.forEach(g=>{

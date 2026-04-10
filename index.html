@@ -346,7 +346,10 @@ let state={
   // Subtask input state (per goal expansion)
   goalSubInputs:{},
   goalSubWeights:{},
-  goalExpanded:{}
+  goalExpanded:{},
+  // Edit state: tracks which goal/book is being edited
+  editingGoal:null, // {scope, id, field} or null
+  editingBook:null   // {month, id} or null
 };
 
 // Cloud sync config
@@ -1626,6 +1629,96 @@ function toggleGoalExpand(scope,goalId){
   render();
 }
 
+// === Edit functions ===
+function startEditGoal(scope,id,field){
+  state.editingGoal={scope:scope,id:id,field:field||"name"};
+  render();
+}
+function cancelEditGoal(){
+  state.editingGoal=null;
+  render();
+}
+function updateDailyGoalField(dateKey,id,field,value){
+  const list=state.goalData.daily[dateKey]||[];
+  const g=list.find(x=>x.id===id);
+  if(g){g[field]=value;saveGoalData();}
+}
+function updatePeriodGoalField(scope,id,field,value){
+  const g=state.goalData[scope].find(x=>x.id===id);
+  if(g){g[field]=value;saveGoalData();}
+}
+function startEditBook(month,id){
+  state.editingBook={month:month,id:id};
+  render();
+}
+function cancelEditBook(){
+  state.editingBook=null;
+  render();
+}
+function updateBookField(month,id,field,value){
+  const mk=String(month);
+  const list=state.bookData[mk]||[];
+  const b=list.find(x=>x.id===id);
+  if(b){b[field]=value;saveBookData();}
+}
+
+// Render an inline editable name span (tap to edit)
+function renderEditableName(text,onSave,style){
+  const editing=state.editingGoal;
+  const span=h("span",{className:"goal-name",style:(style||"")+"cursor:pointer;",onClick:e=>{
+    e.stopPropagation();
+    // Replace span with input
+    const inp=document.createElement("input");
+    inp.className="goal-input";
+    inp.style="flex:1;font-size:12px;padding:4px 8px;min-width:60px;";
+    inp.value=text;
+    inp.addEventListener("blur",()=>{
+      if(inp.value.trim()&&inp.value.trim()!==text){onSave(inp.value.trim())}
+      state.editingGoal=null;
+      render();
+    });
+    inp.addEventListener("keydown",ev=>{
+      if(ev.key==="Enter"){inp.blur()}
+      if(ev.key==="Escape"){state.editingGoal=null;render()}
+    });
+    span.replaceWith(inp);
+    inp.focus();inp.select();
+  }},text);
+  return span;
+}
+
+// Render a category badge that opens a small category picker on tap
+function renderEditableCat(currentCat,onSelect){
+  const cat=catByCode(currentCat);
+  const badge=h("span",{className:"goal-cat-tag",style:"background:"+(cat?cat.color:"#475569")+";cursor:pointer",onClick:e=>{
+    e.stopPropagation();
+    // Create inline category picker overlay
+    const ov=document.createElement("div");
+    ov.style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:200;display:flex;align-items:center;justify-content:center";
+    ov.addEventListener("click",()=>ov.remove());
+    const box=document.createElement("div");
+    box.style="background:#1e293b;border-radius:16px;padding:16px;max-width:320px;width:90%;max-height:70vh;overflow-y:auto;border:1px solid #334155";
+    box.addEventListener("click",ev=>ev.stopPropagation());
+    box.appendChild(h("div",{style:"font-size:13px;font-weight:700;margin-bottom:10px;color:#e2e8f0"},"카테고리 변경"));
+    GROUPS.forEach(g=>{
+      box.appendChild(h("div",{style:"font-size:10px;font-weight:700;color:"+GC[g]+";margin:8px 0 4px;letter-spacing:.5px"},g+" · "+GN[g]));
+      const btns=document.createElement("div");
+      btns.style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px";
+      groupCats(g).forEach(c=>{
+        const b=h("button",{style:"padding:8px 4px;border-radius:8px;border:1px solid "+c.color+"40;background:"+(c.code===currentCat?c.color+"30":"#111827")+";cursor:pointer;text-align:center;font-size:11px;color:"+c.color+";font-weight:700;font-family:'JetBrains Mono',monospace",onClick:()=>{
+          onSelect(c.code);
+          ov.remove();
+        }},c.code);
+        btns.appendChild(b);
+      });
+      box.appendChild(btns);
+    });
+    ov.appendChild(box);
+    document.body.appendChild(ov);
+  }},currentCat);
+  return badge;
+}
+
 function renderDailyGoals(){
   const wrap=h("div",{});
   // Date nav (reuse current date)
@@ -1715,16 +1808,23 @@ function renderDailyGoals(){
   form.appendChild(row);
   wrap.appendChild(form);
 
-  // Carryover: find incomplete daily goals from previous days
+  // Carryover: find incomplete daily goals from days that have ALREADY PASSED (based on today)
+  // "Already passed" means yesterday or earlier — today is still in progress
   const carryoverGoals=[];
   (function(){
-    const curDate=new Date(state.year,state.month-1,state.day);
-    // Look back up to 30 days for incomplete goals
+    const today=new Date();
+    const todayDate=new Date(today.getFullYear(),today.getMonth(),today.getDate());
+    const viewDate=new Date(state.year,state.month-1,state.day);
+    // Only show carryover when viewing today or a future date
+    if(viewDate<todayDate)return;
+    // Look back from YESTERDAY (i=1), not today — today is still in progress
     for(let i=1;i<=30;i++){
-      const prev=new Date(curDate);
-      prev.setDate(prev.getDate()-i);
-      if(prev.getFullYear()!==state.year)break;
-      const pk=(prev.getMonth()+1)+"-"+prev.getDate();
+      const checkDate=new Date(todayDate);
+      checkDate.setDate(checkDate.getDate()-i);
+      if(checkDate.getFullYear()!==state.year)break;
+      const pk=(checkDate.getMonth()+1)+"-"+checkDate.getDate();
+      // Skip the date we're currently viewing (those show as regular goals)
+      if(pk===state.month+"-"+state.day)continue;
       const plist=state.goalData.daily[pk]||[];
       plist.forEach(g=>{
         if(!g.done)carryoverGoals.push({goal:g,fromDate:pk,origKey:pk});
@@ -1776,8 +1876,49 @@ function renderDailyGoals(){
       const r=h("div",{className:"goal-item-row"});
       const chk=h("button",{className:"goal-check"+(g.done?" checked":""),onClick:()=>toggleDailyGoal(g.id)},g.done?"✓":"");
       r.appendChild(chk);
-      r.appendChild(h("span",{className:"goal-cat-tag",style:"background:"+(cat?cat.color:"#475569")},g.cat));
-      r.appendChild(h("span",{className:"goal-name"+(g.done?" done":"")},g.name));
+      r.appendChild(renderEditableCat(g.cat,newCat=>{
+        updateDailyGoalField(k,g.id,"cat",newCat);render();
+      }));
+      r.appendChild(renderEditableName(g.name,newName=>{
+        updateDailyGoalField(k,g.id,"name",newName);
+      },g.done?"text-decoration:line-through;color:#64748b;":""));
+      // Date move button
+      r.appendChild(h("button",{className:"goal-del",style:"font-size:11px;padding:2px 4px;color:#94a3b8",onClick:e=>{
+        e.stopPropagation();
+        // Show date move overlay
+        const ov=document.createElement("div");
+        ov.style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:200;display:flex;align-items:center;justify-content:center";
+        ov.addEventListener("click",()=>ov.remove());
+        const box=document.createElement("div");
+        box.style="background:#1e293b;border-radius:16px;padding:16px;max-width:320px;width:90%;border:1px solid #334155";
+        box.addEventListener("click",ev=>ev.stopPropagation());
+        box.appendChild(h("div",{style:"font-size:13px;font-weight:700;margin-bottom:12px;color:#e2e8f0"},"📅 날짜 이동"));
+        const dateRow=h("div",{style:"display:flex;gap:8px;align-items:center;margin-bottom:12px"});
+        const mSel=h("select",{className:"goal-cat-select",style:"padding:6px 8px"});
+        for(let m=1;m<=12;m++){const o=h("option",{value:String(m)},m+"월");if(m===state.month)o.selected=true;mSel.appendChild(o)}
+        dateRow.appendChild(mSel);
+        const dSel=h("select",{className:"goal-cat-select",style:"padding:6px 8px"});
+        for(let d=1;d<=31;d++){const o=h("option",{value:String(d)},d+"일");if(d===state.day)o.selected=true;dSel.appendChild(o)}
+        dateRow.appendChild(dSel);
+        box.appendChild(dateRow);
+        const moveBtn=h("button",{className:"goal-add-btn",style:"width:100%;padding:10px",onClick:()=>{
+          const newM=parseInt(mSel.value);
+          const newD=parseInt(dSel.value);
+          const maxD=daysInMonth(state.year,newM);
+          const finalD=Math.min(newD,maxD);
+          const newKey=newM+"-"+finalD;
+          if(newKey===k){ov.remove();return;}
+          // Move goal: remove from current date, add to new date
+          if(!state.goalData.daily[newKey])state.goalData.daily[newKey]=[];
+          state.goalData.daily[newKey].push(g);
+          state.goalData.daily[k]=state.goalData.daily[k].filter(x=>x.id!==g.id);
+          if(state.goalData.daily[k].length===0)delete state.goalData.daily[k];
+          saveGoalData();ov.remove();render();
+        }},"이동");
+        box.appendChild(moveBtn);
+        ov.appendChild(box);
+        document.body.appendChild(ov);
+      }},"📅"));
       r.appendChild(h("button",{className:"goal-del",onClick:()=>removeDailyGoal(g.id)},"✕"));
       item.appendChild(r);
       ul.appendChild(item);
@@ -1927,16 +2068,27 @@ function renderPeriodGoals(scope){
     return !(ey<state.goalLtStartYear||sy>state.goalLtEndYear);
   });
 
-  // Weekly carryover: show incomplete goals from previous weeks in red
+  // Weekly carryover: show incomplete goals from weeks that have ALREADY PASSED (based on today's date)
   let weeklyCarryover=[];
   if(scope==="weekly"){
     const allWeekly=state.goalData.weekly||[];
-    // Look for incomplete weekly goals from earlier weeks in same year
+    const today=new Date();
+    const todayY=today.getFullYear();
+    const todayM=today.getMonth()+1;
+    const todayD=today.getDate();
+    const todayWeekIdx=weekIdxOfDay(todayY,todayM,todayD);
+    // Only show carryover for weeks whose period has ended (strictly before today's week)
     weeklyCarryover=allWeekly.filter(g=>{
       if(g.year!==state.year||(g.progress||0)>=100)return false;
-      // Must be from a previous period (earlier month, or same month but earlier week)
-      if(g.month<state.goalWeekMonth)return true;
-      if(g.month===state.goalWeekMonth&&g.weekIdx<state.goalWeekIdx)return true;
+      // Compare against today's actual position, not UI selection
+      // Past year's goals
+      if(g.year<todayY)return true;
+      if(g.year>todayY)return false;
+      // Same year: compare month+week
+      if(g.month<todayM)return true;
+      if(g.month>todayM)return false;
+      // Same month: only if week has already passed
+      if(g.weekIdx<todayWeekIdx)return true;
       return false;
     });
   }
@@ -2019,8 +2171,12 @@ function renderPeriodGoals(scope){
       // Expand toggle
       const toggleBtn=h("button",{className:"goal-del",style:"font-size:11px;padding:2px 4px;color:#94a3b8",onClick:()=>toggleGoalExpand(scope,g.id)},isExpanded?"▼":"▶");
       r.appendChild(toggleBtn);
-      r.appendChild(h("span",{className:"goal-cat-tag",style:"background:"+(cat?cat.color:"#475569")},g.cat));
-      r.appendChild(h("span",{className:"goal-name"},g.name));
+      r.appendChild(renderEditableCat(g.cat,newCat=>{
+        updatePeriodGoalField(scope,g.id,"cat",newCat);render();
+      }));
+      r.appendChild(renderEditableName(g.name,newName=>{
+        updatePeriodGoalField(scope,g.id,"name",newName);
+      }));
       if(hasSub){
         const doneCount=g.subtasks.filter(s=>s.done).length;
         r.appendChild(h("span",{style:"font-size:10px;color:#64748b;font-family:monospace"},doneCount+"/"+g.subtasks.length));
@@ -2052,7 +2208,12 @@ function renderPeriodGoals(scope){
         pr.appendChild(valSpan);
       }
       item.appendChild(pr);
-      // Meta
+      // Meta: editable period display
+      if(scope==="weekly"){
+        const meta=h("div",{className:"goal-meta",style:"cursor:pointer",onClick:()=>toggleGoalExpand(scope,g.id)});
+        meta.appendChild(h("span",{className:"goal-meta-item"},"📆 "+g.month+"월 "+g.weekIdx+"주 ("+weekDateRange(state.year,g.month,g.weekIdx)+")"));
+        item.appendChild(meta);
+      }
       if(scope==="monthly"&&(g.startMonth||g.endMonth)){
         const sm=g.startMonth||g.month;
         const em=g.endMonth||g.month;
@@ -2069,10 +2230,110 @@ function renderPeriodGoals(scope){
         meta.appendChild(h("span",{className:"goal-meta-item"},"🎯 "+rangeTxt));
         item.appendChild(meta);
       }
-      if(g.memo)item.appendChild(h("div",{className:"goal-memo"},g.memo));
+      // Editable memo (inline)
+      if(g.memo){
+        const memoDiv=h("div",{className:"goal-memo",style:"cursor:pointer",onClick:e=>{
+          e.stopPropagation();
+          const inp=document.createElement("input");
+          inp.className="goal-input";
+          inp.style="width:100%;font-size:11px;padding:6px 8px;margin-top:4px;";
+          inp.value=g.memo;
+          inp.addEventListener("blur",()=>{
+            updatePeriodGoalField(scope,g.id,"memo",inp.value.trim());
+            render();
+          });
+          inp.addEventListener("keydown",ev=>{if(ev.key==="Enter")inp.blur();if(ev.key==="Escape")render()});
+          memoDiv.replaceWith(inp);
+          inp.focus();
+        }},g.memo);
+        item.appendChild(memoDiv);
+      }
       // Subtasks (when expanded)
       if(isExpanded){
         const subWrap=h("div",{style:"margin-top:6px;padding:8px;background:#111827;border-radius:8px;border:1px dashed #1e293b"});
+
+        // Period edit controls
+        if(scope==="weekly"){
+          const periodRow=h("div",{style:"display:flex;gap:6px;align-items:center;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #1e293b;font-size:11px"});
+          periodRow.appendChild(h("span",{style:"color:#64748b;font-size:10px;flex-shrink:0"},"📆 기간:"));
+          const mSel=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px"});
+          for(let m=1;m<=12;m++){const o=h("option",{value:String(m)},m+"월");if(m===g.month)o.selected=true;mSel.appendChild(o)}
+          mSel.addEventListener("change",e=>{
+            const nm=parseInt(e.target.value);
+            updatePeriodGoalField(scope,g.id,"month",nm);
+            const wm=weeksInMonth(state.year,nm);
+            if(g.weekIdx>wm)updatePeriodGoalField(scope,g.id,"weekIdx",wm);
+            render();
+          });
+          periodRow.appendChild(mSel);
+          const wSel=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px"});
+          const wm=weeksInMonth(state.year,g.month);
+          for(let w=1;w<=wm;w++){const o=h("option",{value:String(w)},w+"주");if(w===g.weekIdx)o.selected=true;wSel.appendChild(o)}
+          wSel.addEventListener("change",e=>{updatePeriodGoalField(scope,g.id,"weekIdx",parseInt(e.target.value));render()});
+          periodRow.appendChild(wSel);
+          subWrap.appendChild(periodRow);
+        }
+        if(scope==="monthly"){
+          const periodRow=h("div",{style:"display:flex;gap:6px;align-items:center;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #1e293b;font-size:11px"});
+          periodRow.appendChild(h("span",{style:"color:#64748b;font-size:10px;flex-shrink:0"},"🗓 기간:"));
+          const smSel=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px"});
+          for(let m=1;m<=12;m++){const o=h("option",{value:String(m)},m+"월");if(m===(g.startMonth||g.month))o.selected=true;smSel.appendChild(o)}
+          smSel.addEventListener("change",e=>{
+            const v=parseInt(e.target.value);
+            updatePeriodGoalField(scope,g.id,"startMonth",v);
+            updatePeriodGoalField(scope,g.id,"month",v);
+            if((g.endMonth||g.month)<v)updatePeriodGoalField(scope,g.id,"endMonth",v);
+            render();
+          });
+          periodRow.appendChild(smSel);
+          periodRow.appendChild(h("span",{style:"color:#64748b"},"~"));
+          const emSel=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px"});
+          for(let m=1;m<=12;m++){const o=h("option",{value:String(m)},m+"월");if(m===(g.endMonth||g.month))o.selected=true;emSel.appendChild(o)}
+          emSel.addEventListener("change",e=>{
+            const v=parseInt(e.target.value);
+            updatePeriodGoalField(scope,g.id,"endMonth",v);
+            if((g.startMonth||g.month)>v){updatePeriodGoalField(scope,g.id,"startMonth",v);updatePeriodGoalField(scope,g.id,"month",v)}
+            render();
+          });
+          periodRow.appendChild(emSel);
+          subWrap.appendChild(periodRow);
+        }
+        if(scope==="longterm"){
+          const periodRow=h("div",{style:"display:flex;gap:6px;align-items:center;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #1e293b;font-size:11px"});
+          periodRow.appendChild(h("span",{style:"color:#64748b;font-size:10px;flex-shrink:0"},"🎯 기간:"));
+          const sySel=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px"});
+          for(let y=2026;y<=2040;y++){const o=h("option",{value:String(y)},y+"");if(y===(g.startYear||g.targetYear))o.selected=true;sySel.appendChild(o)}
+          sySel.addEventListener("change",e=>{
+            const v=parseInt(e.target.value);
+            updatePeriodGoalField(scope,g.id,"startYear",v);
+            if((g.endYear||g.targetYear)<v)updatePeriodGoalField(scope,g.id,"endYear",v);
+            render();
+          });
+          periodRow.appendChild(sySel);
+          periodRow.appendChild(h("span",{style:"color:#64748b"},"~"));
+          const eySel=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px"});
+          for(let y=2026;y<=2040;y++){const o=h("option",{value:String(y)},y+"");if(y===(g.endYear||g.targetYear))o.selected=true;eySel.appendChild(o)}
+          eySel.addEventListener("change",e=>{
+            const v=parseInt(e.target.value);
+            updatePeriodGoalField(scope,g.id,"endYear",v);
+            if((g.startYear||g.targetYear)>v)updatePeriodGoalField(scope,g.id,"startYear",v);
+            render();
+          });
+          periodRow.appendChild(eySel);
+          subWrap.appendChild(periodRow);
+        }
+        // Editable memo field (always shown in expanded)
+        if(!g.memo){
+          const memoRow=h("div",{style:"margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #1e293b"});
+          const memoInp=h("input",{className:"goal-input",placeholder:"메모 추가...",value:"",style:"width:100%;font-size:11px;padding:6px 8px"});
+          memoInp.addEventListener("blur",()=>{
+            if(memoInp.value.trim()){updatePeriodGoalField(scope,g.id,"memo",memoInp.value.trim());render()}
+          });
+          memoInp.addEventListener("keydown",ev=>{if(ev.key==="Enter")memoInp.blur()});
+          memoRow.appendChild(memoInp);
+          subWrap.appendChild(memoRow);
+        }
+
         if(hasSub){
           g.subtasks.forEach(s=>{
             const sr=h("div",{style:"display:flex;align-items:center;gap:6px;padding:3px 0;font-size:11px"});
@@ -2200,8 +2461,30 @@ function renderBooks(){
     const list=h("div",{className:"book-list"});
     monthBooks.forEach(book=>{
       const item=h("div",{className:"book-item",style:"flex-wrap:wrap"});
-      item.appendChild(h("span",{className:"book-type-tag "+(book.type==="en"?"en":"kr")},book.type==="en"?"EN":"KR"));
-      item.appendChild(h("span",{className:"book-item-title"},book.title));
+      // Type toggle button
+      const typeBtn=h("button",{className:"book-type-tag "+(book.type==="en"?"en":"kr"),style:"cursor:pointer",onClick:()=>{
+        updateBookField(state.bookMonth,book.id,"type",book.type==="en"?"kr":"en");
+        render();
+      }},book.type==="en"?"EN":"KR");
+      item.appendChild(typeBtn);
+      // Editable title
+      const titleSpan=h("span",{className:"book-item-title",style:"cursor:pointer",onClick:e=>{
+        e.stopPropagation();
+        const inp=document.createElement("input");
+        inp.className="book-input";
+        inp.style="flex:1;font-size:13px;padding:4px 8px;";
+        inp.value=book.title;
+        inp.addEventListener("blur",()=>{
+          if(inp.value.trim()&&inp.value.trim()!==book.title){
+            updateBookField(state.bookMonth,book.id,"title",inp.value.trim());
+          }
+          render();
+        });
+        inp.addEventListener("keydown",ev=>{if(ev.key==="Enter")inp.blur();if(ev.key==="Escape")render()});
+        titleSpan.replaceWith(inp);
+        inp.focus();inp.select();
+      }},book.title);
+      item.appendChild(titleSpan);
       item.appendChild(h("button",{className:"book-del-btn",onClick:()=>removeBook(state.bookMonth,book.id)},"✕"));
       // Memo/감상
       const memoInput=h("input",{style:"width:100%;margin-top:6px;padding:6px 10px;border-radius:8px;border:1px solid #1e293b;background:#111827;color:#94a3b8;font-size:11px;font-family:'Noto Sans KR',sans-serif;outline:none",placeholder:"한줄 감상 입력...",value:book.memo||""});

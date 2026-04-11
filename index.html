@@ -1704,7 +1704,7 @@ function addDailyGoal(){
   if(Object.keys(pids).length>0)item.parentIds=pids;
   state.goalData.daily[k].push(item);
   state.goalNewName="";state.goalNewParentIds={};
-  saveGoalData();render();
+  saveGoalData();render(true);
 }
 function toggleDailyGoal(id){
   const k=state.month+"-"+state.day;
@@ -1743,7 +1743,7 @@ function addPeriodGoal(scope){
   }
   state.goalData[scope].push(item);
   state.goalNewName="";state.goalNewMemo="";state.goalNewDeadline="";state.goalNewParentIds={};
-  saveGoalData();render();
+  saveGoalData();render(true);
 }
 function updateGoalProgress(scope,id,progress){
   const g=state.goalData[scope].find(x=>x.id===id);
@@ -2198,7 +2198,7 @@ function renderDailyGoals(){
     if(c.code===state.goalNewCat)opt.selected=true;
     sel.appendChild(opt);
   });
-  sel.addEventListener("change",e=>{state.goalNewCat=e.target.value;state.goalNewParentId=null;render()});
+  sel.addEventListener("change",e=>{state.goalNewCat=e.target.value;state.goalNewParentIds={};render()});
   row.appendChild(sel);
   const inp=h("input",{className:"goal-input",placeholder:"오늘의 목표",value:state.goalNewName});
   inp.addEventListener("input",e=>{state.goalNewName=e.target.value});
@@ -2491,7 +2491,7 @@ function renderPeriodGoals(scope){
     if(c.code===state.goalNewCat)opt.selected=true;
     sel.appendChild(opt);
   });
-  sel.addEventListener("change",e=>{state.goalNewCat=e.target.value;state.goalNewParentId=null;render()});
+  sel.addEventListener("change",e=>{state.goalNewCat=e.target.value;state.goalNewParentIds={};render()});
   row1.appendChild(sel);
   const inp=h("input",{className:"goal-input",placeholder:placeholder,value:state.goalNewName});
   inp.addEventListener("input",e=>{state.goalNewName=e.target.value});

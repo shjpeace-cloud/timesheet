@@ -444,7 +444,7 @@ function cloudLoadGoals(){
     }
   }).catch(e=>{console.error("Cloud goal load failed:",e)});
 }
-function showSave(s){state.saveStatus=s;render();setTimeout(()=>{state.saveStatus=null;render()},1500)}
+function showSave(s){state.saveStatus=s;render(true);setTimeout(()=>{state.saveStatus=null;render(true)},1500)}
 function dateKey(){return state.month+"-"+state.day}
 function catByCode(c){return CATEGORIES.find(x=>x.code===c)||null}
 function groupCats(g){return CATEGORIES.filter(c=>c.group===g)}
@@ -542,7 +542,8 @@ function setSlot(time,field,val){
   if(!state.data.entries[k])state.data.entries[k]={};
   if(!state.data.entries[k][time])state.data.entries[k][time]={};
   state.data.entries[k][time][field]=val;
-  save();render();
+  _isEditing=false;
+  save();render(true);
 }
 
 // Show goal picker overlay for linking a time slot to a goal
@@ -573,6 +574,7 @@ function showGoalPicker(time,goalField,catCode){
   customInp.addEventListener("blur",function(){customInp.style.borderColor="#334155"});
   customInp.addEventListener("keydown",function(e){
     if(e.key==="Enter"&&customInp.value.trim()){
+      _isEditing=false;
       setSlot(time,goalField,customInp.value.trim());
       ov.remove();
     }
@@ -580,6 +582,7 @@ function showGoalPicker(time,goalField,catCode){
   customRow.appendChild(customInp);
   const customBtn=h("button",{style:"padding:8px 12px;border-radius:8px;border:none;background:#0d9488;color:#fff;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0",onClick:function(){
     if(customInp.value.trim()){
+      _isEditing=false;
       setSlot(time,goalField,customInp.value.trim());
       ov.remove();
     }
@@ -622,7 +625,7 @@ function clearSlot(time,field){
   if(field==="plan"){delete state.data.entries[k][time]["planMemo"];delete state.data.entries[k][time]["planGoalId"]}
   if(field==="actual"){delete state.data.entries[k][time]["actualMemo"];delete state.data.entries[k][time]["actualGoalId"]}
   if(Object.keys(state.data.entries[k][time]).length===0)delete state.data.entries[k][time];
-  save();render();
+  _isEditing=false;save();render(true);
 }
 
 function dailySummary(){
@@ -1074,7 +1077,14 @@ function renderInput(){
     const legacyMemo=sd[memoField];
     const goalCol=h("div",{style:"flex-shrink:0;display:flex;align-items:center;min-width:80px;max-width:140px"});
     if(cat){
-      if(linkedGoalId){
+      if(typeof linkedGoalId==="string"){
+        // Direct text input (custom goal text)
+        const goalTag=h("span",{style:"font-size:12px;color:#e2e8f0;background:#1e293b;padding:3px 8px;border-radius:6px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:135px;display:block;border:1px solid #334155",onClick:e=>{
+          e.stopPropagation();
+          showGoalPicker(time,goalField,cat.code);
+        }},linkedGoalId);
+        goalCol.appendChild(goalTag);
+      }else if(typeof linkedGoalId==="number"){
         const found=findGoalById(linkedGoalId);
         if(found){
           const goalTag=h("span",{style:"font-size:12px;color:#e2e8f0;background:#1e293b;padding:3px 8px;border-radius:6px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:135px;display:block;border:1px solid #334155",onClick:e=>{
@@ -1085,13 +1095,6 @@ function renderInput(){
         }else{
           goalCol.appendChild(h("span",{style:"font-size:12px;color:#475569;cursor:pointer",onClick:e=>{e.stopPropagation();showGoalPicker(time,goalField,cat.code)}},"🎯"));
         }
-      }else if(typeof linkedGoalId==="string"){
-        // Direct text input (custom goal text)
-        const goalTag=h("span",{style:"font-size:12px;color:#e2e8f0;background:#1e293b;padding:3px 8px;border-radius:6px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:135px;display:block;border:1px solid #334155",onClick:e=>{
-          e.stopPropagation();
-          showGoalPicker(time,goalField,cat.code);
-        }},linkedGoalId);
-        goalCol.appendChild(goalTag);
       }else if(legacyMemo){
         // Show legacy memo as goal text
         const goalTag=h("span",{style:"font-size:12px;color:#94a3b8;background:#1e293b;padding:3px 8px;border-radius:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:135px;display:block;border:1px solid #1e293b;cursor:pointer",onClick:e=>{

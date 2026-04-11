@@ -542,8 +542,7 @@ function setSlot(time,field,val){
   if(!state.data.entries[k])state.data.entries[k]={};
   if(!state.data.entries[k][time])state.data.entries[k][time]={};
   state.data.entries[k][time][field]=val;
-  _isEditing=false;
-  save();render(true);
+  save();render();
 }
 
 // Show goal picker overlay for linking a time slot to a goal
@@ -571,7 +570,7 @@ function showGoalPicker(time,goalField,catCode){
   const customRow=h("div",{style:"display:flex;gap:6px;margin-bottom:8px"});
   const customInp=h("input",{style:"flex:1;padding:8px 10px;border-radius:8px;border:1px solid #334155;background:#111827;color:#e2e8f0;font-size:12px;font-family:'Noto Sans KR',sans-serif;outline:none",placeholder:"직접 입력..."});
   customInp.addEventListener("focus",function(){customInp.style.borderColor="#0d9488"});
-  customInp.addEventListener("blur",function(){customInp.style.borderColor="#334155";_isEditing=false;});
+  customInp.addEventListener("blur",function(){customInp.style.borderColor="#334155"});
   customInp.addEventListener("keydown",function(e){
     if(e.key==="Enter"&&customInp.value.trim()){
       setSlot(time,goalField,customInp.value.trim());
@@ -1084,15 +1083,15 @@ function renderInput(){
           }},found.goal.name);
           goalCol.appendChild(goalTag);
         }else{
-          // Not a registered goal ID → treat as custom direct text
-          const goalTag=h("span",{style:"font-size:12px;color:#e2e8f0;background:#1e293b;padding:3px 8px;border-radius:6px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:135px;display:block;border:1px solid #334155",onClick:e=>{
-            e.stopPropagation();
-            showGoalPicker(time,goalField,cat.code);
-          }},linkedGoalId);
-          goalCol.appendChild(goalTag);
+          goalCol.appendChild(h("span",{style:"font-size:12px;color:#475569;cursor:pointer",onClick:e=>{e.stopPropagation();showGoalPicker(time,goalField,cat.code)}},"🎯"));
         }
-      }else if(false){
-        // merged into above
+      }else if(typeof linkedGoalId==="string"){
+        // Direct text input (custom goal text)
+        const goalTag=h("span",{style:"font-size:12px;color:#e2e8f0;background:#1e293b;padding:3px 8px;border-radius:6px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:135px;display:block;border:1px solid #334155",onClick:e=>{
+          e.stopPropagation();
+          showGoalPicker(time,goalField,cat.code);
+        }},linkedGoalId);
+        goalCol.appendChild(goalTag);
       }else if(legacyMemo){
         // Show legacy memo as goal text
         const goalTag=h("span",{style:"font-size:12px;color:#94a3b8;background:#1e293b;padding:3px 8px;border-radius:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:135px;display:block;border:1px solid #1e293b;cursor:pointer",onClick:e=>{
@@ -1549,7 +1548,7 @@ function addBook(month,type,title){
   if(!state.bookData[mk])state.bookData[mk]=[];
   state.bookData[mk].push({type:type,title:title,memo:"",id:Date.now()});
   saveBookData();
-  render();
+  render(true);
 }
 function updateBookMemo(month,id,memo){
   const mk=String(month);
@@ -1767,7 +1766,7 @@ function addSubtask(scope,goalId){
   state.goalSubInputs[key]="";
   state.goalSubWeights[key]="";
   recomputeProgress(scope,goalId);
-  saveGoalData();render();
+  saveGoalData();render(true);
 }
 function toggleSubtask(scope,goalId,subId){
   const g=state.goalData[scope].find(x=>x.id===goalId);
@@ -1850,13 +1849,13 @@ function findGoalById(id){
       var keys=Object.keys(state.goalData.daily||{});
       for(var k=0;k<keys.length;k++){
         var list=state.goalData.daily[keys[k]]||[];
-        var g=list.find(function(x){return x.id===id});
-        if(g)return{goal:g,scope:"daily",dateKey:keys[k]};
+        var dg=list.find(function(x){return x.id===id});
+        if(dg)return{goal:dg,scope:"daily",dateKey:keys[k]};
       }
     }else{
       var arr=state.goalData[scope]||[];
-      var g=arr.find(function(x){return x.id===id});
-      if(g)return{goal:g,scope:scope};
+      var pg=arr.find(function(x){return x.id===id});
+      if(pg)return{goal:pg,scope:scope};
     }
   }
   return null;
@@ -1917,18 +1916,33 @@ function getChildGoals(goalId){
 }
 
 // Get all active (non-100%) goals matching a category, for slot goal linking
+// Filters by current date's applicable period
 function getActiveGoalsForCat(cat){
   var results=[];
-  // Collect from all scopes, ordered longterm > monthly > weekly > daily(today)
-  ["longterm","monthly","weekly"].forEach(function(scope){
-    (state.goalData[scope]||[]).forEach(function(g){
-      if(g.cat===cat&&(g.progress||0)<100){
-        results.push({scope:scope,goal:g});
-      }
-    });
+  var curM=state.month;
+  var curD=state.day;
+  var curWk=weekIdxOfDay(state.year,curM,curD);
+  // Longterm: current year falls within range
+  (state.goalData.longterm||[]).forEach(function(g){
+    if(g.cat!==cat||(g.progress||0)>=100)return;
+    var sy=g.startYear||g.targetYear||state.year;
+    var ey=g.endYear||g.targetYear||state.year;
+    if(sy<=state.year&&state.year<=ey)results.push({scope:"longterm",goal:g});
+  });
+  // Monthly: current month falls within start~end range
+  (state.goalData.monthly||[]).forEach(function(g){
+    if(g.cat!==cat||(g.progress||0)>=100||g.year!==state.year)return;
+    var sm=g.startMonth||g.month;
+    var em=g.endMonth||g.month;
+    if(sm<=curM&&curM<=em)results.push({scope:"monthly",goal:g});
+  });
+  // Weekly: current month + week matches
+  (state.goalData.weekly||[]).forEach(function(g){
+    if(g.cat!==cat||(g.progress||0)>=100)return;
+    if(g.year===state.year&&g.month===curM&&g.weekIdx===curWk)results.push({scope:"weekly",goal:g});
   });
   // Daily: current date
-  var dk=state.month+"-"+state.day;
+  var dk=curM+"-"+curD;
   (state.goalData.daily[dk]||[]).forEach(function(g){
     if(g.cat===cat&&!g.done){
       results.push({scope:"daily",goal:g});
@@ -1957,12 +1971,15 @@ function calcGoalDirectHours(goalId){
 }
 
 // Calculate total hours for a goal INCLUDING all descendant goals' hours
-function calcGoalTotalHours(goalId){
+function calcGoalTotalHours(goalId,_visited){
+  if(!_visited)_visited={};
+  if(_visited[goalId])return 0; // prevent circular reference
+  _visited[goalId]=true;
   var direct=calcGoalDirectHours(goalId);
   var children=getChildGoals(goalId);
   var childHours=0;
   for(var i=0;i<children.length;i++){
-    childHours+=calcGoalTotalHours(children[i].goal.id);
+    childHours+=calcGoalTotalHours(children[i].goal.id,_visited);
   }
   return direct+childHours;
 }
@@ -2546,9 +2563,9 @@ function renderPeriodGoals(scope){
   form.appendChild(row2);
   wrap.appendChild(form);
 
-  // Filter list (hide 100% completed)
+  // Filter list: separate active and completed
   const list=state.goalData[scope]||[];
-  let filtered=list.filter(g=>(g.progress||0)<100);
+  let filtered=list;
   if(scope==="weekly")filtered=filtered.filter(g=>g.year===state.year&&g.month===state.goalWeekMonth&&g.weekIdx===state.goalWeekIdx);
   else if(scope==="monthly")filtered=filtered.filter(g=>{
     if(g.year!==state.year)return false;
@@ -2561,6 +2578,8 @@ function renderPeriodGoals(scope){
     const ey=g.endYear||g.targetYear||state.year;
     return !(ey<state.goalLtStartYear||sy>state.goalLtEndYear);
   });
+  const activeGoals=filtered.filter(g=>(g.progress||0)<100);
+  const completedGoals=filtered.filter(g=>(g.progress||0)>=100);
 
   // Weekly carryover: show incomplete goals from weeks that have ALREADY PASSED (based on today's date)
   let weeklyCarryover=[];
@@ -2588,7 +2607,7 @@ function renderPeriodGoals(scope){
   }
 
   const hasCarryover=weeklyCarryover.length>0;
-  if(filtered.length===0&&!hasCarryover){
+  if(activeGoals.length===0&&completedGoals.length===0&&!hasCarryover){
     wrap.appendChild(h("div",{className:"goal-empty"},"목표가 없습니다"));
   }else{
     const ul=h("div",{className:"goal-list"});
@@ -2694,12 +2713,12 @@ function renderPeriodGoals(scope){
         }
         ul.appendChild(item);
       });
-      if(filtered.length>0){
+      if(activeGoals.length>0){
         ul.appendChild(h("div",{style:"border-top:1px solid #1e293b;margin:8px 0"}));
       }
     }
 
-    filtered.forEach(g=>{
+    activeGoals.forEach(g=>{
       const cat=catByCode(g.cat);
       const item=h("div",{className:"goal-item"});
       const expKey=scope+"-"+g.id;
@@ -2928,6 +2947,36 @@ function renderPeriodGoals(scope){
       ul.appendChild(item);
     });
     wrap.appendChild(ul);
+
+    // Completed goals section
+    if(completedGoals.length>0){
+      const doneSection=h("div",{style:"margin-top:12px"});
+      doneSection.appendChild(h("div",{style:"font-size:10px;color:#064e3b;font-weight:700;padding:4px 0;margin-bottom:4px;border-bottom:1px solid #064e3b"},"✅ 완료된 목표 ("+completedGoals.length+")"));
+      const doneList=h("div",{className:"goal-list"});
+      completedGoals.forEach(g=>{
+        const cat=catByCode(g.cat);
+        const item=h("div",{className:"goal-item done",style:"opacity:.5"});
+        const r=h("div",{className:"goal-item-row"});
+        r.appendChild(h("span",{style:"font-size:14px;color:#10b981;flex-shrink:0"},"✓"));
+        r.appendChild(h("span",{className:"goal-cat-tag",style:"background:"+(cat?cat.color:"#475569")},g.cat));
+        r.appendChild(h("span",{className:"goal-name done"},g.name));
+        const doneHrs=calcGoalTotalHours(g.id);
+        if(doneHrs>0)r.appendChild(h("span",{style:"font-size:10px;color:#f59e0b;font-family:'JetBrains Mono',monospace;font-weight:700;flex-shrink:0"},fmtHours(doneHrs)));
+        r.appendChild(h("button",{className:"goal-del",onClick:()=>{
+          if(confirm("완료된 목표를 삭제할까요?"))removePeriodGoal(scope,g.id);
+        }},"✕"));
+        item.appendChild(r);
+        const pr=h("div",{className:"goal-progress-row"});
+        const track=h("div",{style:"flex:1;height:6px;background:#1e293b;border-radius:3px;overflow:hidden"});
+        track.appendChild(h("div",{style:"height:100%;width:100%;background:#10b981"}));
+        pr.appendChild(track);
+        pr.appendChild(h("span",{className:"goal-progress-val",style:"color:#10b981"},"100%"));
+        item.appendChild(pr);
+        doneList.appendChild(item);
+      });
+      doneSection.appendChild(doneList);
+      wrap.appendChild(doneSection);
+    }
   }
   return wrap;
 }

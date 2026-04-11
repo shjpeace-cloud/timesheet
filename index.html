@@ -545,6 +545,13 @@ function setSlot(time,field,val){
   _isEditing=false;
   save();render(true);
 }
+// Silent version: set slot data without triggering save/render (for batch operations)
+function setSlotSilent(time,field,val){
+  const k=dateKey();
+  if(!state.data.entries[k])state.data.entries[k]={};
+  if(!state.data.entries[k][time])state.data.entries[k][time]={};
+  state.data.entries[k][time][field]=val;
+}
 
 // Show goal picker overlay for linking a time slot to a goal
 function showGoalPicker(time,goalField,catCode){
@@ -1549,7 +1556,9 @@ function renderCharts(ys){
 function addBook(month,type,title){
   const mk=String(month);
   if(!state.bookData[mk])state.bookData[mk]=[];
-  state.bookData[mk].push({type:type,title:title,memo:"",id:Date.now()});
+  const today=new Date();
+  const dateStr=(today.getMonth()+1)+"/"+today.getDate();
+  state.bookData[mk].push({type:type,title:title,memo:"",id:Date.now(),date:dateStr});
   saveBookData();
   render(true);
 }
@@ -3098,6 +3107,10 @@ function renderBooks(){
         inp.focus();inp.select();
       }},book.title);
       item.appendChild(titleSpan);
+      // Date display
+      if(book.date){
+        item.appendChild(h("span",{style:"font-size:10px;color:#64748b;font-family:'JetBrains Mono',monospace;flex-shrink:0"},book.date));
+      }
       item.appendChild(h("button",{className:"book-del-btn",onClick:()=>removeBook(state.bookMonth,book.id)},"✕"));
       // Memo/감상
       const memoInput=h("input",{style:"width:100%;margin-top:6px;padding:6px 10px;border-radius:8px;border:1px solid #1e293b;background:#111827;color:#94a3b8;font-size:11px;font-family:'Noto Sans KR',sans-serif;outline:none",placeholder:"한줄 감상 입력...",value:book.memo||""});
@@ -3188,6 +3201,23 @@ function renderCatPicker(){
   phdr.appendChild(h("span",{className:"picker-time"},state.activeSlot+" · "+(state.mode==="plan"?"Plan":"Actual")));
   sheet.appendChild(phdr);
 
+  // Time range selector for batch input
+  const rangeRow=h("div",{style:"display:flex;gap:8px;align-items:center;margin-bottom:12px;padding:8px 10px;background:#111827;border-radius:10px"});
+  rangeRow.appendChild(h("span",{style:"font-size:11px;color:#94a3b8;flex-shrink:0"},state.activeSlot+" ~"));
+  const endSel=h("select",{className:"goal-cat-select",style:"padding:6px 8px;font-size:12px;flex:1"});
+  // Build end time options: from activeSlot+30min to 24:00
+  const startIdx=SLOTS.indexOf(state.activeSlot);
+  const singleOpt=h("option",{value:""},"이 슬롯만");
+  endSel.appendChild(singleOpt);
+  for(let si=startIdx+1;si<SLOTS.length;si++){
+    const hrs=((si-startIdx+1)*0.5);
+    const opt=h("option",{value:SLOTS[si]},SLOTS[si]+" ("+hrs+"h)");
+    endSel.appendChild(opt);
+  }
+  endSel.addEventListener("change",function(){state._batchEndSlot=endSel.value});
+  rangeRow.appendChild(endSel);
+  sheet.appendChild(rangeRow);
+
   const grid=h("div",{className:"cat-grid"});
   GROUPS.forEach(g=>{
     const pg=h("div",{});
@@ -3195,7 +3225,21 @@ function renderCatPicker(){
     const btns=h("div",{className:"picker-btns"});
     groupCats(g).forEach(c=>{
       const btn=h("button",{className:"picker-btn",style:"background:"+c.color+"18;border-color:"+c.color+"40",onClick:()=>{
-        setSlot(state.activeSlot,state.mode==="plan"?"plan":"actual",c.code);
+        const field=state.mode==="plan"?"plan":"actual";
+        const endSlot=state._batchEndSlot||"";
+        if(endSlot){
+          // Batch apply: from activeSlot to endSlot (inclusive)
+          const si=SLOTS.indexOf(state.activeSlot);
+          const ei=SLOTS.indexOf(endSlot);
+          for(let idx=si;idx<=ei;idx++){
+            setSlotSilent(SLOTS[idx],field,c.code);
+          }
+          save();
+        }else{
+          setSlotSilent(state.activeSlot,field,c.code);
+          save();
+        }
+        state._batchEndSlot="";
         state.showCatPicker=false;render();
       }});
       btn.appendChild(h("span",{className:"picker-code",style:"color:"+c.color},c.code));

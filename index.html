@@ -415,16 +415,16 @@ function saveGoalData(){
 }
 function cloudSaveGoals(){
   if(!CLOUD_URL)return;
-  state.syncStatus='syncing';render();
+  state.syncStatus='syncing';_isAutoRender=true;render();
   var body='action=saveGoals&year='+state.year+'&data='+encodeURIComponent(JSON.stringify(state.goalData));
   fetch(CLOUD_URL,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body,redirect:'follow'})
   .then(r=>r.json()).then(d=>{
-    state.syncStatus=d.status==='ok'?'synced':'error';render();
-    setTimeout(()=>{state.syncStatus=null;render()},2000);
+    state.syncStatus=d.status==='ok'?'synced':'error';_isAutoRender=true;render();
+    setTimeout(()=>{state.syncStatus=null;_isAutoRender=true;render()},2000);
   }).catch(e=>{
     console.error("Cloud goal save failed:",e);
-    state.syncStatus='error';render();
-    setTimeout(()=>{state.syncStatus=null;render()},2000);
+    state.syncStatus='error';_isAutoRender=true;render();
+    setTimeout(()=>{state.syncStatus=null;_isAutoRender=true;render()},2000);
   });
 }
 function cloudLoadGoals(){
@@ -439,7 +439,7 @@ function cloudLoadGoals(){
       if(hasCloud){
         state.goalData={daily:cloud.daily||{},weekly:cloud.weekly||[],monthly:cloud.monthly||[],longterm:cloud.longterm||[]};
         localStorage.setItem(goalStorageKey(),JSON.stringify(state.goalData));
-        render();
+        _isAutoRender=true;render();
       }
     }
   }).catch(e=>{console.error("Cloud goal load failed:",e)});
@@ -451,37 +451,37 @@ function groupCats(g){return CATEGORIES.filter(c=>c.group===g)}
 
 function cloudSave(){
   if(!CLOUD_URL)return;
-  state.syncStatus='syncing';render();
+  state.syncStatus='syncing';_isAutoRender=true;render();
   var body='action=save&year='+state.year+'&data='+encodeURIComponent(JSON.stringify(state.data));
   fetch(CLOUD_URL,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body,redirect:'follow'})
   .then(r=>r.json()).then(d=>{
-    state.syncStatus=d.status==='ok'?'synced':'error';render();
-    setTimeout(()=>{state.syncStatus=null;render()},2000);
+    state.syncStatus=d.status==='ok'?'synced':'error';_isAutoRender=true;render();
+    setTimeout(()=>{state.syncStatus=null;_isAutoRender=true;render()},2000);
   }).catch(e=>{
     console.error("Cloud save failed:",e);
-    state.syncStatus='error';render();
-    setTimeout(()=>{state.syncStatus=null;render()},2000);
+    state.syncStatus='error';_isAutoRender=true;render();
+    setTimeout(()=>{state.syncStatus=null;_isAutoRender=true;render()},2000);
   });
 }
 
 function cloudSaveBooks(){
   if(!CLOUD_URL)return;
-  state.syncStatus='syncing';render();
+  state.syncStatus='syncing';_isAutoRender=true;render();
   var body='action=saveBooks&year='+state.year+'&data='+encodeURIComponent(JSON.stringify(state.bookData));
   fetch(CLOUD_URL,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body,redirect:'follow'})
   .then(r=>r.json()).then(d=>{
-    state.syncStatus=d.status==='ok'?'synced':'error';render();
-    setTimeout(()=>{state.syncStatus=null;render()},2000);
+    state.syncStatus=d.status==='ok'?'synced':'error';_isAutoRender=true;render();
+    setTimeout(()=>{state.syncStatus=null;_isAutoRender=true;render()},2000);
   }).catch(e=>{
     console.error("Cloud book save failed:",e);
-    state.syncStatus='error';render();
-    setTimeout(()=>{state.syncStatus=null;render()},2000);
+    state.syncStatus='error';_isAutoRender=true;render();
+    setTimeout(()=>{state.syncStatus=null;_isAutoRender=true;render()},2000);
   });
 }
 
 function cloudLoad(){
   if(!CLOUD_URL)return;
-  state.syncStatus='syncing';render();
+  state.syncStatus='syncing';_isAutoRender=true;render();
   fetch(CLOUD_URL+'?action=load&year='+state.year,{redirect:'follow'}).then(r=>{
     if(!r.ok)throw new Error('HTTP '+r.status);
     return r.json();
@@ -495,13 +495,13 @@ function cloudLoad(){
           localStorage.setItem(storageKey(),JSON.stringify(d.data));
         }
       }
-      state.syncStatus='synced';render();
-      setTimeout(()=>{state.syncStatus=null;render()},2000);
+      state.syncStatus='synced';_isAutoRender=true;render();
+      setTimeout(()=>{state.syncStatus=null;_isAutoRender=true;render()},2000);
     }
   }).catch(e=>{
     console.error("Cloud load failed:",e);
-    state.syncStatus='error';render();
-    setTimeout(()=>{state.syncStatus=null;render()},3000);
+    state.syncStatus='error';_isAutoRender=true;render();
+    setTimeout(()=>{state.syncStatus=null;_isAutoRender=true;render()},3000);
   });
   // Also load books
   cloudLoadBooks();
@@ -521,7 +521,7 @@ function cloudLoadBooks(){
         if(localBooks===0||confirm('클라우드에 독서 데이터('+cloudBooks+'개월)가 있습니다. 불러오시겠습니까?')){
           state.bookData=d.data;
           localStorage.setItem(bookStorageKey(),JSON.stringify(d.data));
-          render();
+          _isAutoRender=true;render();
         }
       }
     }
@@ -3211,13 +3211,14 @@ function renderCatPicker(){
 }
 
 // Track if user is actively typing in an input/textarea
+// Only blocks automatic background renders (cloud sync), not user-initiated renders
 var _isEditing=false;
+var _isAutoRender=false;
 document.addEventListener("focusin",e=>{
   if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA")_isEditing=true;
 });
 document.addEventListener("focusout",e=>{
   if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA"){
-    // Small delay: blur fires before click, so let click handlers run first
     setTimeout(()=>{
       var ae=document.activeElement;
       if(!ae||ae.tagName==="BODY"||ae.tagName==="BUTTON"||ae.tagName==="DIV")_isEditing=false;
@@ -3225,7 +3226,9 @@ document.addEventListener("focusout",e=>{
   }
 });
 function render(force){
-  if(_isEditing&&!force)return;
+  // Only block render if it's an automatic background render AND user is editing
+  if(_isEditing&&_isAutoRender&&!force)return;
+  _isAutoRender=false;
   const app=document.getElementById("app");
   app.innerHTML="";
   app.appendChild(renderHeader());

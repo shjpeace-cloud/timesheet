@@ -2174,7 +2174,7 @@ function renderDailyGoals(){
   const dayNames=["일","월","화","수","목","금","토"];
   const dow=new Date(state.year,state.month-1,state.day).getDay();
   const dowColor=dow===0?"#ef4444":dow===6?"#3b82f6":"#94a3b8";
-  const lbl=h("span",{className:"goal-date-label"});
+  const lbl=h("button",{className:"goal-date-label",style:"background:transparent;border:none;cursor:pointer;color:#e2e8f0;font-size:14px;font-weight:700;padding:4px 12px",onClick:()=>{state.showDatePicker=true;render()}});
   lbl.appendChild(document.createTextNode(state.month+"/"+state.day));
   lbl.appendChild(h("span",{style:"color:"+dowColor+";margin-left:6px;font-size:12px"},"("+dayNames[dow]+")"));
   nav.appendChild(lbl);
@@ -2266,19 +2266,13 @@ function renderDailyGoals(){
   // "Already passed" means yesterday or earlier — today is still in progress
   const carryoverGoals=[];
   (function(){
-    const today=new Date();
-    const todayDate=new Date(today.getFullYear(),today.getMonth(),today.getDate());
     const viewDate=new Date(state.year,state.month-1,state.day);
-    // Only show carryover when viewing today or a future date
-    if(viewDate<todayDate)return;
-    // Look back from YESTERDAY (i=1), not today — today is still in progress
+    // Look back from viewDate going backward (always show past incomplete goals)
     for(let i=1;i<=30;i++){
-      const checkDate=new Date(todayDate);
+      const checkDate=new Date(viewDate);
       checkDate.setDate(checkDate.getDate()-i);
       if(checkDate.getFullYear()!==state.year)break;
       const pk=(checkDate.getMonth()+1)+"-"+checkDate.getDate();
-      // Skip the date we're currently viewing (those show as regular goals)
-      if(pk===state.month+"-"+state.day)continue;
       const plist=state.goalData.daily[pk]||[];
       plist.forEach(g=>{
         if(!g.done)carryoverGoals.push({goal:g,fromDate:pk,origKey:pk});
@@ -2990,6 +2984,11 @@ function renderPeriodGoals(scope){
         r.appendChild(h("span",{className:"goal-name done"},g.name));
         const doneHrs=calcGoalTotalHours(g.id);
         if(doneHrs>0)r.appendChild(h("span",{style:"font-size:10px;color:#f59e0b;font-family:'JetBrains Mono',monospace;font-weight:700;flex-shrink:0"},fmtHours(doneHrs)));
+        // Restore button - bring back to active
+        r.appendChild(h("button",{className:"goal-del",style:"color:#10b981;font-size:14px",title:"되돌리기",onClick:()=>{
+          updateGoalProgress(scope,g.id,90);
+          render(true);
+        }},"↩"));
         r.appendChild(h("button",{className:"goal-del",onClick:()=>{
           if(confirm("완료된 목표를 삭제할까요?"))removePeriodGoal(scope,g.id);
         }},"✕"));
@@ -3304,6 +3303,7 @@ function render(force){
   if(state.tab==="goals")main.appendChild(renderGoals());
   if(state.tab==="books")main.appendChild(renderBooks());
   app.appendChild(main);
+  if(state.showDatePicker&&state.tab==="goals")app.appendChild(renderDatePicker());
   if(state.showCatPicker)app.appendChild(renderCatPicker());
 }
 

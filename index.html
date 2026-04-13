@@ -425,7 +425,7 @@ let state={
   // Reading goals form
   showReadingGoalForm:false,
   rgNewName:"",rgNewCat:"E2",rgNewType:"cumulative",rgNewBookType:"en",rgNewTarget:100,
-  rgNewStartYear:new Date().getFullYear(),rgNewEndYear:2040
+  rgNewStartYear:2025,rgNewEndYear:2040
 };
 
 // Cloud sync config
@@ -501,9 +501,9 @@ var HABIT_TOTAL_DAYS=2400; // 장기진도 분모 (명세: 전체체크수/2400*
 // ── 독서 목표 계산 ────────────────────────────────────────────
 function calcReadingGoalProgress(rg){
   if(rg.type==="specific")return rg.progress||0;
-  // cumulative: 전체 연도 bookData에서 해당 type 권수 집계
+  // cumulative: 전체 연도 bookData에서 해당 type 권수 집계 (2025년 포함)
   var count=0;
-  for(var y=2026;y<=2040;y++){
+  for(var y=2025;y<=2040;y++){
     var bkey="books-data-"+y;
     var raw=null;
     try{raw=localStorage.getItem(bkey)}catch(e){}
@@ -524,7 +524,7 @@ function calcReadingGoalProgress(rg){
 function calcReadingGoalCount(rg){
   if(rg.type==="specific")return null;
   var count=0;
-  for(var y=2026;y<=2040;y++){
+  for(var y=2025;y<=2040;y++){
     var bkey="books-data-"+y;
     var raw=null;
     try{raw=localStorage.getItem(bkey)}catch(e){}
@@ -587,17 +587,19 @@ function saveGoalData(){
 }
 function cloudSaveGoals(){
   if(!CLOUD_URL)return;
-  state.syncStatus='syncing';_isAutoRender=true;render();
-  var body='action=saveGoals&year='+state.year+'&data='+encodeURIComponent(JSON.stringify(state.goalData));
-  fetch(CLOUD_URL,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body,redirect:'follow'})
-  .then(r=>r.json()).then(d=>{
-    state.syncStatus=d.status==='ok'?'synced':'error';_isAutoRender=true;render();
-    setTimeout(()=>{state.syncStatus=null;_isAutoRender=true;render()},2000);
-  }).catch(e=>{
-    console.error("Cloud goal save failed:",e);
-    state.syncStatus='error';_isAutoRender=true;render();
-    setTimeout(()=>{state.syncStatus=null;_isAutoRender=true;render()},2000);
-  });
+  // debounce: 연속 호출 방지
+  clearTimeout(cloudSaveGoals._timer);
+  cloudSaveGoals._timer=setTimeout(function(){
+    var body='action=saveGoals&year='+state.year+'&data='+encodeURIComponent(JSON.stringify(state.goalData));
+    fetch(CLOUD_URL,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body,redirect:'follow'})
+    .then(r=>r.json()).then(d=>{
+      state.syncStatus=d.status==='ok'?'synced':'error';
+      _isAutoRender=true;render();
+      setTimeout(()=>{state.syncStatus=null;_isAutoRender=true;render()},2000);
+    }).catch(e=>{
+      console.error("Cloud goal save failed:",e);
+    });
+  },1500);
 }
 function cloudLoadGoals(){
   if(!CLOUD_URL)return;
@@ -3837,7 +3839,7 @@ function renderBooks(){
     if(!state.rgNewType)state.rgNewType="cumulative";
     if(!state.rgNewBookType)state.rgNewBookType="en";
     if(!state.rgNewTarget)state.rgNewTarget=100;
-    if(!state.rgNewStartYear)state.rgNewStartYear=new Date().getFullYear();
+    if(!state.rgNewStartYear)state.rgNewStartYear=2025;
     if(!state.rgNewEndYear)state.rgNewEndYear=2040;
     const form=h("div",{style:"background:#111827;border-radius:8px;padding:10px;margin-bottom:10px;border:1px solid #334155"});
     // 타입 선택
@@ -3885,7 +3887,7 @@ function renderBooks(){
     periodRow.appendChild(h("span",{style:"font-size:11px;color:#64748b;flex-shrink:0"},"기간:"));
     const syInp=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px;flex:1"});
     const eyInp=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px;flex:1"});
-    for(var y=2026;y<=2040;y++){
+    for(var y=2025;y<=2040;y++){
       const sOpt=h("option",{value:String(y)},y+"년");
       if(y===state.rgNewStartYear)sOpt.selected=true;
       syInp.appendChild(sOpt);
@@ -3940,7 +3942,7 @@ function renderBooks(){
     periodEditRow.appendChild(h("span",{style:"font-size:9px;color:#475569;flex-shrink:0"},"기간:"));
     const sySel=h("select",{style:"font-size:9px;background:#111827;border:1px solid #334155;border-radius:4px;color:#64748b;padding:1px 4px"});
     const eySel=h("select",{style:"font-size:9px;background:#111827;border:1px solid #334155;border-radius:4px;color:#64748b;padding:1px 4px"});
-    for(var y3=2026;y3<=2040;y3++){
+    for(var y3=2025;y3<=2040;y3++){
       const so=h("option",{value:String(y3)},y3+"");
       if(y3===(rg.startYear||2026))so.selected=true;
       sySel.appendChild(so);
@@ -3993,7 +3995,7 @@ function renderBooks(){
       if(isOpen){
         const listBox=h("div",{style:"background:#111827;border-radius:8px;padding:8px;margin-top:4px;max-height:200px;overflow-y:auto"});
         var matchedBooks=[];
-        for(var y2=2026;y2<=2040;y2++){
+        for(var y2=2025;y2<=2040;y2++){
           var bkey2="books-data-"+y2;
           var raw2=null;
           try{raw2=localStorage.getItem(bkey2)}catch(e){}
@@ -4300,7 +4302,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-12-v6";
+  var SEED_VER="2026-04-12-v7";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){
@@ -4355,6 +4357,9 @@ function render(force){
     if(lt.length!==(gObj.longterm||[]).length){gObj.longterm=lt;changed=true;}
     if(changed)localStorage.setItem("goals-data-2026",JSON.stringify(gObj));
   }
+  // 2025년 영어책 데이터 시드 (영어책 100권 목표용, 통계에서는 제외)
+  if(!localStorage.getItem("books-data-2025"))
+    localStorage.setItem("books-data-2025",JSON.stringify({"12":[{"type":"en","title":"Because of Winn-Dixie","memo":"","id":1700000000001,"date":"2025/12"},{"type":"en","title":"The Tiger Rising","memo":"","id":1700000000002,"date":"2025/12"},{"type":"en","title":"The Miraculous Journey of Edward Tulane","memo":"","id":1700000000003,"date":"2025/12"},{"type":"en","title":"Raymie Nightingale","memo":"","id":1700000000004,"date":"2025/12"},{"type":"en","title":"Louisiana's Way Home","memo":"","id":1700000000005,"date":"2025/12"},{"type":"en","title":"Beverly, Right Here","memo":"","id":1700000000006,"date":"2025/12"},{"type":"en","title":"The One and Only Ivan","memo":"","id":1700000000007,"date":"2025/12"},{"type":"en","title":"Hatchet","memo":"","id":1700000000008,"date":"2025/12"},{"type":"en","title":"Holes","memo":"","id":1700000000009,"date":"2025/12"},{"type":"en","title":"Wonder","memo":"","id":1700000000010,"date":"2025/12"},{"type":"en","title":"Shiloh","memo":"","id":1700000000011,"date":"2025/12"},{"type":"en","title":"Tuck Everlasting","memo":"","id":1700000000012,"date":"2025/12"},{"type":"en","title":"The Tale of Despereaux","memo":"","id":1700000000013,"date":"2025/12"},{"type":"en","title":"Flora & Ulysses","memo":"","id":1700000000014,"date":"2025/12"},{"type":"en","title":"The Wild Robot","memo":"","id":1700000000015,"date":"2025/12"},{"type":"en","title":"The Wild Robot Escapes","memo":"","id":1700000000016,"date":"2025/12"},{"type":"en","title":"The Wild Robot Protects","memo":"","id":1700000000017,"date":"2025/12"}]}));
   localStorage.setItem("timesheet-seed-version",SEED_VER);
 })();
 state.data=load();

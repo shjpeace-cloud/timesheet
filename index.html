@@ -266,7 +266,23 @@ function isWeekday(y,m,d){
 }
 // 습관 완료 키: "M-D" 형식 (예: "4-13")
 function habitKey(y,m,d){return y+"-"+m+"-"+d}
-// 특정 날의 습관 완료 여부 토글
+// 일간 입력에서 자동 체크 판정: 해당 날짜에 habit.id와 연결된 슬롯이 있으면 true
+function isHabitAutoChecked(habit,y,m,d){
+  var dk=(m)+"-"+(d);
+  var slots=state.data.entries[dk]||{};
+  var id=habit.id;
+  for(var t in slots){
+    if(t==="_diary")continue;
+    var s=slots[t];
+    if(s.actualGoalId===id)return true;
+  }
+  return false;
+}
+// 수동+자동 통합 완료 여부
+function isHabitDone(habit,y,m,d){
+  return !!(habit.completions&&habit.completions[habitKey(y,m,d)])||isHabitAutoChecked(habit,y,m,d);
+}
+// 특정 날의 습관 수동 토글 (자동체크된 날은 수동체크 추가/제거만)
 function toggleHabit(habitId,y,m,d){
   var habit=(state.goalData.habits||[]).find(function(h){return h.id===habitId});
   if(!habit)return;
@@ -275,7 +291,7 @@ function toggleHabit(habitId,y,m,d){
   else habit.completions[k]=true;
   saveGoalData();cloudSaveGoals();_isAutoRender=true;render();
 }
-// 주간 습관 진도: monDate 기준 주의 평일 체크 수 / 평일 수 * 100
+// 주간 습관 진도: monDate 기준 주의 평일 (자동+수동) 체크 수 / 평일 수 * 100
 function calcHabitWeeklyPct(habit,monDate){
   var count=0,total=0;
   for(var i=0;i<5;i++){
@@ -283,16 +299,29 @@ function calcHabitWeeklyPct(habit,monDate){
     var yy=dd.getFullYear(),mm=dd.getMonth()+1,day=dd.getDate();
     if(isWeekday(yy,mm,day)){
       total++;
-      if(habit.completions[habitKey(yy,mm,day)])count++;
+      if(isHabitDone(habit,yy,mm,day))count++;
     }
   }
   if(total===0)return 0;
   return Math.round(count/total*100);
 }
-// 장기 전체 진도: 전체 completions 수 / HABIT_TOTAL_DAYS * 100
+// 장기 전체 진도: (수동 completions + 자동체크) 합집합 날짜 수 / HABIT_TOTAL_DAYS * 100
 function calcHabitLongtermPct(habit){
-  var count=Object.keys(habit.completions||{}).length;
-  return Math.min(100,Math.round(count/HABIT_TOTAL_DAYS*100));
+  // 수동 completions 키 (Y-M-D 형식)
+  var manualKeys=new Set(Object.keys(habit.completions||{}));
+  // 자동체크: entries에서 habit.id와 연결된 슬롯의 날짜 수 (M-D 형식)
+  var entries=state.data.entries||{};
+  var autoKeys=new Set();
+  for(var dk in entries){
+    var slots=entries[dk];
+    for(var t in slots){
+      if(t==="_diary")continue;
+      if(slots[t].actualGoalId===habit.id){autoKeys.add(dk);break;}
+    }
+  }
+  // 합집합 (중복 없이)
+  var total=manualKeys.size+autoKeys.size;
+  return Math.min(100,Math.round(total/HABIT_TOTAL_DAYS*100));
 }
 // Christian liturgical calendar (부활절 기반 계산)
 function computeEaster(y){
@@ -366,7 +395,7 @@ let state={
   bookNewTitle:"",
   bookNewType:"en",
   // Goals state
-  goalData:{daily:{},weekly:[],monthly:[],longterm:[],habits:[]},
+  goalData:{daily:{},weekly:[],monthly:[],longterm:[],habits:[],readingGoals:[]},
   goalScope:"daily",
   goalNewName:"",
   goalNewCat:"R1",
@@ -392,7 +421,11 @@ let state={
   // Habits
   habitWeekOffset:0,  // 0=이번주, -1=지난주, +1=다음주
   habitNewCat:"D1",
-  habitNewName:""
+  habitNewName:"",
+  // Reading goals form
+  showReadingGoalForm:false,
+  rgNewName:"",rgNewCat:"E2",rgNewType:"cumulative",rgNewBookType:"en",rgNewTarget:100,
+  rgNewStartYear:new Date().getFullYear(),rgNewEndYear:2040
 };
 
 // Cloud sync config
@@ -402,6 +435,13 @@ var syncTimer=null;
 function storageKey(){return "timesheet-data-"+state.year}
 function bookStorageKey(){return "books-data-"+state.year}
 function goalStorageKey(){return "goals-data-"+state.year}
+function weeklyReviewKey(y,m,w){return "weekly-review-"+y+"-"+m+"-"+w}
+function loadWeeklyReview(y,m,w){
+  try{var r=localStorage.getItem(weeklyReviewKey(y,m,w));return r?JSON.parse(r):{best:"",missed:"",next:"",note:""}}catch(e){return{best:"",missed:"",next:"",note:""}}
+}
+function saveWeeklyReview(y,m,w,data){
+  try{localStorage.setItem(weeklyReviewKey(y,m,w),JSON.stringify(data))}catch(e){}
+}
 function load(){
   try{
     const r=localStorage.getItem(storageKey());
@@ -430,7 +470,6 @@ function loadGoals(){
     if(habits.length===0){
       habits=migrateHabits(longterm);
       if(habits.length>0){
-        // longterm에서 습관으로 전환된 목표 제거
         longterm=longterm.filter(function(g){return HABIT_LONGTERM_IDS.indexOf(g.id)===-1});
         migrated=true;
       }
@@ -441,16 +480,67 @@ function loadGoals(){
       longterm=longterm.filter(function(g){return habitIds.indexOf(g.id)===-1});
       if(longterm.length<before)migrated=true;
     }
-    var result={daily:p.daily||{},weekly:p.weekly||[],monthly:p.monthly||[],longterm:longterm,habits:habits};
+    // ID 중복 제거 (이전 버전 버그로 중복 생성된 경우 정리)
+    var seenIds={};
+    var deduped=habits.filter(function(h){
+      if(seenIds[h.id])return false;
+      seenIds[h.id]=true;return true;
+    });
+    if(deduped.length<habits.length){habits=deduped;migrated=true;}
+    var result={daily:p.daily||{},weekly:p.weekly||[],monthly:p.monthly||[],longterm:longterm,habits:habits,readingGoals:p.readingGoals||[]};
     if(migrated)try{localStorage.setItem(goalStorageKey(),JSON.stringify(result))}catch(e){}
     return result;
-  }catch(e){return{daily:{},weekly:[],monthly:[],longterm:[],habits:[]}}
+  }catch(e){return{daily:{},weekly:[],monthly:[],longterm:[],habits:[],readingGoals:[]}}
 }
 // 습관 대상 longterm ID 목록 (D1새벽기도, D1묵상, D1성경읽기, D3성가대, R3영어뉴스스터디)
-var HABIT_LONGTERM_IDS=[1775891208109,1775891225514,1775895969162,1775893771920,1775892309708];
-var HABIT_START_DATE="2026-4-13";
-var HABIT_END_DATE="2028-2-29";
-var HABIT_TOTAL_DAYS=2400; // 전체 평일 기간 대략값
+var HABIT_LONGTERM_IDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
+var HABIT_START_DATE="2026-3-1";
+var HABIT_END_DATE="2040-2-29";
+var HABIT_TOTAL_DAYS=2400; // 장기진도 분모 (명세: 전체체크수/2400*100)
+
+// ── 독서 목표 계산 ────────────────────────────────────────────
+function calcReadingGoalProgress(rg){
+  if(rg.type==="specific")return rg.progress||0;
+  // cumulative: 전체 연도 bookData에서 해당 type 권수 집계
+  var count=0;
+  for(var y=2026;y<=2040;y++){
+    var bkey="books-data-"+y;
+    var raw=null;
+    try{raw=localStorage.getItem(bkey)}catch(e){}
+    if(!raw)continue;
+    try{
+      var bd=JSON.parse(raw);
+      for(var m=1;m<=12;m++){
+        var list=bd[String(m)]||[];
+        list.forEach(function(b){
+          if(rg.bookType==="all"||b.type===rg.bookType)count++;
+        });
+      }
+    }catch(e){}
+  }
+  if(rg.targetCount>0)return Math.min(100,Math.round(count/rg.targetCount*100));
+  return 0;
+}
+function calcReadingGoalCount(rg){
+  if(rg.type==="specific")return null;
+  var count=0;
+  for(var y=2026;y<=2040;y++){
+    var bkey="books-data-"+y;
+    var raw=null;
+    try{raw=localStorage.getItem(bkey)}catch(e){}
+    if(!raw)continue;
+    try{
+      var bd=JSON.parse(raw);
+      for(var m=1;m<=12;m++){
+        var list=bd[String(m)]||[];
+        list.forEach(function(b){
+          if(rg.bookType==="all"||b.type===rg.bookType)count++;
+        });
+      }
+    }catch(e){}
+  }
+  return count;
+}
 function migrateHabits(longtermList){
   var result=[];
   longtermList.forEach(function(g){
@@ -530,7 +620,7 @@ function cloudLoadGoals(){
           var hIds=cloudHabits.map(function(h){return h.longtermId}).filter(Boolean);
           cloudLongterm=cloudLongterm.filter(function(g){return hIds.indexOf(g.id)===-1});
         }
-        state.goalData={daily:cloud.daily||{},weekly:cloud.weekly||[],monthly:cloud.monthly||[],longterm:cloudLongterm,habits:cloudHabits};
+        state.goalData={daily:cloud.daily||{},weekly:cloud.weekly||[],monthly:cloud.monthly||[],longterm:cloudLongterm,habits:cloudHabits,readingGoals:cloud.readingGoals||[]};
         localStorage.setItem(goalStorageKey(),JSON.stringify(state.goalData));
         _isAutoRender=true;render();
       }
@@ -710,11 +800,12 @@ function showGoalPicker(time,goalField,catCode){
     box.appendChild(h("div",{style:"text-align:center;padding:20px 0;color:#475569;font-size:12px"},"이 카테고리의 활성 목표가 없습니다"));
   }else{
     // Group by scope (habits 포함)
-    var pickerScopes=["longterm","habits","monthly","weekly","daily"];
+    var pickerScopes=["longterm","habits","readingGoals","monthly","weekly","daily"];
     pickerScopes.forEach(function(s){
       var scopeGoals=goals.filter(function(g){return g.scope===s});
       if(scopeGoals.length===0)return;
-      box.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin:8px 0 4px;letter-spacing:.5px"},SCOPE_LABELS[s]||s));
+      var sLabel={longterm:"장기",habits:"습관",readingGoals:"독서목표",monthly:"월간",weekly:"주간",daily:"일간"}[s]||s;
+      box.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin:8px 0 4px;letter-spacing:.5px"},sLabel));
       scopeGoals.forEach(function(item){
         var g=item.goal;
         var btn=h("button",{style:"width:100%;padding:8px 10px;margin-bottom:4px;border-radius:8px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:12px;cursor:pointer;text-align:left;font-family:'Noto Sans KR',sans-serif;display:flex;align-items:center;gap:6px",onClick:function(){
@@ -724,12 +815,8 @@ function showGoalPicker(time,goalField,catCode){
         var cat=catByCode(g.cat);
         btn.appendChild(h("span",{style:"font-size:10px;font-weight:700;color:"+(cat?cat.color:"#94a3b8")+";font-family:'JetBrains Mono',monospace;flex-shrink:0"},g.cat));
         btn.appendChild(h("span",{style:"flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},g.name));
-        if(g.progress!=null&&s!=="daily"&&s!=="habits"){
-          btn.appendChild(h("span",{style:"font-size:9px;color:#0d9488;font-family:monospace"},(g.progress||0)+"%"));
-        }
-        if(s==="habits"){
-          btn.appendChild(h("span",{style:"font-size:9px;color:#7c3aed;font-family:monospace"},"🔁"));
-        }
+        if(s==="habits")btn.appendChild(h("span",{style:"font-size:9px;color:#7c3aed;font-family:monospace"},"🔁"));
+        if(s==="readingGoals")btn.appendChild(h("span",{style:"font-size:9px;color:#3b82f6;font-family:monospace"},"📚"));
         box.appendChild(btn);
       });
     });
@@ -903,6 +990,31 @@ function exportGoalCSV(){
   state.showMenu=false;render();
 }
 
+function exportWeeklyReviewCSV(){
+  let csv="연도,월,주,기간,잘한것,놓친것,다음주과제,메모\n";
+  for(let y=2026;y<=2040;y++){
+    for(let m=1;m<=12;m++){
+      for(let w=1;w<=6;w++){
+        const key="weekly-review-"+y+"-"+m+"-"+w;
+        const raw=localStorage.getItem(key);
+        if(!raw)continue;
+        try{
+          const r=JSON.parse(raw);
+          if(!r.best&&!r.missed&&!r.next&&!r.note)continue;
+          const esc=s=>('"'+String(s||"").replace(/"/g,'""')+'"');
+          csv+=`${y},${m},${w}주,${y}-${m}-W${w},${esc(r.best)},${esc(r.missed)},${esc(r.next)},${esc(r.note)}\n`;
+        }catch(e){}
+      }
+    }
+  }
+  const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  const ds=new Date().toISOString().slice(0,10);
+  a.href=url;a.download=`weekly_review_${ds}.csv`;a.click();
+  URL.revokeObjectURL(url);
+  state.showMenu=false;render();
+}
 function resetData(){
   if(confirm(state.year+"년 데이터를 모두 초기화하시겠습니까?")){
     state.data={entries:{}};
@@ -1034,6 +1146,7 @@ function renderHeader(){
     dd.appendChild(h("button",{onClick:exportCSV},"📤 시간통계 CSV"));
     dd.appendChild(h("button",{onClick:exportBookCSV},"📤 독서통계 CSV"));
     dd.appendChild(h("button",{onClick:exportGoalCSV},"📤 목표 CSV"));
+    dd.appendChild(h("button",{onClick:exportWeeklyReviewCSV},"📤 주간리뷰 CSV"));
     dd.appendChild(h("button",{onClick:backupData},"💾 데이터 백업"));
     dd.appendChild(h("button",{onClick:restoreData},"📥 데이터 복원"));
     dd.appendChild(h("button",{className:"danger",onClick:resetData},"🗑 데이터 초기화"));
@@ -1065,7 +1178,7 @@ function renderHeader(){
 
 function renderTabs(){
   const nav=h("nav",{className:"tab-bar"});
-  [{id:"input",icon:"✏️",label:"입력"},{id:"daily",icon:"📊",label:"일간"},{id:"dashboard",icon:"📈",label:"대시보드"},{id:"goals",icon:"🎯",label:"목표"},{id:"books",icon:"📚",label:"독서"}].forEach(t=>{
+  [{id:"input",icon:"✏️",label:"입력"},{id:"goals",icon:"🎯",label:"목표"},{id:"weekly",icon:"🗓",label:"주간"},{id:"dashboard",icon:"📈",label:"대시보드"},{id:"books",icon:"📚",label:"독서"}].forEach(t=>{
     const btn=h("button",{className:"tab"+(state.tab===t.id?" active":""),onClick:()=>{state.tab=t.id;render()}});
     btn.appendChild(h("span",{className:"tab-icon"},t.icon));
     btn.appendChild(h("span",{className:"tab-label"},t.label));
@@ -1164,82 +1277,109 @@ function renderDatePicker(){
 
 function renderInput(){
   const wrap=h("div",{});
-  const toggle=h("div",{className:"mode-toggle"});
-  toggle.appendChild(h("button",{className:"mode-btn"+(state.mode==="plan"?" active-plan":""),onClick:()=>{state.mode="plan";render()}},"Plan"));
-  toggle.appendChild(h("button",{className:"mode-btn"+(state.mode==="actual"?" active-actual":""),onClick:()=>{state.mode="actual";render()}},"Actual"));
-  wrap.appendChild(toggle);
+
+  // 헤더: Plan | Actual 레이블
+  const hdr=h("div",{style:"display:grid;grid-template-columns:36px 1fr 4px 1fr;gap:0;padding:6px 0 8px;border-bottom:2px solid #1e293b;margin-bottom:2px"});
+  hdr.appendChild(h("div",{},""));
+  hdr.appendChild(h("div",{style:"text-align:center"},[
+    h("span",{style:"font-size:16px"},"📋"),
+    h("div",{style:"font-size:10px;color:#64748b;font-weight:700;letter-spacing:.5px;margin-top:2px"},"PLAN")
+  ]));
+  hdr.appendChild(h("div",{style:"background:#1e293b;width:1px;margin:0 4px"},""));
+  hdr.appendChild(h("div",{style:"text-align:center"},[
+    h("span",{style:"font-size:16px"},"✅"),
+    h("div",{style:"font-size:10px;color:#0d9488;font-weight:700;letter-spacing:.5px;margin-top:2px"},"ACTUAL")
+  ]));
+  wrap.appendChild(hdr);
 
   const list=h("div",{});
   const de=state.data.entries[dateKey()]||{};
   SLOTS.forEach(time=>{
     const sd=de[time]||{};
-    const field=state.mode==="plan"?"plan":"actual";
-    const memoField=state.mode==="plan"?"planMemo":"actualMemo";
-    const currentCode=sd[field];
-    const cat=currentCode?catByCode(currentCode):null;
-    const memo=sd[memoField];
     const isHour=time.endsWith(":00");
 
-    const slot=h("div",{className:"slot"+(isHour?" hour-start":""),style:"border-left-color:"+(cat?cat.color:"transparent")});
-    const timeDiv=h("div",{className:"slot-time"});
+    const planCat=sd.plan?catByCode(sd.plan):null;
+    const actualCat=sd.actual?catByCode(sd.actual):null;
+    const borderColor=actualCat?actualCat.color:(planCat?planCat.color+"80":"transparent");
+
+    const slot=h("div",{className:"slot"+(isHour?" hour-start":""),style:"border-left-color:"+borderColor+";display:grid;grid-template-columns:36px 1fr 4px 1fr;gap:0;align-items:center;min-height:36px"});
+
+    // 시간
+    const timeDiv=h("div",{className:"slot-time",style:"flex-shrink:0"});
     timeDiv.appendChild(h("span",{className:"time-text"+(isHour?" bold":"")},time));
     slot.appendChild(timeDiv);
 
-    const content=h("div",{className:"slot-content",onClick:()=>{state.activeSlot=time;state.showCatPicker=true;state.memoInput="";render()}});
-    if(cat){
-      const filled=h("div",{className:"slot-filled"});
-      filled.appendChild(h("span",{className:"cat-badge",style:"background:"+cat.color},cat.code));
-      filled.appendChild(h("span",{className:"cat-label"},cat.label));
-      content.appendChild(filled);
-    }else{
-      content.appendChild(h("span",{className:"slot-empty"},"탭하여 입력"));
-    }
-    slot.appendChild(content);
-
-    // Goal link column (뒷칸): show linked goal or picker button
-    const goalField=state.mode==="plan"?"planGoalId":"actualGoalId";
-    const linkedGoalId=sd[goalField];
-    // Also check for legacy memo text
-    const legacyMemo=sd[memoField];
-    const goalCol=h("div",{style:"flex-shrink:0;display:flex;align-items:center;min-width:80px;max-width:140px"});
-    if(cat){
-      if(typeof linkedGoalId==="string"){
-        // Direct text input (custom goal text)
-        const goalTag=h("span",{style:"font-size:12px;color:#e2e8f0;background:#1e293b;padding:3px 8px;border-radius:6px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:135px;display:block;border:1px solid #334155",onClick:e=>{
-          e.stopPropagation();
-          showGoalPicker(time,goalField,cat.code);
-        }},linkedGoalId);
-        goalCol.appendChild(goalTag);
-      }else if(typeof linkedGoalId==="number"){
-        const found=findGoalById(linkedGoalId);
-        if(found){
-          const goalTag=h("span",{style:"font-size:12px;color:#e2e8f0;background:#1e293b;padding:3px 8px;border-radius:6px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:135px;display:block;border:1px solid #334155",onClick:e=>{
-            e.stopPropagation();
-            showGoalPicker(time,goalField,cat.code);
-          }},found.goal.name);
-          goalCol.appendChild(goalTag);
-        }else{
-          goalCol.appendChild(h("span",{style:"font-size:12px;color:#475569;cursor:pointer",onClick:e=>{e.stopPropagation();showGoalPicker(time,goalField,cat.code)}},"🎯"));
+    // ── Plan 열 ──
+    const planCol=h("div",{style:"display:flex;align-items:center;gap:4px;overflow:hidden;padding:0 4px;cursor:pointer;background:"+(planCat?"#0c0f1a":"transparent")+";border-radius:6px;margin:2px 2px 2px 0",onClick:()=>{state.activeSlot=time;state.showCatPicker=true;state.mode="plan";state.memoInput="";render()}});
+    if(planCat){
+      planCol.appendChild(h("span",{className:"cat-badge",style:"background:"+planCat.color+";flex-shrink:0;font-size:10px;padding:2px 5px"},planCat.code));
+      const planInp=h("input",{style:"flex:1;min-width:0;background:transparent;border:none;color:#64748b;font-size:11px;padding:1px 2px;outline:none;font-family:'Noto Sans KR',sans-serif",placeholder:"메모...",value:sd.planMemo||""});
+      planInp.addEventListener("click",e=>e.stopPropagation());
+      planInp.addEventListener("input",e=>{
+        const k=dateKey();
+        if(!state.data.entries[k])state.data.entries[k]={};
+        if(!state.data.entries[k][time])state.data.entries[k][time]={};
+        state.data.entries[k][time].planMemo=e.target.value;
+      });
+      planInp.addEventListener("change",()=>save());
+      planCol.appendChild(planInp);
+      // Plan 삭제 버튼 (Plan 열 안)
+      planCol.appendChild(h("button",{className:"clear-btn",style:"font-size:9px;padding:1px 4px;color:#475569;flex-shrink:0",title:"Plan 삭제",onClick:e=>{
+        e.stopPropagation();
+        const k=dateKey();
+        if(state.data.entries[k]&&state.data.entries[k][time]){
+          delete state.data.entries[k][time].plan;
+          delete state.data.entries[k][time].planMemo;
+          delete state.data.entries[k][time].planGoalId;
+          if(Object.keys(state.data.entries[k][time]).length===0)delete state.data.entries[k][time];
         }
+        save();render(true);
+      }},"✕"));
+    }else{
+      planCol.appendChild(h("span",{style:"font-size:10px;color:#1e293b"},"탭"));
+    }
+    slot.appendChild(planCol);
+
+    // 구분선
+    slot.appendChild(h("div",{style:"width:1px;background:#1e293b;align-self:stretch;margin:0 2px"},""));
+
+    // ── Actual 열 ──
+    const actualCol=h("div",{style:"display:flex;align-items:center;gap:4px;overflow:hidden;padding:0 4px;cursor:pointer;background:"+(actualCat?"#0a1628":"transparent")+";border-radius:6px;margin:2px 0 2px 2px",onClick:()=>{state.activeSlot=time;state.showCatPicker=true;state.mode="actual";state.memoInput="";render()}});
+    if(actualCat){
+      actualCol.appendChild(h("span",{className:"cat-badge",style:"background:"+actualCat.color+";flex-shrink:0;font-size:10px;padding:2px 5px"},actualCat.code));
+      const linkedGoalId=sd.actualGoalId;
+      const legacyMemo=sd.actualMemo;
+      const goalSpan=h("span",{style:"flex:1;min-width:0;font-size:11px;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer",onClick:e=>{e.stopPropagation();showGoalPicker(time,"actualGoalId",actualCat.code)}});
+      if(typeof linkedGoalId==="number"){
+        const found=findGoalById(linkedGoalId);
+        goalSpan.textContent=found?found.goal.name:"🎯";
+        if(!found)goalSpan.style.color="#475569";
+      }else if(typeof linkedGoalId==="string"){
+        goalSpan.textContent=linkedGoalId;
       }else if(legacyMemo){
-        // Show legacy memo as goal text
-        const goalTag=h("span",{style:"font-size:12px;color:#94a3b8;background:#1e293b;padding:3px 8px;border-radius:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:135px;display:block;border:1px solid #1e293b;cursor:pointer",onClick:e=>{
-          e.stopPropagation();
-          showGoalPicker(time,goalField,cat.code);
-        }},legacyMemo);
-        goalCol.appendChild(goalTag);
+        goalSpan.textContent=legacyMemo;
+        goalSpan.style.color="#94a3b8";
       }else{
-        goalCol.appendChild(h("span",{style:"font-size:12px;color:#475569;cursor:pointer",onClick:e=>{e.stopPropagation();showGoalPicker(time,goalField,cat.code)}},"🎯"));
+        goalSpan.textContent="🎯";
+        goalSpan.style.color="#475569";
       }
+      actualCol.appendChild(goalSpan);
+      // Actual 삭제 버튼 (Actual 열 안)
+      actualCol.appendChild(h("button",{className:"clear-btn",style:"font-size:9px;padding:1px 4px;color:#0d9488;flex-shrink:0",title:"Actual 삭제",onClick:e=>{
+        e.stopPropagation();
+        const k=dateKey();
+        if(state.data.entries[k]&&state.data.entries[k][time]){
+          delete state.data.entries[k][time].actual;
+          delete state.data.entries[k][time].actualMemo;
+          delete state.data.entries[k][time].actualGoalId;
+          if(Object.keys(state.data.entries[k][time]).length===0)delete state.data.entries[k][time];
+        }
+        save();render(true);
+      }},"✕"));
+    }else{
+      actualCol.appendChild(h("span",{style:"font-size:10px;color:#1e293b"},"탭"));
     }
-    slot.appendChild(goalCol);
-
-    const acts=h("div",{className:"slot-actions"});
-    if(cat){
-      acts.appendChild(h("button",{className:"clear-btn",onClick:e=>{e.stopPropagation();clearSlot(time,field)}},"✕"));
-    }
-    slot.appendChild(acts);
-
+    slot.appendChild(actualCol);
     list.appendChild(slot);
   });
   wrap.appendChild(list);
@@ -1381,6 +1521,50 @@ function renderDailyMonthChart(){
 
 function renderDashboard(){
   const wrap=h("div",{});
+
+  // ── 오늘 요약 (일간 탭 통합) ──
+  const ds=dailySummary();
+  const todaySec=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:10px;margin-bottom:12px;border:1px solid #1e293b"});
+  const todayTitle=h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:8px;letter-spacing:.5px;display:flex;justify-content:space-between;align-items:center"});
+  todayTitle.appendChild(h("span",{},"📋 오늘 ("+state.month+"/"+state.day+") Plan vs Actual"));
+  // 합계 표시
+  const planTotal=Object.values(ds.plan).reduce((a,b)=>a+b,0);
+  const actualTotal=Object.values(ds.actual).reduce((a,b)=>a+b,0);
+  todayTitle.appendChild(h("span",{style:"font-family:monospace;font-size:11px;color:#94a3b8"},"P:"+planTotal+"h A:"+actualTotal+"h"));
+  todaySec.appendChild(todayTitle);
+  // DREAM 그룹별 P/A 바
+  GROUPS.forEach(function(g){
+    const planH=groupCats(g).reduce((s,c)=>s+(ds.plan[c.code]||0),0);
+    const actualH=groupCats(g).reduce((s,c)=>s+(ds.actual[c.code]||0),0);
+    if(planH===0&&actualH===0)return;
+    const row=h("div",{style:"display:flex;align-items:center;gap:6px;margin-bottom:4px"});
+    row.appendChild(h("span",{style:"font-size:10px;color:"+GC[g]+";font-weight:700;width:16px;flex-shrink:0"},g));
+    const barWrap=h("div",{style:"flex:1;display:flex;flex-direction:column;gap:2px"});
+    // Plan 바
+    if(planH>0){
+      const pb=h("div",{style:"display:flex;align-items:center;gap:4px"});
+      pb.appendChild(h("span",{style:"font-size:8px;color:#64748b;width:8px;flex-shrink:0"},"P"));
+      const pTrack=h("div",{style:"flex:1;height:4px;background:#1e293b;border-radius:2px;overflow:hidden"});
+      pTrack.appendChild(h("div",{style:"height:100%;width:"+Math.min(planH/16*100,100)+"%;background:"+GC[g]+";opacity:.5"}));
+      pb.appendChild(pTrack);
+      pb.appendChild(h("span",{style:"font-size:9px;color:#64748b;font-family:monospace;width:28px;text-align:right"},planH+"h"));
+      barWrap.appendChild(pb);
+    }
+    // Actual 바
+    if(actualH>0){
+      const ab=h("div",{style:"display:flex;align-items:center;gap:4px"});
+      ab.appendChild(h("span",{style:"font-size:8px;color:#0d9488;width:8px;flex-shrink:0"},"A"));
+      const aTrack=h("div",{style:"flex:1;height:4px;background:#1e293b;border-radius:2px;overflow:hidden"});
+      aTrack.appendChild(h("div",{style:"height:100%;width:"+Math.min(actualH/16*100,100)+"%;background:"+GC[g]}));
+      ab.appendChild(aTrack);
+      ab.appendChild(h("span",{style:"font-size:9px;color:#94a3b8;font-family:monospace;width:28px;text-align:right"},actualH+"h"));
+      barWrap.appendChild(ab);
+    }
+    row.appendChild(barWrap);
+    todaySec.appendChild(row);
+  });
+  wrap.appendChild(todaySec);
+
   const mbar=h("div",{className:"dash-month-bar"});
   for(let m=1;m<=12;m++){
     mbar.appendChild(h("button",{className:"dash-month-btn"+(m===state.dashMonth?" active":""),onClick:()=>{state.dashMonth=m;render()}},String(m)));
@@ -1669,6 +1853,35 @@ function renderCharts(ys){
     });
   }
   }catch(e){console.log('Chart rendering skipped:',e)}
+}
+
+// ── 독서 목표 추가/삭제 ──
+function addReadingGoal(){
+  var name=(state.rgNewName||"").trim();
+  if(!name)return;
+  if(!state.goalData.readingGoals)state.goalData.readingGoals=[];
+  var rg={
+    id:Date.now(),
+    cat:state.rgNewCat||"E2",
+    name:name,
+    type:state.rgNewType||"cumulative",
+    startYear:state.rgNewStartYear||new Date().getFullYear(),
+    endYear:state.rgNewEndYear||2040,
+    memo:""
+  };
+  if(rg.type==="cumulative"){
+    rg.bookType=state.rgNewBookType||"en";
+    rg.targetCount=parseInt(state.rgNewTarget)||100;
+  }else{
+    rg.progress=0;
+  }
+  state.goalData.readingGoals.push(rg);
+  state.rgNewName="";state.showReadingGoalForm=false;
+  saveGoalData();cloudSaveGoals();_isAutoRender=true;render();
+}
+function removeReadingGoal(id){
+  state.goalData.readingGoals=(state.goalData.readingGoals||[]).filter(function(r){return r.id!==id});
+  saveGoalData();cloudSaveGoals();_isAutoRender=true;render();
 }
 
 // ===== 독서통계 (Reading Stats) =====
@@ -1977,6 +2190,9 @@ function findGoalById(id){
   // habits 먼저 검색
   var hb=(state.goalData.habits||[]).find(function(x){return x.id===id});
   if(hb)return{goal:{id:hb.id,cat:hb.cat,name:hb.name},scope:"habits"};
+  // readingGoals 검색
+  var rg=(state.goalData.readingGoals||[]).find(function(x){return x.id===id});
+  if(rg)return{goal:{id:rg.id,cat:rg.cat,name:rg.name},scope:"readingGoals"};
   for(var s=0;s<SCOPE_ORDER.length;s++){
     var scope=SCOPE_ORDER[s];
     if(scope==="daily"){
@@ -2010,11 +2226,11 @@ function renderAncestry(goal){
   var pids=getParentIds(goal);
   var parts=[];
   // habits 포함 전체 스코프 순서로 표시
-  var allScopes=["longterm","habits","monthly","weekly","daily"];
+  var allScopes=["longterm","habits","readingGoals","monthly","weekly","daily"];
   allScopes.forEach(function(s){
     if(pids[s]){
       var found=findGoalById(pids[s]);
-      var label=s==="habits"?"습관":(SCOPE_LABELS[s]||s);
+      var label=s==="habits"?"습관":s==="readingGoals"?"독서목표":(SCOPE_LABELS[s]||s);
       if(found)parts.push(label+": "+found.goal.name);
     }
   });
@@ -2028,6 +2244,11 @@ function getCandidatesForScope(upperScope,cat){
     var habs=state.goalData.habits||[];
     if(!cat)return habs.map(function(h){return{id:h.id,cat:h.cat,name:h.name}});
     return habs.filter(function(h){return h.cat===cat}).map(function(h){return{id:h.id,cat:h.cat,name:h.name}});
+  }
+  if(upperScope==="readingGoals"){
+    var rgs=state.goalData.readingGoals||[];
+    if(!cat)return rgs.filter(function(r){return calcReadingGoalProgress(r)<100}).map(function(r){return{id:r.id,cat:r.cat,name:r.name}});
+    return rgs.filter(function(r){return r.cat===cat&&calcReadingGoalProgress(r)<100}).map(function(r){return{id:r.id,cat:r.cat,name:r.name}});
   }
   var arr=state.goalData[upperScope]||[];
   if(!cat)return arr.filter(function(g){return(g.progress||0)<100});
@@ -2087,6 +2308,15 @@ function getActiveGoalsForCat(cat){
   (state.goalData.habits||[]).forEach(function(hb){
     if(hb.cat!==cat)return;
     results.push({scope:"habits",goal:{id:hb.id,cat:hb.cat,name:hb.name,progress:null}});
+  });
+  // ReadingGoals: 카테고리 일치 + 기간 내 + 미완료
+  (state.goalData.readingGoals||[]).forEach(function(rg){
+    if(rg.cat!==cat)return;
+    var sy=rg.startYear||state.year;
+    var ey=rg.endYear||2040;
+    if(state.year<sy||state.year>ey)return;
+    if(calcReadingGoalProgress(rg)>=100)return;
+    results.push({scope:"readingGoals",goal:{id:rg.id,cat:rg.cat,name:rg.name,progress:null}});
   });
   // Daily: current date
   var dk=curM+"-"+curD;
@@ -2149,8 +2379,8 @@ function buildNewParentIds(scope){
 
 // Render parent selectors for new goal form (one dropdown per upper scope)
 function renderParentSelectors(scope,cat){
-  // habits는 longterm 위치에, 나머지 상위 스코프도 포함
-  var uppers=upperScopes(scope).concat(["habits"]);
+  // habits, readingGoals는 longterm 위치에, 나머지 상위 스코프도 포함
+  var uppers=upperScopes(scope).concat(["habits","readingGoals"]);
   if(uppers.length===0)return null;
   var wrap=h("div",{style:"display:flex;flex-direction:column;gap:4px;padding-top:2px"});
   var hasAny=false;
@@ -2158,7 +2388,7 @@ function renderParentSelectors(scope,cat){
     var candidates=getCandidatesForScope(us,cat);
     if(candidates.length===0)return;
     hasAny=true;
-    var label=us==="habits"?"습관":(SCOPE_LABELS[us]||us);
+    var label=us==="habits"?"습관":us==="readingGoals"?"독서목표":(SCOPE_LABELS[us]||us);
     var row=h("div",{style:"display:flex;gap:6px;align-items:center"});
     row.appendChild(h("span",{style:"font-size:10px;color:#64748b;width:32px;flex-shrink:0;text-align:right"},label+":"));
     var sel=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px;flex:1"});
@@ -2183,7 +2413,7 @@ function renderParentSelectors(scope,cat){
 
 // Render parent edit selectors for existing goal (in expanded section)
 function renderParentEditSelectors(scope,goal){
-  var uppers=upperScopes(scope).concat(["habits"]);
+  var uppers=upperScopes(scope).concat(["habits","readingGoals"]);
   if(uppers.length===0)return null;
   var pids=getParentIds(goal);
   var wrap=h("div",{style:"margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #1e293b"});
@@ -2200,7 +2430,7 @@ function renderParentEditSelectors(scope,goal){
     }
     if(candidates.length===0)return;
     hasAny=true;
-    var label=us==="habits"?"습관":(SCOPE_LABELS[us]||us);
+    var label=us==="habits"?"습관":us==="readingGoals"?"독서목표":(SCOPE_LABELS[us]||us);
     var row=h("div",{style:"display:flex;gap:6px;align-items:center;padding:2px 0"});
     row.appendChild(h("span",{style:"font-size:10px;color:#64748b;width:32px;flex-shrink:0;text-align:right"},label+":"));
     var sel=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px;flex:1"});
@@ -2232,19 +2462,20 @@ function renderEditableName(text,onSave,style){
   const editing=state.editingGoal;
   const span=h("span",{className:"goal-name",style:(style||"")+"cursor:pointer;",onClick:e=>{
     e.stopPropagation();
-    // Replace span with input
     const inp=document.createElement("input");
     inp.className="goal-input";
     inp.style="flex:1;font-size:12px;padding:4px 8px;min-width:60px;";
     inp.value=text;
+    _isEditing=true;
     inp.addEventListener("blur",()=>{
+      _isEditing=false;
       if(inp.value.trim()&&inp.value.trim()!==text){onSave(inp.value.trim())}
       state.editingGoal=null;
       render();
     });
     inp.addEventListener("keydown",ev=>{
       if(ev.key==="Enter"){inp.blur()}
-      if(ev.key==="Escape"){state.editingGoal=null;render()}
+      if(ev.key==="Escape"){_isEditing=false;state.editingGoal=null;render()}
     });
     span.replaceWith(inp);
     inp.focus();inp.select();
@@ -2308,7 +2539,7 @@ function renderDailyGoals(){
   }},"▶"));
   wrap.appendChild(nav);
 
-  // Context: show active weekly/monthly/longterm goals for current day (장기→월간→주간 순)
+  // Context: show active weekly/monthly/longterm/reading goals for current day
   const curWeek=weekIdxOfDay(state.year,state.month,state.day);
   const weeklyActive=(state.goalData.weekly||[]).filter(g=>g.year===state.year&&g.month===state.month&&g.weekIdx===curWeek&&(g.progress||0)<100);
   const monthlyActive=(state.goalData.monthly||[]).filter(g=>{
@@ -2322,13 +2553,19 @@ function renderDailyGoals(){
     const ey=g.endYear||g.targetYear||state.year;
     return sy<=state.year&&state.year<=ey&&(g.progress||0)<100;
   });
-  if(weeklyActive.length+monthlyActive.length+longtermActive.length>0){
+  const readingActive=(state.goalData.readingGoals||[]).filter(g=>{
+    const sy=g.startYear||state.year;
+    const ey=g.endYear||2040;
+    return sy<=state.year&&state.year<=ey&&calcReadingGoalProgress(g)<100;
+  });
+  if(weeklyActive.length+monthlyActive.length+longtermActive.length+readingActive.length>0){
     const ctx=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:10px;margin-bottom:10px;border:1px solid #1e293b"});
     ctx.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:6px;letter-spacing:.5px"},"이 시기의 목표"));
     const ctxGroups=[
-      {label:"🎯 장기",list:longtermActive},
-      {label:"🗓 월간",list:monthlyActive},
-      {label:"📆 주간",list:weeklyActive}
+      {label:"🎯 장기",list:longtermActive,scope:"longterm"},
+      {label:"📚 독서",list:readingActive,scope:"readingGoals"},
+      {label:"🗓 월간",list:monthlyActive,scope:"monthly"},
+      {label:"📆 주간",list:weeklyActive,scope:"weekly"}
     ];
     let renderedGroupCount=0;
     ctxGroups.forEach(grp=>{
@@ -2345,11 +2582,19 @@ function renderDailyGoals(){
         // Hours
         const ctxHrs=calcGoalTotalHours(g.id);
         if(ctxHrs>0)row.appendChild(h("span",{style:"font-size:9px;color:#f59e0b;font-family:monospace;font-weight:700;flex-shrink:0"},fmtHours(ctxHrs)));
-        const pct=g.progress||0;
+        // 진도
+        const pct=grp.scope==="readingGoals"?calcReadingGoalProgress(g):(g.progress||0);
+        const pctColor=grp.scope==="readingGoals"?"#3b82f6":"#0d9488";
         const track=h("div",{style:"width:50px;height:4px;background:#1e293b;border-radius:2px;overflow:hidden"});
-        track.appendChild(h("div",{style:"height:100%;width:"+pct+"%;background:#0d9488"}));
+        track.appendChild(h("div",{style:"height:100%;width:"+pct+"%;background:"+pctColor}));
         row.appendChild(track);
-        row.appendChild(h("span",{style:"font-size:10px;color:#0d9488;font-family:monospace;font-weight:700;width:30px;text-align:right"},pct+"%"));
+        // 독서 누적형: 권수 표시
+        if(grp.scope==="readingGoals"&&g.type==="cumulative"){
+          const cnt=calcReadingGoalCount(g);
+          row.appendChild(h("span",{style:"font-size:9px;color:#3b82f6;font-family:monospace;font-weight:700;width:46px;text-align:right"},cnt+"/"+g.targetCount));
+        }else{
+          row.appendChild(h("span",{style:"font-size:10px;color:"+pctColor+";font-family:monospace;font-weight:700;width:30px;text-align:right"},pct+"%"));
+        }
         ctx.appendChild(row);
       });
       renderedGroupCount++;
@@ -2375,22 +2620,25 @@ function renderDailyGoals(){
     const mon=new Date(curDt);mon.setDate(curDt.getDate()+(curDow===0?-6:1-curDow));
     activeHabits.forEach(function(hb){
       const cat=catByCode(hb.cat);
-      const k=habitKey(state.year,state.month,state.day);
-      const done=!!(hb.completions&&hb.completions[k]);
+      const autoChecked=isHabitAutoChecked(hb,state.year,state.month,state.day);
+      const manualChecked=!!(hb.completions&&hb.completions[habitKey(state.year,state.month,state.day)]);
+      const done=autoChecked||manualChecked;
       const row=h("div",{style:"display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #1e293b"+(activeHabits[activeHabits.length-1]===hb?";border-bottom:none":"")});
-      // 체크박스 (항상 활성)
-      const chk=h("input",{type:"checkbox",style:"width:16px;height:16px;cursor:pointer;accent-color:#0d9488;flex-shrink:0"});
+      // 체크박스: 자동체크면 비활성(읽기전용), 수동은 토글 가능
+      const chk=h("input",{type:"checkbox",style:"width:16px;height:16px;accent-color:"+(autoChecked?"#f59e0b":"#0d9488")+";flex-shrink:0;cursor:"+(autoChecked?"default":"pointer")});
       chk.checked=done;
-      chk.addEventListener("change",function(){toggleHabit(hb.id,state.year,state.month,state.day)});
+      if(!autoChecked){
+        chk.addEventListener("change",function(){toggleHabit(hb.id,state.year,state.month,state.day)});
+      }
       row.appendChild(chk);
       row.appendChild(h("span",{className:"goal-cat-tag",style:"background:"+(cat?cat.color:"#475569")+";font-size:9px;padding:1px 5px;flex-shrink:0"},hb.cat));
-      // 이름 + 누적시간
+      // 이름 + 누적시간 + 자동체크 뱃지
       const nameWrap=h("div",{style:"flex:1;display:flex;align-items:center;gap:4px;overflow:hidden;min-width:0"});
-      nameWrap.appendChild(h("span",{style:"font-size:12px;color:"+(done?"#0d9488":"#cbd5e1")+(done?";text-decoration:line-through":"")+(";overflow:hidden;text-overflow:ellipsis;white-space:nowrap")},hb.name));
-      if(hb.longtermId){
-        const hrs=calcGoalTotalHours(hb.longtermId);
-        if(hrs>0)nameWrap.appendChild(h("span",{style:"font-size:9px;color:#f59e0b;font-family:monospace;font-weight:700;flex-shrink:0"},"("+fmtHours(hrs)+")"));
-      }
+      nameWrap.appendChild(h("span",{style:"font-size:12px;color:"+(done?"#0d9488":"#cbd5e1")+(done?";text-decoration:line-through":"")+";overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},hb.name));
+      if(autoChecked)nameWrap.appendChild(h("span",{style:"font-size:9px;color:#f59e0b;flex-shrink:0"},"⚡"));
+      const hrsId=hb.longtermId||hb.id;
+      const hrs=calcGoalTotalHours(hrsId);
+      if(hrs>0)nameWrap.appendChild(h("span",{style:"font-size:9px;color:#f59e0b;font-family:monospace;font-weight:700;flex-shrink:0"},"("+fmtHours(hrs)+")"));
       row.appendChild(nameWrap);
       // 주간 진도
       const wPct=calcHabitWeeklyPct(hb,mon);
@@ -3316,22 +3564,28 @@ function renderHabitsTab(){
   habits.forEach(function(hb){
     const cat=catByCode(hb.cat);
     const row=h("div",{style:"display:grid;grid-template-columns:1fr repeat(5,32px) 24px;gap:4px;align-items:center;padding:5px 0;border-top:1px solid #1e293b"});
-    const nameCell=h("div",{style:"display:flex;align-items:center;gap:5px;overflow:hidden"});
-    nameCell.appendChild(h("span",{className:"goal-cat-tag",style:"background:"+(cat?cat.color:"#475569")+";font-size:8px;padding:1px 4px;flex-shrink:0"},hb.cat));
-    nameCell.appendChild(h("span",{style:"font-size:11px;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},hb.name));
-    if(hb.longtermId){
-      const hrs=calcGoalTotalHours(hb.longtermId);
-      if(hrs>0)nameCell.appendChild(h("span",{style:"font-size:9px;color:#f59e0b;font-family:monospace;font-weight:700;flex-shrink:0"},"("+fmtHours(hrs)+")"));
-    }
+    const nameCell=h("div",{style:"display:flex;align-items:center;gap:5px;overflow:hidden;min-width:0"});
+    nameCell.appendChild(renderEditableCat(hb.cat,function(newCat){
+      hb.cat=newCat;saveGoalData();cloudSaveGoals();_isAutoRender=true;render();
+    }));
+    nameCell.appendChild(renderEditableName(hb.name,function(newName){
+      hb.name=newName;saveGoalData();cloudSaveGoals();_isAutoRender=true;render();
+    },"font-size:11px;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;"));
+    const calHrsId=hb.longtermId||hb.id;
+    const calHrs=calcGoalTotalHours(calHrsId);
+    if(calHrs>0)nameCell.appendChild(h("span",{style:"font-size:9px;color:#f59e0b;font-family:monospace;font-weight:700;flex-shrink:0"},"("+fmtHours(calHrs)+")"));
     row.appendChild(nameCell);
     weekDays.forEach(function(wd){
-      const k=habitKey(wd.y,wd.m,wd.d);
-      const done=!!(hb.completions&&hb.completions[k]);
+      const autoChecked=isHabitAutoChecked(hb,wd.y,wd.m,wd.d);
+      const manualChecked=!!(hb.completions&&hb.completions[habitKey(wd.y,wd.m,wd.d)]);
+      const done=autoChecked||manualChecked;
       const isToday=wd.y===today.getFullYear()&&wd.m===(today.getMonth()+1)&&wd.d===today.getDate();
       const cell=h("div",{style:"display:flex;justify-content:center;align-items:center"});
-      const chk=h("input",{type:"checkbox",style:"width:15px;height:15px;cursor:pointer;accent-color:#0d9488"+(isToday?";outline:2px solid #0d9488;outline-offset:1px":"")});
+      const chk=h("input",{type:"checkbox",style:"width:15px;height:15px;accent-color:"+(autoChecked?"#f59e0b":"#0d9488")+";cursor:"+(autoChecked?"default":"pointer")+(isToday?";outline:2px solid #0d9488;outline-offset:1px":"")});
       chk.checked=done;
-      chk.addEventListener("change",function(){toggleHabit(hb.id,wd.y,wd.m,wd.d)});
+      if(!autoChecked){
+        chk.addEventListener("change",function(){toggleHabit(hb.id,wd.y,wd.m,wd.d)});
+      }
       cell.appendChild(chk);
       row.appendChild(cell);
     });
@@ -3344,7 +3598,7 @@ function renderHabitsTab(){
   const sumRow=h("div",{style:"display:grid;grid-template-columns:1fr repeat(5,32px) 24px;gap:4px;align-items:center;padding:6px 0;border-top:1px solid #334155;margin-top:2px"});
   sumRow.appendChild(h("span",{style:"font-size:9px;color:#475569"},"달성"));
   weekDays.forEach(function(wd){
-    const doneCount=habits.filter(function(hb){return !!(hb.completions&&hb.completions[habitKey(wd.y,wd.m,wd.d)])}).length;
+    const doneCount=habits.filter(function(hb){return isHabitDone(hb,wd.y,wd.m,wd.d)}).length;
     const pct=habits.length>0?Math.round(doneCount/habits.length*100):0;
     const color=pct===100?"#0d9488":pct>0?"#f59e0b":"#1e293b";
     const cell=h("div",{style:"text-align:center;font-size:8px;color:"+color+";font-weight:700;font-family:monospace"});
@@ -3363,13 +3617,18 @@ function renderHabitsTab(){
     const totalDone=Object.keys(hb.completions||{}).length;
     const card=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:10px;margin-bottom:8px;border:1px solid #1e293b"});
     const titleRow=h("div",{style:"display:flex;align-items:center;gap:6px;margin-bottom:8px"});
-    titleRow.appendChild(h("span",{className:"goal-cat-tag",style:"background:"+(cat?cat.color:"#475569")+";font-size:10px"},hb.cat));
-    titleRow.appendChild(h("span",{style:"font-size:13px;color:#e2e8f0;font-weight:700;flex:1"},hb.name));
-    // 누적시간 (longtermId 연결된 경우)
-    if(hb.longtermId){
-      const hrs=calcGoalTotalHours(hb.longtermId);
-      if(hrs>0)titleRow.appendChild(h("span",{style:"font-size:11px;color:#f59e0b;font-family:monospace;font-weight:700;flex-shrink:0"},"("+fmtHours(hrs)+")"));
-    }
+    // 카테고리 (탭으로 편집)
+    titleRow.appendChild(renderEditableCat(hb.cat,function(newCat){
+      hb.cat=newCat;saveGoalData();cloudSaveGoals();_isAutoRender=true;render();
+    }));
+    // 이름 (탭으로 편집)
+    titleRow.appendChild(renderEditableName(hb.name,function(newName){
+      hb.name=newName;saveGoalData();cloudSaveGoals();_isAutoRender=true;render();
+    },"font-size:13px;color:#e2e8f0;font-weight:700;flex:1;"));
+    // 누적시간
+    const cardHrsId=hb.longtermId||hb.id;
+    const cardHrs=calcGoalTotalHours(cardHrsId);
+    if(cardHrs>0)titleRow.appendChild(h("span",{style:"font-size:11px;color:#f59e0b;font-family:monospace;font-weight:700;flex-shrink:0"},"("+fmtHours(cardHrs)+")"));
     titleRow.appendChild(h("span",{style:"font-size:10px;color:#475569;font-family:monospace;flex-shrink:0"},totalDone+"일 완료"));
     card.appendChild(titleRow);
     const wRow=h("div",{style:"display:flex;align-items:center;gap:8px;margin-bottom:6px"});
@@ -3388,6 +3647,147 @@ function renderHabitsTab(){
     card.appendChild(ltRow);
     wrap.appendChild(card);
   });
+  return wrap;
+}
+
+function renderWeeklyReview(){
+  const wrap=h("div",{});
+
+  // ── 주 네비게이션 ──
+  const today=new Date();
+  const todayDow=today.getDay();
+  const diffToMon=todayDow===0?-6:1-todayDow;
+  // state.weeklyReviewOffset: 0=이번주
+  if(state.weeklyReviewOffset===undefined)state.weeklyReviewOffset=0;
+  const monDate=new Date(today);
+  monDate.setDate(today.getDate()+diffToMon+state.weeklyReviewOffset*7);
+  const sunDate=new Date(monDate);sunDate.setDate(monDate.getDate()+6);
+  const fmt=function(d){return (d.getMonth()+1)+"/"+d.getDate()};
+  const y=monDate.getFullYear(),m=monDate.getMonth()+1;
+  const wIdx=weekIdxOfDay(y,m,monDate.getDate());
+  const isThisWeek=state.weeklyReviewOffset===0;
+
+  const nav=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:14px"});
+  nav.appendChild(h("button",{className:"goal-date-arrow",onClick:function(){state.weeklyReviewOffset--;_isAutoRender=true;render()}},"◀"));
+  const navMid=h("div",{style:"display:flex;flex-direction:column;align-items:center;gap:2px"});
+  navMid.appendChild(h("span",{style:"font-size:14px;font-weight:700;color:#e2e8f0"},y+"년 "+fmt(monDate)+" ~ "+fmt(sunDate)));
+  navMid.appendChild(h("span",{style:"font-size:10px;color:"+(isThisWeek?"#0d9488":"#64748b")},isThisWeek?"이번 주":m+"월 "+wIdx+"주"));
+  nav.appendChild(navMid);
+  const nextBtn=h("button",{className:"goal-date-arrow",style:state.weeklyReviewOffset>=0?"opacity:.3;cursor:default":"",onClick:function(){if(state.weeklyReviewOffset<0){state.weeklyReviewOffset++;_isAutoRender=true;render()}}});
+  nextBtn.textContent="▶";
+  nav.appendChild(nextBtn);
+  wrap.appendChild(nav);
+
+  // ── 지난 주 실적 자동 집계 ──
+  const summaryBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:14px;border:1px solid #1e293b"});
+  summaryBox.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},"📊 주간 실적"));
+
+  // DREAM별 집계
+  const dreamTotals={};
+  GROUPS.forEach(function(g){dreamTotals[g]=0});
+  var totalHrs=0;
+  for(var i=0;i<7;i++){
+    const dd=new Date(monDate);dd.setDate(monDate.getDate()+i);
+    const dk=(dd.getMonth()+1)+"-"+dd.getDate();
+    const slots=state.data.entries[dk]||{};
+    Object.keys(slots).forEach(function(t){
+      if(t==="_diary")return;
+      const s=slots[t];
+      if(s.actual){
+        const cat=catByCode(s.actual);
+        if(cat){dreamTotals[cat.group]=(dreamTotals[cat.group]||0)+0.5;totalHrs+=0.5;}
+      }
+    });
+  }
+  // 바 차트
+  const maxHrs=Math.max.apply(null,Object.values(dreamTotals).concat([1]));
+  const barRow=h("div",{style:"display:flex;gap:6px;align-items:flex-end;height:60px;margin-bottom:6px"});
+  GROUPS.forEach(function(g){
+    const hrs=dreamTotals[g]||0;
+    const barH=maxHrs>0?Math.max(2,Math.round(hrs/maxHrs*52)):2;
+    const col=h("div",{style:"flex:1;display:flex;flex-direction:column;align-items:center;gap:2px"});
+    const bar=h("div",{style:"width:100%;height:"+barH+"px;background:"+GC[g]+";border-radius:3px 3px 0 0;align-self:flex-end"});
+    col.appendChild(bar);
+    col.appendChild(h("span",{style:"font-size:8px;color:#64748b"},g));
+    col.appendChild(h("span",{style:"font-size:8px;color:#94a3b8;font-family:monospace"},hrs>0?hrs+"h":""));
+    barRow.appendChild(col);
+  });
+  summaryBox.appendChild(barRow);
+  summaryBox.appendChild(h("div",{style:"text-align:right;font-size:10px;color:#475569;font-family:monospace"},"합계 "+totalHrs+"h"));
+
+  // 주간 목표 달성률
+  const weekGoals=(state.goalData.weekly||[]).filter(function(g){return g.year===y&&g.month===m&&g.weekIdx===wIdx});
+  if(weekGoals.length>0){
+    summaryBox.appendChild(h("div",{style:"border-top:1px solid #1e293b;margin-top:8px;padding-top:8px;font-size:10px;color:#64748b;font-weight:700;margin-bottom:4px"},"주간 목표"));
+    weekGoals.forEach(function(g){
+      const pct=g.progress||0;
+      const row=h("div",{style:"display:flex;align-items:center;gap:6px;padding:2px 0"});
+      const cat=catByCode(g.cat);
+      row.appendChild(h("span",{className:"goal-cat-tag",style:"background:"+(cat?cat.color:"#475569")+";font-size:8px"},g.cat));
+      row.appendChild(h("span",{style:"flex:1;font-size:11px;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},g.name));
+      const track=h("div",{style:"width:50px;height:4px;background:#1e293b;border-radius:2px;overflow:hidden;flex-shrink:0"});
+      track.appendChild(h("div",{style:"height:100%;width:"+pct+"%;background:#0d9488"}));
+      row.appendChild(track);
+      row.appendChild(h("span",{style:"font-size:9px;color:#0d9488;font-family:monospace;width:28px;text-align:right;flex-shrink:0"},pct+"%"));
+      summaryBox.appendChild(row);
+    });
+  }
+
+  // 습관 달성
+  const activeHabits=(state.goalData.habits||[]);
+  if(activeHabits.length>0){
+    summaryBox.appendChild(h("div",{style:"border-top:1px solid #1e293b;margin-top:8px;padding-top:8px;font-size:10px;color:#64748b;font-weight:700;margin-bottom:4px"},"습관 달성"));
+    const hrow=h("div",{style:"display:flex;gap:8px;flex-wrap:wrap"});
+    activeHabits.forEach(function(hb){
+      var checked=0,total=0;
+      for(var i=0;i<5;i++){
+        const dd=new Date(monDate);dd.setDate(monDate.getDate()+i);
+        const yy=dd.getFullYear(),mm=dd.getMonth()+1,day=dd.getDate();
+        if(isWeekday(yy,mm,day)){total++;if(isHabitDone(hb,yy,mm,day))checked++;}
+      }
+      const pct=total>0?Math.round(checked/total*100):0;
+      const cell=h("div",{style:"display:flex;flex-direction:column;align-items:center;gap:2px"});
+      const cat=catByCode(hb.cat);
+      const circle=h("div",{style:"width:36px;height:36px;border-radius:50%;border:2px solid "+(pct===100?"#0d9488":pct>=60?"#f59e0b":"#334155")+";display:flex;align-items:center;justify-content:center;font-size:10px;color:"+(pct===100?"#0d9488":pct>=60?"#f59e0b":"#64748b")+";font-family:monospace;font-weight:700"},pct+"%");
+      cell.appendChild(circle);
+      cell.appendChild(h("span",{style:"font-size:8px;color:#64748b;text-align:center;max-width:40px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},hb.name));
+      hrow.appendChild(cell);
+    });
+    summaryBox.appendChild(hrow);
+  }
+  wrap.appendChild(summaryBox);
+
+  // ── 성찰 입력 ──
+  const review=loadWeeklyReview(y,m,wIdx);
+  const reflBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;border:1px solid #1e293b"});
+  reflBox.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},"✍️ 주간 성찰"));
+
+  const fields=[
+    {key:"best",label:"🌟 잘 한 것",placeholder:"이번 주 가장 잘 된 일은?"},
+    {key:"missed",label:"⚠️ 놓친 것",placeholder:"아쉬웠거나 못 한 일은?"},
+    {key:"next",label:"🎯 다음 주 한 가지",placeholder:"다음 주에 반드시 할 것은?"},
+    {key:"note",label:"📝 메모",placeholder:"자유 기록..."}
+  ];
+  fields.forEach(function(f){
+    reflBox.appendChild(h("div",{style:"font-size:11px;color:#94a3b8;font-weight:700;margin-bottom:4px;margin-top:8px"},f.label));
+    const ta=h("textarea",{style:"width:100%;padding:8px;border-radius:8px;border:1px solid #334155;background:#111827;color:#e2e8f0;font-size:12px;font-family:'Noto Sans KR',sans-serif;outline:none;resize:none;line-height:1.5;min-height:60px",placeholder:f.placeholder});
+    ta.value=review[f.key]||"";
+    var timer=null;
+    ta.addEventListener("input",function(e){
+      review[f.key]=e.target.value;
+      clearTimeout(timer);
+      timer=setTimeout(function(){saveWeeklyReview(y,m,wIdx,review)},800);
+    });
+    reflBox.appendChild(ta);
+  });
+  // 저장 완료 표시
+  const saveBtn=h("button",{style:"margin-top:10px;width:100%;padding:8px;border-radius:8px;background:#0d9488;border:none;color:#fff;font-size:13px;font-weight:700;cursor:pointer",onClick:function(){
+    saveWeeklyReview(y,m,wIdx,review);
+    saveBtn.textContent="✅ 저장됨";
+    setTimeout(function(){saveBtn.textContent="💾 저장"},1500);
+  }},"💾 저장");
+  reflBox.appendChild(saveBtn);
+  wrap.appendChild(reflBox);
   return wrap;
 }
 
@@ -3420,6 +3820,212 @@ function renderGoals(){
 function renderBooks(){
   const wrap=h("div",{});
   const stats=getBookStats();
+
+  // ── 독서 목표 섹션 ──
+  const readingGoals=state.goalData.readingGoals||[];
+  const rgBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:14px;border:1px solid #1e293b"});
+  const rgTitle=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"});
+  rgTitle.appendChild(h("span",{style:"font-size:10px;color:#64748b;font-weight:700;letter-spacing:.5px"},"📚 독서 목표"));
+  // 추가 버튼
+  rgTitle.appendChild(h("button",{style:"font-size:11px;color:#3b82f6;background:transparent;border:1px solid #3b82f6;border-radius:6px;padding:2px 8px;cursor:pointer",onClick:function(){state.showReadingGoalForm=!state.showReadingGoalForm;render()}},"+ 목표추가"));
+  rgBox.appendChild(rgTitle);
+
+  // 추가 폼
+  if(state.showReadingGoalForm){
+    if(!state.rgNewName)state.rgNewName="";
+    if(!state.rgNewCat)state.rgNewCat="E2";
+    if(!state.rgNewType)state.rgNewType="cumulative";
+    if(!state.rgNewBookType)state.rgNewBookType="en";
+    if(!state.rgNewTarget)state.rgNewTarget=100;
+    if(!state.rgNewStartYear)state.rgNewStartYear=new Date().getFullYear();
+    if(!state.rgNewEndYear)state.rgNewEndYear=2040;
+    const form=h("div",{style:"background:#111827;border-radius:8px;padding:10px;margin-bottom:10px;border:1px solid #334155"});
+    // 타입 선택
+    const typeRow=h("div",{style:"display:flex;gap:6px;margin-bottom:8px"});
+    ["cumulative","specific"].forEach(function(t){
+      const label=t==="cumulative"?"📊 누적권수":"📖 특정책";
+      typeRow.appendChild(h("button",{style:"flex:1;padding:4px;border-radius:6px;border:1px solid "+(state.rgNewType===t?"#3b82f6":"#334155")+";background:"+(state.rgNewType===t?"#3b82f620":"transparent")+";color:"+(state.rgNewType===t?"#60a5fa":"#64748b")+";font-size:11px;cursor:pointer",onClick:function(){state.rgNewType=t;render()}},label));
+    });
+    form.appendChild(typeRow);
+    // 카테고리 + 이름
+    const row1=h("div",{style:"display:flex;gap:6px;margin-bottom:6px"});
+    const catSel=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px;width:100px"});
+    CATEGORIES.forEach(function(c){
+      const opt=h("option",{value:c.code},c.code);
+      if(c.code===state.rgNewCat)opt.selected=true;
+      catSel.appendChild(opt);
+    });
+    catSel.addEventListener("change",function(e){state.rgNewCat=e.target.value});
+    row1.appendChild(catSel);
+    const nameInp=h("input",{className:"goal-input",placeholder:"목표명 (예: 영어책 100권)",value:state.rgNewName||""});
+    nameInp.addEventListener("input",function(e){state.rgNewName=e.target.value});
+    nameInp.addEventListener("keydown",function(e){if(e.key==="Enter")addReadingGoal()});
+    row1.appendChild(nameInp);
+    form.appendChild(row1);
+    // cumulative 전용: bookType + targetCount
+    if(state.rgNewType==="cumulative"){
+      const row2=h("div",{style:"display:flex;gap:6px;margin-bottom:6px;align-items:center"});
+      const btSel=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px;width:90px"});
+      [{v:"en",l:"영어책"},{v:"kr",l:"한글책"},{v:"all",l:"전체"}].forEach(function(o){
+        const opt=h("option",{value:o.v},o.l);
+        if(o.v===state.rgNewBookType)opt.selected=true;
+        btSel.appendChild(opt);
+      });
+      btSel.addEventListener("change",function(e){state.rgNewBookType=e.target.value});
+      row2.appendChild(btSel);
+      row2.appendChild(h("span",{style:"font-size:11px;color:#64748b"},"목표:"));
+      const tgtInp=h("input",{style:"width:60px;padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#0c0f1a;color:#e2e8f0;font-size:11px;text-align:right",type:"number",min:"1",value:String(state.rgNewTarget||100)});
+      tgtInp.addEventListener("input",function(e){state.rgNewTarget=parseInt(e.target.value)||100});
+      row2.appendChild(tgtInp);
+      row2.appendChild(h("span",{style:"font-size:11px;color:#64748b"},"권"));
+      form.appendChild(row2);
+    }
+    // 기간 설정
+    const periodRow=h("div",{style:"display:flex;gap:6px;margin-bottom:6px;align-items:center"});
+    periodRow.appendChild(h("span",{style:"font-size:11px;color:#64748b;flex-shrink:0"},"기간:"));
+    const syInp=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px;flex:1"});
+    const eyInp=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px;flex:1"});
+    for(var y=2026;y<=2040;y++){
+      const sOpt=h("option",{value:String(y)},y+"년");
+      if(y===state.rgNewStartYear)sOpt.selected=true;
+      syInp.appendChild(sOpt);
+      const eOpt=h("option",{value:String(y)},y+"년");
+      if(y===state.rgNewEndYear)eOpt.selected=true;
+      eyInp.appendChild(eOpt);
+    }
+    syInp.addEventListener("change",function(e){state.rgNewStartYear=parseInt(e.target.value)});
+    eyInp.addEventListener("change",function(e){state.rgNewEndYear=parseInt(e.target.value)});
+    periodRow.appendChild(syInp);
+    periodRow.appendChild(h("span",{style:"font-size:11px;color:#64748b"},"~"));
+    periodRow.appendChild(eyInp);
+    form.appendChild(periodRow);
+    const addBtn=h("button",{className:"goal-add-btn",style:"width:100%;padding:6px",onClick:addReadingGoal},"추가");
+    form.appendChild(addBtn);
+    rgBox.appendChild(form);
+  }
+
+  // 목표 목록
+  if(readingGoals.length===0&&!state.showReadingGoalForm){
+    rgBox.appendChild(h("div",{style:"font-size:11px;color:#334155;text-align:center;padding:8px"},"목표를 추가하세요"));
+  }
+  readingGoals.forEach(function(rg){
+    const cat=catByCode(rg.cat);
+    const pct=calcReadingGoalProgress(rg);
+    const cnt=calcReadingGoalCount(rg);
+    const hrs=calcGoalTotalHours(rg.id);
+    const card=h("div",{style:"padding:8px 0;border-bottom:1px solid #1e293b"});
+    const titleRow=h("div",{style:"display:flex;align-items:center;gap:6px;margin-bottom:4px"});
+    // 카테고리 편집
+    titleRow.appendChild(renderEditableCat(rg.cat,function(newCat){
+      rg.cat=newCat;saveGoalData();cloudSaveGoals();_isAutoRender=true;render();
+    }));
+    // 이름 편집
+    titleRow.appendChild(renderEditableName(rg.name,function(newName){
+      rg.name=newName;saveGoalData();cloudSaveGoals();_isAutoRender=true;render();
+    },"font-size:12px;color:#e2e8f0;font-weight:700;flex:1;"));
+    if(hrs>0)titleRow.appendChild(h("span",{style:"font-size:10px;color:#f59e0b;font-family:monospace;font-weight:700;flex-shrink:0"},"("+fmtHours(hrs)+")"));
+    if(rg.type==="cumulative"&&cnt!==null){
+      titleRow.appendChild(h("span",{style:"font-size:10px;color:#3b82f6;font-family:monospace;font-weight:700;flex-shrink:0"},cnt+"/"+rg.targetCount+"권"));
+    }else if(rg.type==="specific"){
+      titleRow.appendChild(h("span",{style:"font-size:10px;color:#0d9488;font-family:monospace;flex-shrink:0"},pct+"%"));
+    }
+    const delId=rg.id;
+    titleRow.appendChild(h("button",{className:"goal-del",style:"font-size:11px;color:#ef4444",onClick:function(){
+      if(confirm("독서 목표를 삭제할까요?"))removeReadingGoal(delId);
+    }},"✕"));
+    card.appendChild(titleRow);
+
+    // 기간 편집 행
+    const periodEditRow=h("div",{style:"display:flex;align-items:center;gap:4px;margin-bottom:6px"});
+    periodEditRow.appendChild(h("span",{style:"font-size:9px;color:#475569;flex-shrink:0"},"기간:"));
+    const sySel=h("select",{style:"font-size:9px;background:#111827;border:1px solid #334155;border-radius:4px;color:#64748b;padding:1px 4px"});
+    const eySel=h("select",{style:"font-size:9px;background:#111827;border:1px solid #334155;border-radius:4px;color:#64748b;padding:1px 4px"});
+    for(var y3=2026;y3<=2040;y3++){
+      const so=h("option",{value:String(y3)},y3+"");
+      if(y3===(rg.startYear||2026))so.selected=true;
+      sySel.appendChild(so);
+      const eo=h("option",{value:String(y3)},y3+"");
+      if(y3===(rg.endYear||2040))eo.selected=true;
+      eySel.appendChild(eo);
+    }
+    sySel.addEventListener("change",function(e){rg.startYear=parseInt(e.target.value);saveGoalData();cloudSaveGoals();});
+    eySel.addEventListener("change",function(e){rg.endYear=parseInt(e.target.value);saveGoalData();cloudSaveGoals();});
+    periodEditRow.appendChild(sySel);
+    periodEditRow.appendChild(h("span",{style:"font-size:9px;color:#475569"},"~"));
+    periodEditRow.appendChild(eySel);
+    // cumulative: 목표권수 편집
+    if(rg.type==="cumulative"){
+      periodEditRow.appendChild(h("span",{style:"font-size:9px;color:#475569;margin-left:8px"},"목표:"));
+      const tgtEdit=h("input",{type:"number",min:"1",style:"width:50px;font-size:9px;background:#111827;border:1px solid #334155;border-radius:4px;color:#3b82f6;padding:1px 4px;text-align:right",value:String(rg.targetCount||100)});
+      tgtEdit.addEventListener("change",function(e){rg.targetCount=parseInt(e.target.value)||1;saveGoalData();cloudSaveGoals();_isAutoRender=true;render();});
+      periodEditRow.appendChild(tgtEdit);
+      periodEditRow.appendChild(h("span",{style:"font-size:9px;color:#475569"},"권"));
+    }
+    card.appendChild(periodEditRow);
+    // 진도 바
+    const barWrap=h("div",{style:"display:flex;align-items:center;gap:6px"});
+    const track=h("div",{style:"flex:1;height:6px;background:#1e293b;border-radius:3px;overflow:hidden"});
+    track.appendChild(h("div",{style:"height:100%;width:"+pct+"%;background:"+(rg.type==="cumulative"?"#3b82f6":"#0d9488")+";border-radius:3px;transition:width .3s"}));
+    barWrap.appendChild(track);
+    barWrap.appendChild(h("span",{style:"font-size:10px;color:#64748b;font-family:monospace;width:32px;text-align:right"},pct+"%"));
+    // specific은 진도 입력 슬라이더
+    if(rg.type==="specific"){
+      const slider=h("input",{type:"range",min:"0",max:"100",value:String(pct),style:"width:60px",onClick:e=>e.stopPropagation()});
+      slider.addEventListener("input",function(e){
+        rg.progress=parseInt(e.target.value);
+        track.firstChild.style.width=rg.progress+"%";
+        barWrap.querySelector("span").textContent=rg.progress+"%";
+        saveGoalData();cloudSaveGoals();
+      });
+      barWrap.appendChild(slider);
+    }
+    card.appendChild(barWrap);
+
+    // 누적형: 책 리스트 토글
+    if(rg.type==="cumulative"){
+      const rgId=rg.id;
+      const listKey="rgList_"+rgId;
+      const isOpen=!!state[listKey];
+      const toggleBtn=h("button",{style:"font-size:10px;color:#3b82f6;background:transparent;border:none;cursor:pointer;padding:4px 0;text-align:left",onClick:function(){
+        state[listKey]=!state[listKey];_isAutoRender=true;render();
+      }},(isOpen?"▲ 책 목록 접기":"▼ 책 목록 보기 ("+cnt+"권)"));
+      card.appendChild(toggleBtn);
+      if(isOpen){
+        const listBox=h("div",{style:"background:#111827;border-radius:8px;padding:8px;margin-top:4px;max-height:200px;overflow-y:auto"});
+        var matchedBooks=[];
+        for(var y2=2026;y2<=2040;y2++){
+          var bkey2="books-data-"+y2;
+          var raw2=null;
+          try{raw2=localStorage.getItem(bkey2)}catch(e){}
+          if(!raw2)continue;
+          try{
+            var bd2=JSON.parse(raw2);
+            for(var m2=1;m2<=12;m2++){
+              (bd2[String(m2)]||[]).forEach(function(b){
+                if(rg.bookType==="all"||b.type===rg.bookType){
+                  matchedBooks.push({y:y2,m:m2,b:b});
+                }
+              });
+            }
+          }catch(e){}
+        }
+        if(matchedBooks.length===0){
+          listBox.appendChild(h("div",{style:"font-size:11px;color:#475569;text-align:center"},"아직 읽은 책이 없습니다"));
+        }else{
+          matchedBooks.forEach(function(item){
+            const brow=h("div",{style:"display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid #1e293b;font-size:11px"});
+            brow.appendChild(h("span",{style:"font-size:9px;color:#475569;flex-shrink:0"},item.y+"/"+item.m));
+            brow.appendChild(h("span",{style:"font-size:9px;padding:1px 4px;border-radius:3px;flex-shrink:0;background:"+(item.b.type==="en"?"#3b82f620":"#10b98120")+";color:"+(item.b.type==="en"?"#60a5fa":"#34d399")},item.b.type==="en"?"EN":"KR"));
+            brow.appendChild(h("span",{style:"flex:1;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},item.b.title));
+            listBox.appendChild(brow);
+          });
+        }
+        card.appendChild(listBox);
+      }
+    }
+    rgBox.appendChild(card);
+  });
+  wrap.appendChild(rgBox);
 
   // Year summary cards
   let yearEn=0,yearKr=0,yearTotal=0;
@@ -3678,15 +4284,15 @@ function render(force){
   app.appendChild(renderHeader());
   app.appendChild(renderTabs());
   const main=h("div",{className:"main"});
-  if(state.tab==="input"||state.tab==="daily"){
+  if(state.tab==="input"){
     main.appendChild(renderDateBar());
     if(state.showDatePicker)main.appendChild(renderDatePicker());
   }
   if(state.tab==="input")main.appendChild(renderInput());
-  if(state.tab==="daily")main.appendChild(renderDaily());
   if(state.tab==="dashboard")main.appendChild(renderDashboard());
   if(state.tab==="goals")main.appendChild(renderGoals());
   if(state.tab==="books")main.appendChild(renderBooks());
+  if(state.tab==="weekly")main.appendChild(renderWeeklyReview());
   app.appendChild(main);
   if(state.showDatePicker&&state.tab==="goals")app.appendChild(renderDatePicker());
   if(state.showCatPicker)app.appendChild(renderCatPicker());
@@ -3694,18 +4300,21 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-12-v2";
-  var HIDS=[1775891208109,1775891225514,1775895969162,1775893771920,1775892309708];
+  var SEED_VER="2026-04-12-v6";
+  var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){
-      return {id:g.id,cat:g.cat,name:g.name,startDate:"2026-4-13",endDate:"2028-2-29",completions:{},longtermId:g.id};
+      return {id:g.id,cat:g.cat,name:g.name,startDate:"2026-3-1",endDate:"2040-2-29",completions:{},longtermId:g.id};
     });
   }
   var SEED_DATA={"entries":{"3-24":{"5:30":{"actual":"D1","actualGoalId":1775891208109},"6:00":{"actual":"D1","actualGoalId":1775891208109},"10:00":{"actual":"M3","actualGoalId":1775868948642},"10:30":{"actual":"M3","actualGoalId":1775868948642},"11:00":{"actual":"M3","actualGoalId":1775868948642},"12:00":{"actual":"E1","actualMemo":"산책"},"12:30":{"actual":"M1","actualGoalId":"연구실 정리"},"13:00":{"actual":"M1","actualMemo":"사무실 정리"},"14:00":{"actual":"M3","actualGoalId":1775868948642},"14:30":{"actual":"M3","actualGoalId":1775868948642},"15:00":{"actual":"M3","actualGoalId":1775868948642},"15:30":{"actual":"M3","actualGoalId":1775868948642},"16:00":{"actual":"M1"},"16:30":{"actual":"M1","actualMemo":"KDI 인사 심의"},"18:30":{"actual":"M2"},"19:00":{"actual":"M2"},"19:30":{"actual":"E3","actualGoalId":1775869313050},"20:00":{"actualMemo":"피아노","actual":"E3","actualGoalId":1775869313050},"21:00":{"actual":"D1"},"21:30":{"actualMemo":"말씀 묵상","actual":"D1"},"7:00":{"actual":"E1","actualGoalId":1775887381526}},"3-25":{"5:30":{"plan":"D1","actual":"D1","actualGoalId":1775891208109},"6:00":{"plan":"D1","actual":"D1","actualGoalId":1775891208109},"7:00":{"plan":"E1","actual":"E1","actualGoalId":1775887381526},"7:30":{"actual":"E1","actualGoalId":1775887381526},"10:00":{"actual":"D1","actualGoalId":1775891225514},"10:30":{"actual":"R3","actualGoalId":"영어뉴스"},"12:00":{"actual":"E1","actualGoalId":"산책"},"13:00":{},"13:30":{"actual":"R2","actualGoalId":1775891383250},"14:00":{"actual":"R2","actualGoalId":1775891383250},"14:30":{"actual":"R2","actualGoalId":1775891383250},"15:00":{"actual":"R2","actualGoalId":1775891383250},"24:00":{"actual":"R2","actualGoalId":1775891383250},"23:30":{"actual":"R2","actualGoalId":1775891383250},"23:00":{"actual":"R2","actualGoalId":1775891383250},"22:30":{"actual":"R2","actualGoalId":1775891383250},"22:00":{"actual":"R2","actualGoalId":1775891383250},"20:30":{"actual":"R2","actualGoalId":1775891383250},"21:00":{"actual":"R2","actualGoalId":1775891383250},"21:30":{"actual":"R2","actualGoalId":1775891383250},"17:30":{"actual":"E3","actualGoalId":1775869313050},"18:00":{"actual":"E3","actualGoalId":1775869313050},"18:30":{"actual":"E3","actualGoalId":1775869313050},"16:00":{"actual":"M2"},"16:30":{"actual":"M2"},"20:00":{"actual":"R2","actualGoalId":1775891383250}},"3-26":{"9:00":{"actual":"R2","actualGoalId":1775891383250},"9:30":{"actual":"R2","actualGoalId":1775891383250},"10:00":{"actual":"R2","actualGoalId":1775891383250},"10:30":{"actual":"R2","actualGoalId":1775891383250},"11:00":{"actual":"R2","actualMemo":"국방대 강의","actualGoalId":1775891383250},"5:30":{"actual":"M2","actualGoalId":"운전"},"6:00":{"actual":"M2","actualGoalId":"운전"},"6:30":{"actual":"M2","actualGoalId":"운전"},"7:00":{"actual":"M2","actualGoalId":"운전"},"7:30":{"actual":"M2","actualGoalId":"운전"},"8:00":{"actual":"M2","actualGoalId":"운전"},"14:00":{"actual":"D1","actualGoalId":1775891225514},"12:00":{"actual":"A3","actualMemo":"이종민 교수","actualGoalId":"이종민 교수"},"12:30":{"actual":"A3","actualGoalId":"이종민 교수"},"13:00":{"actual":"A3","actualGoalId":"이종민 교수"},"15:00":{"actual":"R1","actualGoalId":1775799879214},"15:30":{"actual":"R1","actualMemo":"북러 강화","actualGoalId":1775799879214},"18:00":{"actual":"R1","actualGoalId":1775799879214},"18:30":{"actual":"R1","actualGoalId":1775799879214},"19:00":{"actual":"R1","actualGoalId":1775799879214},"20:30":{"actual":"M2","actualGoalId":"운전"},"21:00":{"actual":"M2","actualGoalId":"운전"},"24:00":{"actual":"A1","actualGoalId":"영화"},"23:30":{"actual":"A1","actualGoalId":"영화"},"23:00":{"actual":"A1","actualGoalId":"영화"},"22:30":{"actual":"M2","actualGoalId":"운전"}},"3-27":{"6:00":{},"6:30":{},"7:00":{},"11:30":{"actual":"A1","actualGoalId":"딸기축제"},"12:00":{"actual":"A1","actualGoalId":"딸기축제"},"12:30":{"actual":"A1","actualGoalId":"딸기축제"},"13:00":{"actual":"A1","actualGoalId":"딸기축제"},"11:00":{"actual":"A1","actualGoalId":"딸기축제"},"13:30":{"actual":"A1","actualGoalId":"딸기축제"},"14:00":{"actual":"A1","actualGoalId":"딸기축제"},"14:30":{"actual":"A1","actualGoalId":"딸기축제"},"15:00":{"actual":"A1","actualGoalId":"딸기축제"},"15:30":{"actual":"A1","actualGoalId":"딸기축제"},"16:00":{"actual":"A1","actualGoalId":"딸기축제"},"16:30":{"actual":"A1","actualGoalId":"딸기축제"},"17:30":{"actual":"A3","actualGoalId":"이종민 교수 가족"},"18:00":{"actual":"A3","actualGoalId":"이종민 교수 가족"},"18:30":{"actual":"A3","actualGoalId":"이종민 교수 가족"},"20:30":{},"21:00":{"actual":"A1","actualGoalId":"영화"},"21:30":{"actual":"A1","actualGoalId":"영화"},"22:00":{"actual":"A1","actualGoalId":"영화"},"22:30":{"actual":"A1","actualGoalId":"영화"},"23:00":{"actual":"A1","actualGoalId":"영화"},"_diary":"딸기축제, 딸기 따기 체험, 명재 고택 방문, 이종민 교수 가족과 식사"},"3-29":{"18:30":{},"8:30":{"actual":"D3","actualGoalId":1775893771920},"9:00":{"actual":"M2","actualGoalId":"아침"},"10:30":{"actual":"D3","actualGoalId":1775893771920},"11:00":{"actual":"D3","actualGoalId":1775893771920},"11:30":{"actual":"D2","actualGoalId":"주일예배"},"12:00":{"actual":"D2","actualGoalId":"주일예배"},"12:30":{"actual":"D2","actualGoalId":"주일예배"},"13:30":{"actual":"D3","actualGoalId":1775893785949},"14:00":{"actual":"D3","actualGoalId":1775893785949},"14:30":{"actual":"D3","actualGoalId":1775893785949},"19:30":{"actual":"A1","actualGoalId":"가족예배"},"20:00":{"actual":"A1","actualGoalId":"가족예배"},"20:30":{"actual":"M2","actualGoalId":"청소"},"18:00":{"actual":"E3","actualGoalId":1775869313050}},"3-30":{"5:30":{"actual":"D1","actualGoalId":1775891208109},"6:00":{"actual":"D1","actualGoalId":1775891208109},"7:00":{"actual":"E1","actualGoalId":1775887381526},"7:30":{"actual":"E1","actualGoalId":1775887381526}},"3-28":{"9:00":{"actual":"M2","actualGoalId":"운전"},"9:30":{"actual":"M2","actualGoalId":"운전"},"8:30":{"actual":"A1","actualGoalId":"산책"},"10:00":{"actual":"A1","actualGoalId":"션샤인 랜드"},"10:30":{"actual":"A1","actualGoalId":"션샤인 랜드"},"11:00":{"actual":"A1","actualGoalId":"션샤인 랜드"},"11:30":{"actual":"A1","actualMemo":"션샤인 랜드","actualGoalId":"션샤인 랜드"},"12:30":{"actual":"A1","actualGoalId":"딸기농장 체험"},"13:00":{"actual":"A1","actualGoalId":"딸기농장 체험"},"13:30":{"actual":"A1","actualGoalId":"딸기농장 체험"},"14:00":{"actual":"A1","actualGoalId":"딸기농장 체험"},"14:30":{"actual":"A1","actualGoalId":"딸기농장 체험"},"15:00":{"actual":"A1","actualGoalId":"명재고택"},"15:30":{"actual":"A1","actualGoalId":"명재고택"},"16:00":{"actual":"A1","actualMemo":"명재고택"},"16:30":{"actual":"M2","actualGoalId":"운전"},"17:00":{"actual":"M2","actualGoalId":"운전"},"17:30":{"actual":"M2","actualGoalId":"운전"},"18:00":{"actual":"M2","actualGoalId":"운전"},"18:30":{"actual":"M2","actualGoalId":"운전"},"19:00":{"actual":"M2","actualGoalId":"운전"},"20:00":{"actual":"M2","actualGoalId":"저녁"},"20:30":{"actual":"M2","actualGoalId":"뒷정리"},"21:00":{"actual":"M2","actualGoalId":"뒷정리"}},"3-31":{"5:30":{"actual":"D1","actualGoalId":1775891208109},"6:00":{"actual":"D1","actualGoalId":1775891208109},"11:30":{"actual":"A1"},"12:00":{"actual":"A1"},"12:30":{"actual":"A1"},"13:00":{"actual":"M2"},"13:30":{"actual":"M2"},"14:00":{"actual":"M2"},"15:00":{"actual":"D1","actualGoalId":1775891225514},"10:00":{"actual":"M3","actualGoalId":1775868948642},"10:30":{"actual":"M3","actualGoalId":1775868948642},"11:00":{"actual":"M3","actualGoalId":1775868948642},"_diary":"2일차 (개인적 깨달음과 의문) 아버지의 이름을 부르며 기도할 때, 아버지께서 함께하심을 깊이 느끼게 된다. 이 동행 자체가 하나님께 영광이 되고, 동시에 내게는 모든 필요가 이미 채워져 있다는 믿음을 준다.","15:30":{"plan":"R3","actual":"R2"},"22:00":{"actual":"D3","actualGoalId":1775893771920},"21:30":{"actual":"D3","actualGoalId":1775893771920},"16:00":{"actual":"R2"},"16:30":{"actual":"R2"},"17:00":{"actual":"M1","actualGoalId":"연구실 청소"},"17:30":{"actual":"M1","actualGoalId":"연구실 청소"},"18:00":{"actual":"M1","actualGoalId":"연구실 청소"},"18:30":{"actual":"M1","actualGoalId":"연구실 정리"},"20:00":{"actual":"M2","actualGoalId":"연구실 정리"},"20:30":{"actual":"M2","actualGoalId":"연구실 정리"}},"4-1":{"5:30":{"actual":"D1","plan":"D1","actualGoalId":1775891208109},"6:00":{"actual":"D1","plan":"D1","actualGoalId":1775891208109},"7:00":{"actual":"E1","plan":"E1","actualGoalId":1775887381526},"7:30":{"actual":"E1","plan":"E1","actualGoalId":1775887381526},"9:30":{"plan":"M2","actual":"M2","actualGoalId":"운전"},"10:00":{"plan":"M2","actual":"M2","actualGoalId":"운전"},"10:30":{"plan":"M2","actual":"M2","actualGoalId":"대출"},"11:00":{"plan":"M2","planMemo":"대출","actual":"D1","actualGoalId":1775891225514},"12:00":{"plan":"D2","actual":"M1","actualGoalId":"대출"},"12:30":{"plan":"D2","actual":"D2","actualGoalId":"한은 신우회"},"13:00":{"plan":"D2","planMemo":"한은 예뱨"},"16:00":{"plan":"M2","actual":"M2","actualGoalId":"운전"},"16:30":{"plan":"M2","actual":"M2","actualGoalId":"운전"},"17:00":{"plan":"M2"},"17:30":{"plan":"E3"},"18:00":{"plan":"E3","actual":"E3","actualGoalId":1775869313050},"18:30":{"plan":"E3","actual":"E3","actualGoalId":1775869313050},"19:30":{"plan":"M2","actual":"M2","actualGoalId":"청소"},"20:00":{"plan":"M2","actual":"E1","actualGoalId":"산책"},"20:30":{"plan":"D1"},"21:00":{"plan":"E2"},"21:30":{"plan":"E2"},"14:00":{"plan":"R2","actual":"R1","actualGoalId":1775802712186},"14:30":{"plan":"R2","planMemo":"통일의식","actual":"R1","actualMemo":"반통일 의식","actualGoalId":1775802712186},"8:00":{"actual":"M3","actualGoalId":"계획"},"11:30":{"actual":"M1","actualGoalId":"대출"},"15:30":{"actual":"M2","actualGoalId":"운전"},"15:00":{"actual":"M2","actualGoalId":"운전"},"19:00":{"actual":"M2","actualGoalId":"저녁"},"_diary":"3일차 (하나님 찾기) 왜 주님께서는 기도를 가르치시면서 용서를 이토록 강조하시는가? 짧은 기도의 가르침 가운데서도 용서에 대한 말씀이 거듭 반복된다. 그것은 아마도 용서로부터 관계가 다시 시작되기 때문일 것이다. 예수께서 이 땅에 오신 것도 우리의 죄값을 대신 치르시고 우리를 용서하시기 위해서이다. 우리는 주로 무엇을 먹을까, 무엇을 마실까를 두고 기도하지만, 주님께서는 용서를 위해서도 기도하라고 하신다. 아버지께서 우리에게 행하신 것처럼, 우리도 나 자신과 화해하고 이웃과 화해하며 세상과도 화해하기를 원하시기 때문인 것 같다.\n\n* 교원공제회, 사학연급에서 1억 3천만원 정도의 빚을 냈다. 빨리 우리집이 나가길을 기도한다. "},"4-2":{"5:30":{"actual":"D1","actualGoalId":1775891208109},"6:00":{"actual":"D1","actualGoalId":1775891208109},"22:00":{"actual":"M1","actualMemo":"연구실 정리","actualGoalId":"연구실 정리"},"21:30":{"actual":"M1","actualGoalId":"연구실 정리"},"21:00":{"actual":"M1","actualGoalId":"연구실 정리"},"20:30":{"actual":"M1","actualGoalId":"연구실 정리"},"20:00":{"actual":"M1","actualGoalId":"연구실 정리"},"19:30":{"actual":"M1","actualGoalId":"연구실 정리"},"19:00":{"actual":"M1","actualGoalId":"연구실 정리"},"13:00":{"actual":"M1","actualGoalId":"연구실 정리"},"13:30":{"actual":"M1","actualGoalId":"연구실 정리"},"14:00":{"actual":"M1","actualGoalId":"연구실 정리"},"14:30":{"actual":"M1","actualGoalId":"연구실 정리"},"15:00":{"actual":"M1","actualGoalId":"연구실 정리"},"15:30":{"actual":"M1","actualGoalId":"연구실 정리"},"16:00":{"actual":"M1","actualGoalId":"연구실 정리"},"10:00":{"actual":"M3","actualGoalId":1775868948642},"10:30":{"actual":"M3","actualGoalId":1775868948642},"11:00":{"actual":"M3","actualGoalId":1775868948642},"11:30":{"actual":"M3","actualMemo":"시간통계 앱 개발","actualGoalId":1775868948642},"16:30":{"actual":"M1","actualGoalId":"연구실 정리"},"17:00":{"actual":"M1","actualGoalId":"연구실 정리"},"_diary":"오늘 종일 연구실 정리했다. 하나님이 주신 인천대 내 마음이 잘 묶여 있기를 기도한다. "},"4-3":{"5:30":{"actual":"D1","actualGoalId":1775891208109},"6:00":{"actual":"D1","actualGoalId":1775891208109},"7:00":{"actual":"E1","actualGoalId":1775887381526},"7:30":{"actual":"E1","actualMemo":"수영","actualGoalId":1775887381526},"10:30":{"actual":"M3","actualGoalId":1775868948642},"11:00":{"actual":"M3","actualGoalId":1775868948642},"11:30":{"actual":"M3","actualMemo":"시간통계 앱 개발","actualGoalId":1775868948642},"12:00":{"actual":"D1","actualGoalId":1775891225514},"_diary":"4일차 (메시지 찾기) 주님께서 돌아가신 성금요일을 보내며, 나를 용서하신 주님을 묵상합니다. 나의 부족함, 부끄러움, 허물을 품어주시고, 나의 죄악을 씻어주심에 감사합니다. 주님의 용서에 힘입어, 나도 내 자신을 용서하고, 나의 이웃을 용서하겠습니다. 새벽말씀 처럼 오실 주님을 소망하며 넉넉한 마음으로 걸림없이 세상을 살아가겠습니다. ","12:30":{"actual":"D1","actualGoalId":1775891225514},"13:00":{"actual":"A2","actualGoalId":"목사님 부부"},"13:30":{"actualMemo":"목사님 식사","actual":"A2","actualGoalId":"목사님 부부"},"14:00":{"actual":"M2","actualGoalId":"운전"},"14:30":{"actual":"M2","actualGoalId":"운전"},"15:00":{"actual":"M2","actualGoalId":"정형외과(100퍼센트)"},"15:30":{"actual":"M2","actualGoalId":"운전"},"16:00":{"actual":"M2","actualMemo":"정형외과 진로","actualGoalId":"운전"},"17:30":{"actual":"E3","actualGoalId":1775869313050},"18:00":{"actual":"E3","actualGoalId":1775869313050},"18:30":{"actual":"E3","actualMemo":"피아노","actualGoalId":1775869313050}},"4-4":{"7:30":{"actual":"D1","actualGoalId":1775891208109},"8:00":{"actual":"E1","actualGoalId":"산책"},"8:30":{"actual":"E1","actualGoalId":"산책"},"9:00":{"actual":"E2","actualGoalId":1775895003055},"9:30":{"actual":"E2","actualGoalId":1775895003055},"16:00":{"actual":"M2","actualMemo":"장보기","actualGoalId":"장보기"},"15:30":{"actual":"M2","actualGoalId":"장보기"},"15:00":{"actual":"M2","actualGoalId":"장보기"},"14:30":{"actual":"M2","actualGoalId":"장보기"},"14:00":{"actual":"M2","actualGoalId":"장보기"},"10:00":{"actual":"D2","actualGoalId":"애들과 성경나눔"},"10:30":{"actual":"D2","actualMemo":"하브루타","actualGoalId":"애들과 성경나눔"},"11:30":{"actual":"M2","actualGoalId":"청소"},"12:00":{"actual":"M2","actualGoalId":"청소"},"12:30":{"actual":"M2","actualGoalId":"청소"},"18:30":{"actual":"M2","actualGoalId":"청소"},"19:00":{"actual":"M2","actualGoalId":"청소"},"19:30":{"actual":"M2","actualGoalId":"청소"},"20:30":{"actual":"D3","actualGoalId":1775893771920},"21:00":{"actual":"D3","actualGoalId":1775893771920},"21:30":{"actual":"M2","actualGoalId":"청소"},"22:00":{"actual":"M2","actualGoalId":"청소"},"_diary":"오늘 아침에 기도하는데 하나의 깨달음이 생겼다. 목사님께서 고난주간 새벽설교로 요한계시록을 한것에 대한 반감이 있었는데, 그에 대한 반성을 하게 되었다. 그리스도의 고난만이 아니라, 성도의 고난도 중요한 것이고, 그에 대한 위로의 책이 요한계시록이라면 고난 주간과 요한계시록이 무관할 이유도 없는 것이다. 나에게 위로를 주시기 위한 은혜의 자리 일 수 있는데 나 경험, 판단때문에 괜시리 주신 은혜를 거부한 것이다. 반성하고 요한계시록을 다시 읽고, 관련해서 '요한계시록 뒷조사'라는 앱툰책도 읽기도 했다. "},"4-5":{"9:00":{"actual":"D3","actualGoalId":1775893771920},"9:30":{"actual":"D3","actualGoalId":1775893771920},"11:00":{"actual":"D3","actualGoalId":1775893771920},"11:30":{"actual":"D2","actualGoalId":"주일예배"},"12:00":{"actual":"D2","actualGoalId":"부활주일 예배"},"12:30":{"actual":"D2","actualGoalId":"부활주일 예배"},"13:00":{"actual":"D3","actualGoalId":1775893785949},"13:30":{"actual":"D3","actualGoalId":1775893785949},"14:30":{"actual":"D2","actualGoalId":"교사셀 모임"},"15:00":{"actual":"D2","actualGoalId":"교사셀 모임"},"15:30":{"actual":"D2","actualGoalId":"교사셀 모임"},"16:00":{"actual":"D3","actualGoalId":"교사모임"},"17:30":{"actual":"M2","actualGoalId":"저녁"},"18:00":{"actual":"E3","actualGoalId":1775869313050},"18:30":{"actual":"M2","actualGoalId":"청소"},"19:00":{"actual":"M2","actualGoalId":"청소"},"20:00":{"actual":"A1","actualGoalId":"가족예배"},"21:00":{"actual":"E2","actualGoalId":1775895003055},"_diary":"부활주일 예배 때, 지우와 제민이가 성극 뮤지컬에 참여했다. 지우는 예수로 제민이는 군중 중 하나로 참여했다. 진지하지 못하고 웃음이 나오면 어떻하지 하고 걱정했는데... 오히려 감동까지 받았다. 열심히 해주는 아이들이 모습이 너무 고맙다. "},"4-6":{"_diary":"*1일차 (중심주제) 내게 주신 재물을 바르게 분별하여 하나님 뜻에 맞게 사용해야 한다. 분별이 흐려지면, 재물을 주신 하나님보다 재물 자체를 더 의지하고 섬기게 된다고 주님은 경고하신다.","5:30":{"actual":"D1","actualGoalId":1775891208109},"6:00":{"actual":"D1","actualGoalId":1775891208109},"7:00":{"actual":"E1","actualGoalId":1775887381526},"7:30":{"actual":"E1","actualMemo":"수영","actualGoalId":1775887381526},"10:30":{"actual":"D1","actualGoalId":1775891225514},"11:00":{"actual":"M3","actualGoalId":1775868948642},"13:30":{"actual":"M3","actualGoalId":1775868948642},"14:00":{"actual":"M1","actualGoalId":"연구실 정리"},"14:30":{"actual":"M1","actualGoalId":"연구실 정리"},"15:00":{"actual":"M1","actualGoalId":"연구실 정리"},"16:00":{"actual":"M2","actualGoalId":"치과교정"},"16:30":{"actual":"M2","actualGoalId":"치과교정"},"17:00":{"actual":"E3","actualGoalId":1775869313050},"17:30":{"actual":"E3","actualGoalId":1775869313050},"18:00":{"actual":"E3","actualGoalId":1775869313050},"18:30":{"actual":"E3","actualGoalId":1775869313050},"19:00":{"actual":"M2","actualGoalId":"저녁"},"19:30":{"actual":"M2","actualGoalId":"저녁"},"20:00":{"actual":"M2","actualGoalId":"청소"},"20:30":{"actual":"M2","actualGoalId":"청소"},"21:30":{"actual":"E3","actualGoalId":1775869313050},"21:00":{"actual":"E3","actualGoalId":1775869313050}},"4-7":{"_diary":"*새벽설교 : 이사야 40 :311\n4절 골짜기가 매워지고, 언덕이 낮아지고 대로가 열린다. 하나님의 위로 순서를 따라야 한다. 먼저 나를 고치고, 나의 필요한 것을 공급해 주신다. 일상은 반복의 연속이다. 알상은 반복되지만, 뚜렷한 열매가 없을 수 있다. 그 일상 속에 하나님의 위로가 필요하다. \"풀은 마르고, 꽃은 시든다. \" 강대국을 향한 말씀이자. 우리를 향한 말씀. 열심히 살았는데 남음이 없는 인생.. 8절 말씀은 영원히 선다. 영원한  말씀이 우리 삶 속에 들어올때 남김의 삶을 살 수 있다. 위로의 순서 1. 우리를 돌이킴 2. 길을 열어주심 3. 말씀을 주심 -> 영원한 말씀을 통해 남김이 있는 인생을 산다. \n\n* 2일차 (개인적 깨달음과 의문) 나는 무엇에 마음을 두고, 무엇을 바라보며, 누구를 섬기고 있는가? 많은 대상이 있는 것처럼 보이지만, 주님은 결국 두 대상만을 말씀하신다. 하나님과 재물이다. 땅의 것과 하늘의 것, 밝음과 어두움 사이에서 결국 결정은 양자택일이다. 오늘 내 앞에 놓인 수많은 선택 가운데, 돈에 대한 염려와 집착은 버리고 하늘의 보물을 택하며 하나님을 섬기는 쪽을 선택하는 하루가 되기를 기도한다.\n\n* 저녁 성경일기 : 요한계시록 1~2","5:30":{"actual":"D1","actualGoalId":1775891208109},"6:00":{"actual":"D1","actualGoalId":1775891208109},"6:30":{"actual":"D3","actualMemo":"화장실 청소"},"7:00":{"actual":"E1","actualGoalId":1775887381526},"7:30":{"actual":"E1","actualGoalId":1775887381526},"10:00":{"actual":"D1","actualGoalId":1775891225514},"10:30":{"plan":"M3","actual":"M3","actualGoalId":"계획"},"11:00":{"plan":"R3","planMemo":"영어뉴스","actual":"R3","actualGoalId":1775892309708},"18:00":{"plan":"E3","actual":"E3","actualGoalId":1775869313050},"18:30":{"plan":"E3","actual":"E3","actualGoalId":1775869313050},"17:30":{"plan":"E3"},"16:30":{"plan":"M2","actual":"M2","actualGoalId":"청소"},"16:00":{"plan":"M2"},"12:00":{"plan":"E1"},"13:00":{"plan":"R2"},"13:30":{"plan":"R2","actual":"R3","actualGoalId":1775892309708},"14:00":{"plan":"R2","actual":"R2","actualGoalId":"IRB 강의 수강"},"15:00":{"plan":"R1","actual":"R2","actualGoalId":"IRB 강의 수강"},"15:30":{"plan":"R1","planMemo":"기근연구","actual":"R2","actualGoalId":"IRB 강의 수강"},"19:30":{"plan":"M2","actual":"M2","actualGoalId":"청소"},"20:00":{"plan":"M2","actual":"D1","actualGoalId":1775895969162},"19:00":{"plan":"M2","actual":"M2","actualGoalId":"청소"},"20:30":{"plan":"D1","planMemo":"성경","actual":"D1","actualGoalId":1775895969162},"21:00":{"plan":"E2","planMemo":"인간실격"},"21:30":{"plan":"E1","planMemo":"스트레칭"},"14:30":{"actual":"R2","actualGoalId":"IRB 강의 수강"},"17:00":{"actual":"M2","actualGoalId":"저녁"}},"4-8":{"_diary":"*새벽설교,  이사야 40: 12~17\n\n하나님이 지으시고, 섭리하고 계시기에 모든 것이 안전하고, 아름답다. 우리의 인생도 그와 같다. 우리는 과거만 보지만, 하나님은 우리의 미래까지 보신다. 세상에게 보내기 이전에 이미 우리에게 사명이 주어졌다. 모세의 과거만 놓고 보면 이해되지 않지만, 출애굽의 지도자, 선지자라는 사명의 관점에서 보면 모든 것이 잘 준비되면 삶으로 해석될 수 있다. 하나님 앞에서 심는 것 중에 허망한 것이 없다. 반드시 거두게 하신다. \n\n*3일차 (하나님 찾기) 하나님은 우리 마음의 중심을 보신다. 내 마음속의 진짜 보물이 무엇인지, 내가 진짜 의지하는 것이 무엇인지, 내 삶을 진정 다스리는 주인이 누구인지 하나님은 아신다. 주님, 주님 자신을 내게 주소서. 주님만을 갈망합니다. 내 안의 어두움과 탐심과 두려움을 몰아내 주시고, 내 안에 오셔서 내 삶의 주인으로 다스려 주소서.\n\n\n* 기독인 연합회 개강예배를 드렸다. 장소 대여는 내가 했는데, 다행히 교수회관 1층 다목적실이 비워있었다. 음향 준비 등도 신경썼다. 주님의 일에 사용해 주시니 감사하다. 생각보다 학생들이 많이 참석했다. 이동선 교수님께서 학생들의 환영을 받고 우셨다. 그 순수한 마음이 좋았다. 많이 도전이 되는 시간이었다. ","5:30":{"actual":"D1","actualGoalId":1775891208109},"6:00":{"actual":"D1","actualGoalId":1775891208109},"7:00":{"actual":"E1","actualGoalId":1775887381526},"7:30":{"actual":"E1","actualGoalId":1775887381526},"10:00":{"plan":"D1","actual":"D1","actualGoalId":1775891225514},"10:30":{"plan":"R3"},"11:00":{"plan":"R3","actual":"R3","actualGoalId":1775892309708},"12:00":{"plan":"E1","actual":"E1","actualGoalId":"산책"},"13:30":{"plan":"R1"},"14:00":{"plan":"R1","actual":"R1","actualGoalId":1775896149443},"14:30":{"plan":"R1","planMemo":"IRB 연구계획서","actual":"R1","actualGoalId":1775896149443},"13:00":{"plan":"R1","actual":"R3","actualGoalId":1775892309708},"15:30":{"plan":"R1","actual":"R1","actualMemo":"IRB 연구계획서","actualGoalId":1775896149443},"16:00":{"plan":"R1","actual":"D3","actualGoalId":"연합예배 음향 점검"},"17:00":{"plan":"R2","actual":"R2","actualGoalId":1775896220202},"17:30":{"plan":"R2","planMemo":"미시"},"18:00":{"plan":"A2","actual":"A2","actualGoalId":"박승룡 교수님"},"18:30":{"plan":"D2","actual":"D2","actualGoalId":"기독인 연합회 개강모임"},"19:00":{"plan":"D2","actual":"D2","actualGoalId":"기독인 연합회 개강예배"},"19:30":{"plan":"D2","actual":"D2","actualGoalId":"기독인 연합회 개강예배"},"20:00":{"plan":"M2","actual":"D2","actualGoalId":"기독인 연합회 개강예배"},"20:30":{"plan":"M2"},"21:00":{"plan":"D1"},"21:30":{"plan":"D1","planMemo":"요한계시록","actual":"E3","actualGoalId":1775869313050},"15:00":{"actual":"R1","actualGoalId":1775896149443},"16:30":{"actual":"R2","actualGoalId":1775896220202}},"4-9":{"_diary":"*새벽말씀, 이사야 40 : 18~26\n\n소중한 것이 있다면, 그것에 붙들려 있을 수 있다. 소중한 것이 있다면 하나님을 먼저 붙들고 있어야 한다.  하나님보다 붙들고 있는 것이 우상숭배다. 하나님을 무엇과 비기겠느냐? 우상은 사람들이 만드는것, 하나님은 우리를 만드셨다. 우상은 움직일 수 없지만, 하나님은 만유 가운데 계신다. 우상이 우리를 타락시키는 것이 아니라, 우리가 타락할 때 우상을 만들게 된다. 25절 하나님은 누구와 비길 수 없는 분이다. 귀한 것이 있을수록 하나님을 붙드는 자가 되어야 한다. 하나님의 전능성은 우리에 대해 모든 것은 아신다는 것이다. 부모가 돈이 많다고 자식에게 말한다면, 자량이 아니라 격려다. 하나님의 전능성은 이와 같은 것이다.\n\n*4일차 (메시지 찾기) 오직 하늘에 보물을 쌓을 때에만 남김이 있는 인생을 살 수 있다. 그렇다면 어떻게 하늘에 보물을 쌓는 삶을 살 수 있을까? 본문은 하나님을 주인 삼을 때에만 가능하다고 말한다. 우리가 삶의 모든 영역에서 주님의 주되심을 인정한다면, 종된 우리가 걱정할 것이 무엇인가? 내 것도 아닌 것에 왜 탐심을 내겠는가? 종된 삶은 주인이 책임지시는 삶이다. 그때 하늘에 보물을 쌓는 삶은 단지 헌금하고 구제하는 일에만 머물지 않는다. 내가 연구하고, 강의하고, 가족을 돌보고, 함께 기쁨을 나누고, 교회를 섬기고, 친구들과 우정을 나누며, 사랑으로 행하는 모든 일이 하늘에 보물을 쌓는 일이 된다. 그렇게 살아갈 때 내 인생은 결국 헛되지 않을 인생이 되고, 죽음이후 주님 앞에서도 칭찬받는 인생이 될 것이라 믿는다.\n\n* 기독교수회 예배때 채진석 교수님께서 강의해 주셨는데, 정말 큰 감동을 받았다. 교수님의 아버님께서 자동차 사고로 큰 화상을 입으셨는데 이를 극복하고 건강보험 도입 등 사회발전에 큰 기여를 하신 것이다. 채 교수님도 불우한 환경에서도 잘 자라셨고, 지극히 작은자 한사람에게 한것이 나에게 한것이라는 그리스도의 말씀을 푯대 삼고 사셨다고 한다. 요즈음 여러가지로 큰 은혜를 받는다. 감사하다.  ","5:30":{"actual":"D1","actualGoalId":1775891208109},"6:00":{"actual":"D1","actualGoalId":1775891208109},"17:00":{"actual":"M2","actualGoalId":"도수치료"},"17:30":{"actual":"M2","actualGoalId":"도수치료"},"20:30":{"actual":"E3","actualGoalId":1775869313050},"21:00":{"actual":"E3","actualGoalId":1775869313050},"19:00":{"actual":"M2","actualGoalId":"청소"},"19:30":{"actual":"M2","actualGoalId":"청소"},"12:00":{"actual":"D2","actualGoalId":"기독교수회 예배"},"12:30":{"actual":"D2","actualGoalId":"기독교수회 예배"},"13:00":{"actual":"A1","actualGoalId":"미미"},"13:30":{"actual":"A1","actualGoalId":"미미"},"14:00":{"actual":"A1","actualGoalId":"미미"},"14:30":{"actual":"A1","actualMemo":"미미","actualGoalId":"미미"},"15:30":{"actual":"R2","actualGoalId":1775896220202},"16:00":{"actual":"R2","actualMemo":"미시","actualGoalId":1775896220202},"10:30":{"actual":"D1","actualGoalId":1775891225514},"11:00":{"actual":"D1","actualGoalId":1775891225514},"18:30":{"actual":"A1","actualGoalId":"어머니 외식"}},"4-10":{"_diary":"* 새벽설교, 이사야 40: 27~31\n현실에는 막힘이 있다. 27 여호와께 숨겨졌다. 그러나 하나님은 여전하다. 내 마음이 바뀌는 것이다. 하나님 안에서 선을 넘지 말아야 한다. 내 느낌 , 경험으로 하나님을 재단하지 말아야 한다. 그것이 하나님을 앙망하는 것이다. 하나님께서 새힘을 주신다. 27-> 28절의 확신을 바뀌게 된다. \n\n*금요기도회, 골로새서 1: 15~18\n말씀을 듣게 되면, 행함이 생긴다. 흑암에서 옮겨 아들의 나라에 들어가게 한다. 진짜 본향이 모르면 흑암 속에서 삶이 된다. 탕자가 있어야 자리인 아버지의 집에 있는 것이 아들의 나라에서 사는 것이다. 하나님이 행하신 일을 아는것. 오늘은 하나님 자체를 아는 것.. 15절 예수님은 하나님의 형상. 형상되신 예수를 통해 하나님을 알 수 있다. 예수를 주목할 때 하나님을 잘 알게 된다. 16절 만물이 그에게서 창조되었다. 예수님은 창조자 이시다. 우리삶의 문제가 있다면 주께서 나아가야 한다. 창조자이시면 기도의 자리로 나아가야 한다. 예수님을 알았다면 우리는 어떤 변화가 일어날까? 그로말고 그를 위하여 창조되었다. 안다면 삶의 방향이 바뀌어야 한다. 그를 위해 살아야 한다. 하나님의 설계도대로 살겠다는 고백이다 .18절 예수가 교회의 머리다. 부활의 첫열매. 교회의 머리 - 대속, 거듭 값을 지불하신 분이다. -> 모든 것에 결정권을 예수님께 맡겨야 한다.  묻는 중심이 중요하다. 부활의 첫열매- 오직 예수만이 영원함으로 이어진다. 진짜 소망은 예수 안에 두어야 한다. 나머지 것은 다 사라진다. 방향성과 소망... 주님은 주인 삼고, 영원한 소망을 주님께 주자. \n \n","5:30":{"actual":"D1","actualGoalId":1775891208109},"6:00":{"actual":"D1","actualGoalId":1775891208109},"7:00":{"actual":"E1","actualGoalId":1775887381526},"7:30":{"actual":"E1","actualGoalId":1775887381526},"8:30":{"plan":"D1","actual":"M2","actualGoalId":"아침"},"9:00":{"plan":"R2","actual":"M2","actualGoalId":"정리"},"9:30":{"plan":"R2"},"10:00":{"plan":"R1","actual":"D1","actualGoalId":1775891225514},"10:30":{"plan":"R1","actual":"M3","actualGoalId":1775868948642},"11:00":{"plan":"R1","actual":"M3","actualGoalId":1775868948642},"13:00":{"plan":"M3","actual":"M3","actualGoalId":1775868948642},"13:30":{"plan":"M3","actual":"M3","actualGoalId":1775868948642},"14:30":{"plan":"M3","actual":"M3","actualGoalId":1775868948642},"15:00":{"plan":"R2","actual":"M3","actualGoalId":1775868948642},"15:30":{"plan":"R2","actual":"M3","actualGoalId":1775868948642},"16:00":{"plan":"R2","actual":"M3","actualGoalId":1775868948642},"14:00":{"plan":"M3","actual":"M3","actualGoalId":1775868948642},"21:00":{"plan":"D2","actual":"D2","actualGoalId":"금요기도회"},"21:30":{"plan":"D2","actual":"D2","actualGoalId":"금요기도회"},"22:00":{"plan":"D2","actual":"D2","actualGoalId":"금요기도회"},"18:00":{"plan":"E3","actual":"E3","actualGoalId":1775869313050},"18:30":{"plan":"E3","actual":"E3","actualGoalId":1775869313050},"17:30":{"plan":"E3","actual":"E3","actualGoalId":1775869313050},"17:00":{"plan":"E3"},"19:30":{"plan":"M2","actual":"M3","actualGoalId":1775868948642},"20:00":{"plan":"M2","actual":"M3","actualGoalId":1775868948642},"23:00":{"actual":"M3","actualGoalId":1775868948642},"23:30":{"actual":"M3","actualGoalId":1775868948642},"16:30":{"actual":"M3","actualGoalId":1775868948642}},"4-11":{"8:30":{"actual":"E1","actualGoalId":"산책"},"9:00":{"actual":"E1","actualGoalId":"산책"},"7:30":{"actual":"M3","actualGoalId":1775868948642},"7:00":{"actual":"M3","actualGoalId":1775868948642},"17:30":{"actual":"M3","actualGoalId":1775868948642},"17:00":{"actual":"M3","actualGoalId":1775868948642},"16:30":{"actual":"M3","actualGoalId":1775868948642},"16:00":{"actual":"M3","actualGoalId":1775868948642},"15:30":{"actual":"M3","actualGoalId":1775868948642},"15:00":{"actual":"M3","actualGoalId":1775868948642},"14:30":{"actual":"M3","actualGoalId":1775868948642},"14:00":{"actual":"M3","actualGoalId":1775868948642},"11:00":{"actual":"E1","actualGoalId":1775887381526},"11:30":{"actual":"E1","actualGoalId":1775887381526},"13:00":{"actual":"A1","actualGoalId":"지우, 제민과 외식"},"13:30":{"actual":"A1","actualGoalId":"지우, 제민과 외식"},"18:30":{"actual":"M1","actualGoalId":"장보기"},"19:30":{"actual":"M2","actualGoalId":"청소"},"20:00":{"actual":"M3","actualGoalId":1775868948642},"21:00":{"actual":"A1","actualGoalId":"영화: 휴고"},"21:30":{"actual":"A1","actualGoalId":"영화: 휴고"},"22:00":{"actual":"A1","actualGoalId":"영화: 휴고"},"22:30":{"actual":"A1","actualGoalId":"영화: 휴고"}}}};
   var SEED_BOOKS={"1":[{"type":"en","title":"Magician's Elephant","id":1775097742502},{"type":"kr","title":"오딧세이(요약본)","id":1775097769208},{"type":"kr","title":"호밀밭의 파수꾼","id":1775097786627}],"4":[{"type":"kr","title":"요한계시록 뒷조사","memo":"나는 어떤 대안적인 삶을 살고 있난 계시록에서 말하고 있는..","id":1775480859986}]};
-  var SEED_GOALS={"daily":{"4-10":[{"id":1775800043487,"cat":"R2","name":"미시3강","done":false},{"id":1775800125807,"cat":"R1","name":"인천대 교내 연구과제 제안서 작성","done":false},{"id":1775800140540,"cat":"M3","name":"시간통계 앱 업데이트","done":true}]},"weekly":[{"id":1775800455390,"cat":"R1","name":"Global NK 원고","memo":"","progress":0,"subtasks":[],"period":"2026-04-W3","month":4,"weekIdx":3,"year":2026},{"id":1775800472545,"cat":"R2","name":"전략연 세미나 원고","memo":"","progress":0,"subtasks":[],"period":"2026-04-W3","month":4,"weekIdx":3,"year":2026},{"id":1775800556876,"cat":"R2","name":"미시4, 5강","memo":"","progress":0,"subtasks":[],"period":"2026-04-W3","month":4,"weekIdx":3,"year":2026},{"id":1775806241659,"cat":"R1","name":"교내 연구과제 제안서 작성(기근연구)","memo":"","progress":0,"subtasks":[],"period":"2026-04-W2","month":4,"weekIdx":2,"year":2026},{"id":1775806351905,"cat":"R1","name":"통일의식 논문 리딩","memo":"","progress":0,"subtasks":[],"period":"2026-04-W4","month":4,"weekIdx":4,"year":2026},{"id":1775891383250,"cat":"R2","name":"국방대 강의","memo":"","progress":100,"subtasks":[],"period":"2026-03-W4","month":3,"weekIdx":4,"year":2026}],"monthly":[{"id":1775799879214,"cat":"R1","name":"북러, 북중 관계 논문 게재","memo":"","progress":70,"subtasks":[],"year":2026,"startMonth":3,"endMonth":4,"month":3},{"id":1775800894008,"cat":"R1","name":"북대 교과서 작성","memo":"","progress":0,"subtasks":[],"year":2026,"startMonth":5,"endMonth":8,"month":5},{"id":1775802712186,"cat":"R1","name":"통일의식 논문","memo":"","progress":50,"subtasks":[],"year":2026,"startMonth":4,"endMonth":6,"month":4},{"id":1775804356825,"cat":"R1","name":"탈북자 건강 (Asian perspective) 발간","memo":"","progress":90,"subtasks":[{"id":1775804432223,"name":"초안 accept","weight":90,"done":true},{"id":1775804458757,"name":"교정","weight":5,"done":false},{"id":1775804480655,"name":"출간","weight":5,"done":false}],"year":2026,"startMonth":4,"endMonth":9,"month":4},{"id":1775805752089,"cat":"R2","name":"한국경제발전론 과정개발","memo":"","progress":0,"subtasks":[],"year":2026,"startMonth":5,"endMonth":8,"month":5},{"id":1775869313050,"cat":"E3","name":"바이엘","memo":"","progress":0,"subtasks":[{"id":1775885422014,"name":"60~80","weight":30,"done":false},{"id":1775885436202,"name":"81~90","weight":30,"done":false},{"id":1775885449985,"name":"91~106","weight":40,"done":false}],"parentIds":{"longterm":1775798034668},"year":2026,"startMonth":3,"endMonth":6,"month":3},{"id":1775887381526,"cat":"E1","name":"자유형","memo":"","progress":0,"subtasks":[{"id":1775888441698,"name":"자유형 연속 50m","weight":50,"done":false},{"id":1775888472943,"name":"자유형 연속 100m","weight":50,"done":false}],"parentIds":{"longterm":1775885963745},"year":2026,"startMonth":3,"endMonth":5,"month":3},{"id":1775895003055,"cat":"E2","name":"요한계시록 뒷조사","memo":"","progress":100,"subtasks":[],"year":2026,"startMonth":4,"endMonth":4,"month":4},{"id":1775896149443,"cat":"R1","name":"IRB 면제 신청","memo":"","progress":100,"subtasks":[],"year":2026,"startMonth":4,"endMonth":4,"month":4},{"id":1775896220202,"cat":"R2","name":"미시 강의 수강","memo":"","progress":0,"subtasks":[],"year":2026,"startMonth":4,"endMonth":6,"month":4}],"longterm":[{"id":1775798034668,"cat":"E3","name":"새벽기도 피아노 반주자 되기","memo":"","progress":0,"subtasks":[{"id":1775798052897,"name":"바이엘","weight":20,"done":false},{"id":1775798113296,"name":"체르니100","weight":20,"done":false},{"id":1775798150778,"name":"체르니30","weight":40,"done":false},{"id":1775798168813,"name":"체르니40","weight":20,"done":false}],"startYear":2026,"endYear":2028},{"id":1775798292050,"cat":"R1","name":"북한경제 교과서 집필","memo":"","progress":90,"subtasks":[],"startYear":2026,"endYear":2028},{"id":1775799202628,"cat":"R2","name":"경제학 기초 다지기","memo":"","progress":0,"subtasks":[{"id":1775799217231,"name":"미시","weight":30,"done":false},{"id":1775799226539,"name":"거시","weight":30,"done":false},{"id":1775799272625,"name":"경제수학","weight":10,"done":false},{"id":1775799312106,"name":"통계학/계량","weight":30,"done":false}],"startYear":2026,"endYear":2028},{"id":1775868948642,"cat":"M3","name":"시간통계 앱 개발","memo":"","progress":0,"subtasks":[],"startYear":2026,"endYear":2027},{"id":1775885963745,"cat":"E1","name":"수영 마스터하기","memo":"","progress":0,"subtasks":[{"id":1775886913331,"name":"자유형 50m 연속수영","weight":10,"done":false},{"id":1775886931950,"name":"자유형 100m 연속수영","weight":10,"done":false},{"id":1775886999898,"name":"배형 25m 연속수영","weight":10,"done":false},{"id":1775887108687,"name":"평형 25m 연속수영","weight":20,"done":false},{"id":1775887136889,"name":"접형 25m 연속수영","weight":20,"done":false},{"id":1775887304979,"name":"상급반으로 올라가기","weight":30,"done":false}],"startYear":2026,"endYear":2028},{"id":1775893785949,"cat":"D3","name":"청소년부","memo":"","progress":0,"subtasks":[],"startYear":2026,"endYear":2040}],"habits":[{"id":1775891208109,"cat":"D1","name":"새벽기도","startDate":"2026-4-13","endDate":"2028-2-29","completions":{},"longtermId":1775891208109},{"id":1775891225514,"cat":"D1","name":"묵상","startDate":"2026-4-13","endDate":"2028-2-29","completions":{},"longtermId":1775891225514},{"id":1775892309708,"cat":"R3","name":"영어뉴스 스터디","startDate":"2026-4-13","endDate":"2028-2-29","completions":{},"longtermId":1775892309708},{"id":1775893771920,"cat":"D3","name":"성가대","startDate":"2026-4-13","endDate":"2028-2-29","completions":{},"longtermId":1775893771920},{"id":1775895969162,"cat":"D1","name":"성경읽기","startDate":"2026-4-13","endDate":"2028-2-29","completions":{},"longtermId":1775895969162}]};
+  var SEED_GOALS={"daily":{"4-10":[{"id":1775800043487,"cat":"R2","name":"미시3강","done":false},{"id":1775800125807,"cat":"R1","name":"인천대 교내 연구과제 제안서 작성","done":false},{"id":1775800140540,"cat":"M3","name":"시간통계 앱 업데이트","done":true}]},"weekly":[{"id":1775800455390,"cat":"R1","name":"Global NK 원고","memo":"","progress":0,"subtasks":[],"period":"2026-04-W3","month":4,"weekIdx":3,"year":2026},{"id":1775800472545,"cat":"R2","name":"전략연 세미나 원고","memo":"","progress":0,"subtasks":[],"period":"2026-04-W3","month":4,"weekIdx":3,"year":2026},{"id":1775800556876,"cat":"R2","name":"미시4, 5강","memo":"","progress":0,"subtasks":[],"period":"2026-04-W3","month":4,"weekIdx":3,"year":2026},{"id":1775806241659,"cat":"R1","name":"교내 연구과제 제안서 작성(기근연구)","memo":"","progress":0,"subtasks":[],"period":"2026-04-W2","month":4,"weekIdx":2,"year":2026},{"id":1775806351905,"cat":"R1","name":"통일의식 논문 리딩","memo":"","progress":0,"subtasks":[],"period":"2026-04-W4","month":4,"weekIdx":4,"year":2026},{"id":1775891383250,"cat":"R2","name":"국방대 강의","memo":"","progress":100,"subtasks":[],"period":"2026-03-W4","month":3,"weekIdx":4,"year":2026}],"monthly":[{"id":1775799879214,"cat":"R1","name":"북러, 북중 관계 논문 게재","memo":"","progress":70,"subtasks":[],"year":2026,"startMonth":3,"endMonth":4,"month":3},{"id":1775800894008,"cat":"R1","name":"북대 교과서 작성","memo":"","progress":0,"subtasks":[],"year":2026,"startMonth":5,"endMonth":8,"month":5},{"id":1775802712186,"cat":"R1","name":"통일의식 논문","memo":"","progress":50,"subtasks":[],"year":2026,"startMonth":4,"endMonth":6,"month":4},{"id":1775804356825,"cat":"R1","name":"탈북자 건강 (Asian perspective) 발간","memo":"","progress":90,"subtasks":[{"id":1775804432223,"name":"초안 accept","weight":90,"done":true},{"id":1775804458757,"name":"교정","weight":5,"done":false},{"id":1775804480655,"name":"출간","weight":5,"done":false}],"year":2026,"startMonth":4,"endMonth":9,"month":4},{"id":1775805752089,"cat":"R2","name":"한국경제발전론 과정개발","memo":"","progress":0,"subtasks":[],"year":2026,"startMonth":5,"endMonth":8,"month":5},{"id":1775869313050,"cat":"E3","name":"바이엘","memo":"","progress":0,"subtasks":[{"id":1775885422014,"name":"60~80","weight":30,"done":false},{"id":1775885436202,"name":"81~90","weight":30,"done":false},{"id":1775885449985,"name":"91~106","weight":40,"done":false}],"parentIds":{"longterm":1775798034668},"year":2026,"startMonth":3,"endMonth":6,"month":3},{"id":1775887381526,"cat":"E1","name":"자유형","memo":"","progress":0,"subtasks":[{"id":1775888441698,"name":"자유형 연속 50m","weight":50,"done":false},{"id":1775888472943,"name":"자유형 연속 100m","weight":50,"done":false}],"parentIds":{"longterm":1775885963745},"year":2026,"startMonth":3,"endMonth":5,"month":3},{"id":1775895003055,"cat":"E2","name":"요한계시록 뒷조사","memo":"","progress":100,"subtasks":[],"year":2026,"startMonth":4,"endMonth":4,"month":4},{"id":1775896149443,"cat":"R1","name":"IRB 면제 신청","memo":"","progress":100,"subtasks":[],"year":2026,"startMonth":4,"endMonth":4,"month":4},{"id":1775896220202,"cat":"R2","name":"미시 강의 수강","memo":"","progress":0,"subtasks":[],"year":2026,"startMonth":4,"endMonth":6,"month":4}],"longterm":[{"id":1775798034668,"cat":"E3","name":"새벽기도 피아노 반주자 되기","memo":"","progress":0,"subtasks":[{"id":1775798052897,"name":"바이엘","weight":20,"done":false},{"id":1775798113296,"name":"체르니100","weight":20,"done":false},{"id":1775798150778,"name":"체르니30","weight":40,"done":false},{"id":1775798168813,"name":"체르니40","weight":20,"done":false}],"startYear":2026,"endYear":2028},{"id":1775798292050,"cat":"R1","name":"북한경제 교과서 집필","memo":"","progress":90,"subtasks":[],"startYear":2026,"endYear":2028},{"id":1775799202628,"cat":"R2","name":"경제학 기초 다지기","memo":"","progress":0,"subtasks":[{"id":1775799217231,"name":"미시","weight":30,"done":false},{"id":1775799226539,"name":"거시","weight":30,"done":false},{"id":1775799272625,"name":"경제수학","weight":10,"done":false},{"id":1775799312106,"name":"통계학/계량","weight":30,"done":false}],"startYear":2026,"endYear":2028},{"id":1775868948642,"cat":"M3","name":"시간통계 앱 개발","memo":"","progress":0,"subtasks":[],"startYear":2026,"endYear":2027},{"id":1775885963745,"cat":"E1","name":"수영 마스터하기","memo":"","progress":0,"subtasks":[{"id":1775886913331,"name":"자유형 50m 연속수영","weight":10,"done":false},{"id":1775886931950,"name":"자유형 100m 연속수영","weight":10,"done":false},{"id":1775886999898,"name":"배형 25m 연속수영","weight":10,"done":false},{"id":1775887108687,"name":"평형 25m 연속수영","weight":20,"done":false},{"id":1775887136889,"name":"접형 25m 연속수영","weight":20,"done":false},{"id":1775887304979,"name":"상급반으로 올라가기","weight":30,"done":false}],"startYear":2026,"endYear":2028},{"id":1775893785949,"cat":"D3","name":"청소년부","memo":"","progress":0,"subtasks":[],"startYear":2026,"endYear":2040}],"habits":[{"id":1775891208109,"cat":"D1","name":"새벽기도","startDate":"2026-3-1","endDate":"2040-2-29","completions":{},"longtermId":1775891208109},{"id":1775891225514,"cat":"D1","name":"묵상","startDate":"2026-3-1","endDate":"2040-2-29","completions":{},"longtermId":1775891225514},{"id":1775892309708,"cat":"R3","name":"영어뉴스 스터디","startDate":"2026-3-1","endDate":"2040-2-29","completions":{},"longtermId":1775892309708},{"id":1775893771920,"cat":"D3","name":"성가대","startDate":"2026-3-1","endDate":"2040-2-29","completions":{},"longtermId":1775893771920},{"id":1775895969162,"cat":"D1","name":"성경읽기","startDate":"2026-3-1","endDate":"2040-2-29","completions":{},"longtermId":1775895969162}]};
 
-  if(!localStorage.getItem("timesheet-data-2026"))
+  // timesheet data: 없거나 entries가 비어있으면 시드 적용
+  var rawD=localStorage.getItem("timesheet-data-2026");
+  var existD=rawD?JSON.parse(rawD):null;
+  if(!existD||Object.keys(existD.entries||{}).length===0)
     localStorage.setItem("timesheet-data-2026",JSON.stringify(SEED_DATA));
   if(!localStorage.getItem("books-data-2026"))
     localStorage.setItem("books-data-2026",JSON.stringify(SEED_BOOKS));
@@ -3716,12 +4325,33 @@ function render(force){
     localStorage.setItem("goals-data-2026",JSON.stringify(SEED_GOALS));
   }else{
     var changed=false;
-    if(!gObj.habits||gObj.habits.length===0){
-      gObj.habits=makeHabits(gObj.longterm||[]);
+    // habits 정규화: ID 중복 제거 후 HIDS 기준 5개만 유지 (completions 보존)
+    var existingById={};
+    (gObj.habits||[]).forEach(function(h){
+      if(!existingById[h.id]||Object.keys(h.completions||{}).length>Object.keys((existingById[h.id].completions)||{}).length)
+        existingById[h.id]=h;
+    });
+    var normalized=HIDS.map(function(id){
+      if(existingById[id])return existingById[id];
+      // SEED_GOALS.habits에서 기본값 가져오기
+      var seed=(SEED_GOALS.habits||[]).find(function(h){return h.id===id});
+      return seed?seed:null;
+    }).filter(Boolean);
+    // 개수 불일치 또는 순서 불일치 시 정규화
+    var curIds=(gObj.habits||[]).map(function(h){return h.id}).join(',');
+    var wantIds=normalized.map(function(h){return h.id}).join(',');
+    var endDateChanged=(gObj.habits||[]).some(function(h){return h.endDate!=="2040-2-29";});
+    if(curIds!==wantIds||endDateChanged){
+      // endDate만 바뀐 경우 completions 보존하며 endDate만 갱신
+      if(curIds===wantIds&&endDateChanged){
+        (gObj.habits||[]).forEach(function(h){h.endDate="2040-2-29";});
+      }else{
+        gObj.habits=normalized;
+      }
       changed=true;
     }
-    var hIds=(gObj.habits||[]).map(function(h){return h.longtermId}).filter(Boolean);
-    var lt=(gObj.longterm||[]).filter(function(g){return hIds.indexOf(g.id)===-1});
+    // longterm에서 습관 항목 제거
+    var lt=(gObj.longterm||[]).filter(function(g){return HIDS.indexOf(g.id)===-1});
     if(lt.length!==(gObj.longterm||[]).length){gObj.longterm=lt;changed=true;}
     if(changed)localStorage.setItem("goals-data-2026",JSON.stringify(gObj));
   }

@@ -1867,18 +1867,20 @@ function addReadingGoal(){
     cat:state.rgNewCat||"E2",
     name:name,
     type:state.rgNewType||"cumulative",
-    startYear:state.rgNewStartYear||new Date().getFullYear(),
-    endYear:state.rgNewEndYear||2040,
     memo:""
   };
   if(rg.type==="cumulative"){
     rg.bookType=state.rgNewBookType||"en";
     rg.targetCount=parseInt(state.rgNewTarget)||100;
+    rg.startYear=state.rgNewStartYear||2025;
+    rg.endYear=state.rgNewEndYear||2040;
   }else{
+    rg.startDate=state.rgNewStartDate||new Date().toISOString().slice(0,10);
+    rg.endDate=state.rgNewEndDate||"";
     rg.progress=0;
   }
   state.goalData.readingGoals.push(rg);
-  state.rgNewName="";state.showReadingGoalForm=false;
+  state.rgNewName="";state.rgNewStartDate="";state.rgNewEndDate="";state.showReadingGoalForm=false;
   saveGoalData();cloudSaveGoals();_isAutoRender=true;render();
 }
 function removeReadingGoal(id){
@@ -2314,10 +2316,24 @@ function getActiveGoalsForCat(cat){
   // ReadingGoals: 카테고리 일치 + 기간 내 + 미완료
   (state.goalData.readingGoals||[]).forEach(function(rg){
     if(rg.cat!==cat)return;
-    var sy=rg.startYear||state.year;
-    var ey=rg.endYear||2040;
-    if(state.year<sy||state.year>ey)return;
     if(calcReadingGoalProgress(rg)>=100)return;
+    if(rg.type==="specific"){
+      if(rg.startDate||rg.endDate){
+        var today2=new Date(state.year,state.month-1,state.day);
+        var sd2=rg.startDate?new Date(rg.startDate):null;
+        var ed2=rg.endDate?new Date(rg.endDate):null;
+        if(sd2&&today2<sd2)return;
+        if(ed2&&today2>ed2)return;
+      }else if(rg.startYear||rg.endYear){
+        var sy2=rg.startYear||state.year;
+        var ey2=rg.endYear||2040;
+        if(state.year<sy2||state.year>ey2)return;
+      }
+    }else{
+      var sy=rg.startYear||state.year;
+      var ey=rg.endYear||2040;
+      if(state.year<sy||state.year>ey)return;
+    }
     results.push({scope:"readingGoals",goal:{id:rg.id,cat:rg.cat,name:rg.name,progress:null}});
   });
   // Daily: current date
@@ -2556,9 +2572,30 @@ function renderDailyGoals(){
     return sy<=state.year&&state.year<=ey&&(g.progress||0)<100;
   });
   const readingActive=(state.goalData.readingGoals||[]).filter(g=>{
-    const sy=g.startYear||state.year;
-    const ey=g.endYear||2040;
-    return sy<=state.year&&state.year<=ey&&calcReadingGoalProgress(g)<100;
+    if(calcReadingGoalProgress(g)>=100)return false;
+    if(g.type==="specific"){
+      const today=new Date(state.year,state.month-1,state.day);
+      // 날짜 기반 (신규)
+      if(g.startDate||g.endDate){
+        const sd=g.startDate?new Date(g.startDate):null;
+        const ed=g.endDate?new Date(g.endDate):null;
+        if(sd&&today<sd)return false;
+        if(ed&&today>ed)return false;
+        return true;
+      }
+      // 연도 기반 폴백 (구버전 데이터)
+      if(g.startYear||g.endYear){
+        const sy=g.startYear||state.year;
+        const ey=g.endYear||2040;
+        return sy<=state.year&&state.year<=ey;
+      }
+      // 아무것도 없으면 표시
+      return true;
+    }else{
+      const sy=g.startYear||2025;
+      const ey=g.endYear||2040;
+      return sy<=state.year&&state.year<=ey;
+    }
   });
   if(weeklyActive.length+monthlyActive.length+longtermActive.length+readingActive.length>0){
     const ctx=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:10px;margin-bottom:10px;border:1px solid #1e293b"});
@@ -3882,24 +3919,36 @@ function renderBooks(){
       row2.appendChild(h("span",{style:"font-size:11px;color:#64748b"},"권"));
       form.appendChild(row2);
     }
-    // 기간 설정
+    // 기간 설정: specific=날짜, cumulative=연도
     const periodRow=h("div",{style:"display:flex;gap:6px;margin-bottom:6px;align-items:center"});
     periodRow.appendChild(h("span",{style:"font-size:11px;color:#64748b;flex-shrink:0"},"기간:"));
-    const syInp=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px;flex:1"});
-    const eyInp=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px;flex:1"});
-    for(var y=2025;y<=2040;y++){
-      const sOpt=h("option",{value:String(y)},y+"년");
-      if(y===state.rgNewStartYear)sOpt.selected=true;
-      syInp.appendChild(sOpt);
-      const eOpt=h("option",{value:String(y)},y+"년");
-      if(y===state.rgNewEndYear)eOpt.selected=true;
-      eyInp.appendChild(eOpt);
+    if(state.rgNewType==="specific"){
+      if(!state.rgNewStartDate)state.rgNewStartDate=new Date().toISOString().slice(0,10);
+      if(!state.rgNewEndDate)state.rgNewEndDate="";
+      const sdInp=h("input",{type:"date",style:"flex:1;padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#0c0f1a;color:#e2e8f0;font-size:11px",value:state.rgNewStartDate});
+      sdInp.addEventListener("change",function(e){state.rgNewStartDate=e.target.value});
+      periodRow.appendChild(sdInp);
+      periodRow.appendChild(h("span",{style:"font-size:11px;color:#64748b"},"~"));
+      const edInp=h("input",{type:"date",style:"flex:1;padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#0c0f1a;color:#e2e8f0;font-size:11px",value:state.rgNewEndDate||""});
+      edInp.addEventListener("change",function(e){state.rgNewEndDate=e.target.value});
+      periodRow.appendChild(edInp);
+    }else{
+      const syInp=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px;flex:1"});
+      const eyInp=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px;flex:1"});
+      for(var y=2025;y<=2040;y++){
+        const sOpt=h("option",{value:String(y)},y+"년");
+        if(y===state.rgNewStartYear)sOpt.selected=true;
+        syInp.appendChild(sOpt);
+        const eOpt=h("option",{value:String(y)},y+"년");
+        if(y===state.rgNewEndYear)eOpt.selected=true;
+        eyInp.appendChild(eOpt);
+      }
+      syInp.addEventListener("change",function(e){state.rgNewStartYear=parseInt(e.target.value)});
+      eyInp.addEventListener("change",function(e){state.rgNewEndYear=parseInt(e.target.value)});
+      periodRow.appendChild(syInp);
+      periodRow.appendChild(h("span",{style:"font-size:11px;color:#64748b"},"~"));
+      periodRow.appendChild(eyInp);
     }
-    syInp.addEventListener("change",function(e){state.rgNewStartYear=parseInt(e.target.value)});
-    eyInp.addEventListener("change",function(e){state.rgNewEndYear=parseInt(e.target.value)});
-    periodRow.appendChild(syInp);
-    periodRow.appendChild(h("span",{style:"font-size:11px;color:#64748b"},"~"));
-    periodRow.appendChild(eyInp);
     form.appendChild(periodRow);
     const addBtn=h("button",{className:"goal-add-btn",style:"width:100%;padding:6px",onClick:addReadingGoal},"추가");
     form.appendChild(addBtn);
@@ -3938,25 +3987,35 @@ function renderBooks(){
     card.appendChild(titleRow);
 
     // 기간 편집 행
-    const periodEditRow=h("div",{style:"display:flex;align-items:center;gap:4px;margin-bottom:6px"});
+    const periodEditRow=h("div",{style:"display:flex;align-items:center;gap:4px;margin-bottom:6px;flex-wrap:wrap"});
     periodEditRow.appendChild(h("span",{style:"font-size:9px;color:#475569;flex-shrink:0"},"기간:"));
-    const sySel=h("select",{style:"font-size:9px;background:#111827;border:1px solid #334155;border-radius:4px;color:#64748b;padding:1px 4px"});
-    const eySel=h("select",{style:"font-size:9px;background:#111827;border:1px solid #334155;border-radius:4px;color:#64748b;padding:1px 4px"});
-    for(var y3=2025;y3<=2040;y3++){
-      const so=h("option",{value:String(y3)},y3+"");
-      if(y3===(rg.startYear||2026))so.selected=true;
-      sySel.appendChild(so);
-      const eo=h("option",{value:String(y3)},y3+"");
-      if(y3===(rg.endYear||2040))eo.selected=true;
-      eySel.appendChild(eo);
-    }
-    sySel.addEventListener("change",function(e){rg.startYear=parseInt(e.target.value);saveGoalData();cloudSaveGoals();});
-    eySel.addEventListener("change",function(e){rg.endYear=parseInt(e.target.value);saveGoalData();cloudSaveGoals();});
-    periodEditRow.appendChild(sySel);
-    periodEditRow.appendChild(h("span",{style:"font-size:9px;color:#475569"},"~"));
-    periodEditRow.appendChild(eySel);
-    // cumulative: 목표권수 편집
-    if(rg.type==="cumulative"){
+    if(rg.type==="specific"){
+      // specific: 날짜 date input
+      const sdEdit=h("input",{type:"date",style:"font-size:9px;background:#111827;border:1px solid #334155;border-radius:4px;color:#cbd5e1;padding:1px 4px;flex:1",value:rg.startDate||""});
+      sdEdit.addEventListener("change",function(e){rg.startDate=e.target.value;saveGoalData();cloudSaveGoals();});
+      periodEditRow.appendChild(sdEdit);
+      periodEditRow.appendChild(h("span",{style:"font-size:9px;color:#475569"},"~"));
+      const edEdit=h("input",{type:"date",style:"font-size:9px;background:#111827;border:1px solid #334155;border-radius:4px;color:#cbd5e1;padding:1px 4px;flex:1",value:rg.endDate||""});
+      edEdit.addEventListener("change",function(e){rg.endDate=e.target.value;saveGoalData();cloudSaveGoals();});
+      periodEditRow.appendChild(edEdit);
+    }else{
+      // cumulative: 연도 select
+      const sySel=h("select",{style:"font-size:9px;background:#111827;border:1px solid #334155;border-radius:4px;color:#64748b;padding:1px 4px"});
+      const eySel=h("select",{style:"font-size:9px;background:#111827;border:1px solid #334155;border-radius:4px;color:#64748b;padding:1px 4px"});
+      for(var y3=2025;y3<=2040;y3++){
+        const so=h("option",{value:String(y3)},y3+"");
+        if(y3===(rg.startYear||2025))so.selected=true;
+        sySel.appendChild(so);
+        const eo=h("option",{value:String(y3)},y3+"");
+        if(y3===(rg.endYear||2040))eo.selected=true;
+        eySel.appendChild(eo);
+      }
+      sySel.addEventListener("change",function(e){rg.startYear=parseInt(e.target.value);saveGoalData();cloudSaveGoals();});
+      eySel.addEventListener("change",function(e){rg.endYear=parseInt(e.target.value);saveGoalData();cloudSaveGoals();});
+      periodEditRow.appendChild(sySel);
+      periodEditRow.appendChild(h("span",{style:"font-size:9px;color:#475569"},"~"));
+      periodEditRow.appendChild(eySel);
+      // 목표권수 편집
       periodEditRow.appendChild(h("span",{style:"font-size:9px;color:#475569;margin-left:8px"},"목표:"));
       const tgtEdit=h("input",{type:"number",min:"1",style:"width:50px;font-size:9px;background:#111827;border:1px solid #334155;border-radius:4px;color:#3b82f6;padding:1px 4px;text-align:right",value:String(rg.targetCount||100)});
       tgtEdit.addEventListener("change",function(e){rg.targetCount=parseInt(e.target.value)||1;saveGoalData();cloudSaveGoals();_isAutoRender=true;render();});

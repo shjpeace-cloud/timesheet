@@ -442,6 +442,39 @@ function loadWeeklyReview(y,m,w){
 function saveWeeklyReview(y,m,w,data){
   try{localStorage.setItem(weeklyReviewKey(y,m,w),JSON.stringify(data))}catch(e){}
 }
+function weeklyPlanKey(y,m,w){return "weekly-plan-"+y+"-"+m+"-"+w}
+function loadWeeklyPlan(y,m,w){
+  try{var r=localStorage.getItem(weeklyPlanKey(y,m,w));
+    if(r)return JSON.parse(r);
+    return {mon:[],tue:[],wed:[],thu:[],fri:[],sat:[],sun:[]};
+  }catch(e){return{mon:[],tue:[],wed:[],thu:[],fri:[],sat:[],sun:[]}}
+}
+function saveWeeklyPlan(y,m,w,data){
+  try{localStorage.setItem(weeklyPlanKey(y,m,w),JSON.stringify(data))}catch(e){}
+}
+// 주간 계획을 entries의 plan 슬롯에 적용
+function applyWeeklyPlan(monDate,plan,overwrite){
+  const DOW_KEYS=["mon","tue","wed","thu","fri","sat","sun"];
+  var applied=0;
+  for(var i=0;i<7;i++){
+    var dd=new Date(monDate);dd.setDate(monDate.getDate()+i);
+    var dk=(dd.getMonth()+1)+"-"+dd.getDate();
+    var dayPlan=plan[DOW_KEYS[i]]||[];
+    if(dayPlan.length===0)continue;
+    if(!state.data.entries[dk])state.data.entries[dk]={};
+    dayPlan.forEach(function(p){
+      var existing=state.data.entries[dk][p.time];
+      if(!overwrite&&existing&&existing.plan)return; // 덮어쓰기 안 할 때 기존 plan 보존
+      if(!state.data.entries[dk][p.time])state.data.entries[dk][p.time]={};
+      state.data.entries[dk][p.time].plan=p.cat;
+      if(p.memo)state.data.entries[dk][p.time].planMemo=p.memo;
+      else delete state.data.entries[dk][p.time].planMemo;
+      applied++;
+    });
+  }
+  save();
+  return applied;
+}
 function load(){
   try{
     const r=localStorage.getItem(storageKey());
@@ -865,157 +898,125 @@ function yearSummary(){
   return by;
 }
 
-function exportCSV(){
-  let csv="연도,월,일,시간,카테고리,목표\n";
-  Object.entries(state.data.entries).forEach(([k,ds])=>{
-    const[m,d]=k.split("-");
-    Object.entries(ds).forEach(([time,s])=>{
-      if(time==="_diary")return;
-      if(!s.actual)return;
-      const cat=s.actual;
-      let goalName="";
-      if(s.actualGoalId){
-        if(typeof s.actualGoalId==="string"){
-          goalName=s.actualGoalId;
-        }else{
-          const found=findGoalById(s.actualGoalId);
-          if(found)goalName=found.goal.name;
-        }
-      }
-      goalName=goalName.replace(/"/g,'""');
-      csv+=`${state.year},${m},${d},${time},${cat},"${goalName}"\n`;
-    });
-  });
-  const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement("a");
-  const ds=new Date().toISOString().slice(0,10);
-  a.href=url;a.download=`timesheet_${state.year}_${ds}.csv`;a.click();
-  URL.revokeObjectURL(url);
+function exportExcel(){
+  // SheetJS 로드 확인
+  if(typeof XLSX==="undefined"){
+    const s=document.createElement("script");
+    s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+    s.onload=function(){_doExportExcel()};
+    s.onerror=function(){alert("Excel 라이브러리를 불러올 수 없습니다. 인터넷 연결을 확인해주세요.")};
+    document.head.appendChild(s);
+  }else{
+    _doExportExcel();
+  }
   state.showMenu=false;render();
 }
+function _doExportExcel(){
+  const wb=XLSX.utils.book_new();
+  const dateStr=new Date().toISOString().slice(0,10);
 
-function exportBookCSV(){
-  let csv="연도,월,구분,책제목,감상\n";
-  for(let m=1;m<=12;m++){
-    const books=state.bookData[String(m)]||[];
-    books.forEach(b=>{
-      const type=b.type==='en'?'EN':'KR';
-      const title=(b.title||'').replace(/"/g,'""');
-      const memo=(b.memo||'').replace(/"/g,'""');
-      csv+=`${state.year},${m},${type},"${title}","${memo}"\n`;
+  // ── Sheet1: 시간통계 ──────────────────────────────────────
+  const rows1=[["연도","날짜","시간","카테고리","카테고리명","DREAM","Plan카테고리","Plan메모","Actual카테고리","Actual메모","목표ID","목표명"]];
+  for(let y=2026;y<=2040;y++){
+    let data;
+    try{const r=localStorage.getItem("timesheet-data-"+y);if(!r)continue;data=JSON.parse(r)}catch(e){continue}
+    const entries=data.entries||{};
+    Object.keys(entries).sort().forEach(function(dk){
+      const slots=entries[dk];
+      Object.keys(slots).sort().forEach(function(t){
+        if(t==="_diary")return;
+        const s=slots[t];
+        if(!s.plan&&!s.actual)return;
+        const aC=s.actual?catByCode(s.actual):null;
+        const pC=s.plan?catByCode(s.plan):null;
+        let goalName="";
+        if(s.actualGoalId){
+          if(typeof s.actualGoalId==="string"){goalName=s.actualGoalId}
+          else{const f=findGoalById(s.actualGoalId);if(f)goalName=f.goal.name}
+        }
+        rows1.push([y,y+"-"+dk,t,
+          s.actual||"",aC?aC.label:"",aC?aC.group:"",
+          s.plan||"",s.planMemo||"",
+          s.actual||"",s.actualMemo||"",
+          s.actualGoalId||"",goalName
+        ]);
+      });
     });
   }
-  const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement("a");
-  const ds=new Date().toISOString().slice(0,10);
-  a.href=url;a.download=`books_${state.year}_${ds}.csv`;a.click();
-  URL.revokeObjectURL(url);
-  state.showMenu=false;render();
-}
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows1),"시간통계");
 
-function exportGoalCSV(){
-  // Collect all goals into a flat list with scope tag, then group by category
-  const all=[];
-  // Daily
-  Object.entries(state.goalData.daily||{}).forEach(([k,list])=>{
-    const[m,d]=k.split("-");
-    list.forEach(g=>{
-      all.push({scope:"일간",cat:g.cat,name:g.name||"",progress:"",done:g.done?"O":"X",period:m+"/"+d,memo:"",goalId:g.id});
+  // ── Sheet2: 독서 ──────────────────────────────────────────
+  const rows2=[["연도","월","제목","유형","감상","날짜"]];
+  for(let y=2025;y<=2040;y++){
+    let bd;
+    try{const r=localStorage.getItem("books-data-"+y);if(!r)continue;bd=JSON.parse(r)}catch(e){continue}
+    for(let m=1;m<=12;m++){
+      (bd[String(m)]||[]).forEach(function(b){
+        rows2.push([y,m,b.title,b.type==="en"?"영어":"한글",b.memo||"",b.date||""]);
+      });
+    }
+  }
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows2),"독서");
+
+  // ── Sheet3: 목표 ──────────────────────────────────────────
+  const rows3=[["연도","구분","카테고리","목표명","진도(%)","투입시간(h)","시작","종료","메모"]];
+  for(let y=2026;y<=2040;y++){
+    let gd;
+    try{const r=localStorage.getItem("goals-data-"+y);if(!r)continue;gd=JSON.parse(r)}catch(e){continue}
+    const scopes=["longterm","monthly","weekly","habits","readingGoals"];
+    const labels={longterm:"장기",monthly:"월간",weekly:"주간",habits:"습관",readingGoals:"독서목표"};
+    scopes.forEach(function(sc){
+      (gd[sc]||[]).forEach(function(g){
+        const hrs=calcGoalTotalHours(g.id);
+        const period=sc==="longterm"?(g.startYear||"")+"~"+(g.endYear||""):
+          sc==="monthly"?(g.startMonth||g.month||"")+"월~"+(g.endMonth||g.month||"")+"월":
+          sc==="weekly"?g.month+"월"+g.weekIdx+"주":"";
+        rows3.push([y,labels[sc],g.cat,g.name,g.progress||0,hrs,period,"",g.memo||""]);
+      });
     });
-  });
-  // Weekly
-  (state.goalData.weekly||[]).forEach(g=>{
-    const period=(g.year||state.year)+" "+(g.month||"")+"월 "+(g.weekIdx||"")+"주";
-    all.push({scope:"주간",cat:g.cat,name:g.name||"",progress:(g.progress||0)+"%",done:"",period:period,memo:g.memo||"",subtasks:g.subtasks||[],goalId:g.id});
-  });
-  // Monthly
-  (state.goalData.monthly||[]).forEach(g=>{
-    const sm=g.startMonth||g.month;
-    const em=g.endMonth||g.month;
-    const monthTxt=sm===em?(sm+"월"):(sm+"~"+em+"월");
-    const period=(g.year||state.year)+" "+monthTxt;
-    all.push({scope:"월간",cat:g.cat,name:g.name||"",progress:(g.progress||0)+"%",done:"",period:period,memo:g.memo||"",subtasks:g.subtasks||[],goalId:g.id});
-  });
-  // Long-term
-  (state.goalData.longterm||[]).forEach(g=>{
-    const sy=g.startYear||g.targetYear||"";
-    const ey=g.endYear||g.targetYear||"";
-    const period=sy===ey?(sy+"년"):(sy+"~"+ey+"년");
-    all.push({scope:"장기",cat:g.cat,name:g.name||"",progress:(g.progress||0)+"%",done:"",period:period,memo:g.memo||"",subtasks:g.subtasks||[],goalId:g.id});
-  });
-  // Habits
-  (state.goalData.habits||[]).forEach(function(hb){
-    const totalDone=Object.keys(hb.completions||{}).length;
-    const ltPct=calcHabitLongtermPct(hb);
-    all.push({scope:"습관",cat:hb.cat,name:hb.name||"",progress:ltPct+"%",done:"",period:hb.startDate+"~"+hb.endDate,memo:totalDone+"일 완료",subtasks:[],goalId:null});
-  });
+  }
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows3),"목표");
 
-  // Group by category code, then sort scope: 장기→월간→주간→일간 (top-down hierarchy)
-  const scopeOrder={"장기":1,"습관":2,"월간":3,"주간":4,"일간":5};
-  const grouped={};
-  all.forEach(g=>{
-    if(!grouped[g.cat])grouped[g.cat]=[];
-    grouped[g.cat].push(g);
-  });
-  Object.values(grouped).forEach(list=>list.sort((a,b)=>scopeOrder[a.scope]-scopeOrder[b.scope]));
-
-  // Build CSV ordered by CATEGORIES sequence (D1,D2,...,M3)
-  let csv="카테고리,구분,목표명,진행률,완료,기간,투입시간,메모\n";
-  CATEGORIES.forEach(c=>{
-    const list=grouped[c.code];
-    if(!list||list.length===0)return;
-    // Section header row
-    csv+=`[${c.code}] ${c.label},,,,,,,\n`;
-    list.forEach(g=>{
-      const name=g.name.replace(/"/g,'""');
-      const memo=g.memo.replace(/"/g,'""');
-      const hrs=g.goalId?fmtHours(calcGoalTotalHours(g.goalId)):"";
-      csv+=`,${g.scope},"${name}",${g.progress},${g.done},${g.period},${hrs},"${memo}"\n`;
-      // Subtasks as indented rows
-      if(g.subtasks&&g.subtasks.length>0){
-        g.subtasks.forEach(s=>{
-          const sname=(s.name||"").replace(/"/g,'""');
-          csv+=`,,"  └ ${sname}",${s.weight||0}%,${s.done?"O":"X"},,,\n`;
-        });
-      }
-    });
-  });
-
-  const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement("a");
-  const ds=new Date().toISOString().slice(0,10);
-  a.href=url;a.download=`goals_${state.year}_${ds}.csv`;a.click();
-  URL.revokeObjectURL(url);
-  state.showMenu=false;render();
-}
-
-function exportWeeklyReviewCSV(){
-  let csv="연도,월,주,기간,잘한것,놓친것,다음주과제,메모\n";
+  // ── Sheet4: 주간리뷰 ──────────────────────────────────────
+  const rows4=[["연도","월","주","잘한것","놓친것","다음주과제","메모"]];
   for(let y=2026;y<=2040;y++){
     for(let m=1;m<=12;m++){
       for(let w=1;w<=6;w++){
-        const key="weekly-review-"+y+"-"+m+"-"+w;
-        const raw=localStorage.getItem(key);
-        if(!raw)continue;
         try{
-          const r=JSON.parse(raw);
-          if(!r.best&&!r.missed&&!r.next&&!r.note)continue;
-          const esc=s=>('"'+String(s||"").replace(/"/g,'""')+'"');
-          csv+=`${y},${m},${w}주,${y}-${m}-W${w},${esc(r.best)},${esc(r.missed)},${esc(r.next)},${esc(r.note)}\n`;
+          const r=localStorage.getItem("weekly-review-"+y+"-"+m+"-"+w);
+          if(!r)continue;
+          const rv=JSON.parse(r);
+          if(!rv.best&&!rv.missed&&!rv.next&&!rv.note)continue;
+          rows4.push([y,m,w+"주",rv.best||"",rv.missed||"",rv.next||"",rv.note||""]);
         }catch(e){}
       }
     }
   }
-  const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement("a");
-  const ds=new Date().toISOString().slice(0,10);
-  a.href=url;a.download=`weekly_review_${ds}.csv`;a.click();
-  URL.revokeObjectURL(url);
-  state.showMenu=false;render();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows4),"주간리뷰");
+
+  // ── Sheet5: 주간계획 ──────────────────────────────────────
+  const rows5=[["연도","월","주","요일","시간","카테고리","메모"]];
+  const DOWLABELS={mon:"월",tue:"화",wed:"수",thu:"목",fri:"금",sat:"토",sun:"일"};
+  for(let y=2026;y<=2040;y++){
+    for(let m=1;m<=12;m++){
+      for(let w=1;w<=6;w++){
+        try{
+          const r=localStorage.getItem("weekly-plan-"+y+"-"+m+"-"+w);
+          if(!r)continue;
+          const pl=JSON.parse(r);
+          Object.keys(pl).forEach(function(dow){
+            (pl[dow]||[]).forEach(function(item){
+              rows5.push([y,m,w+"주",DOWLABELS[dow]||dow,item.time,item.cat,item.memo||""]);
+            });
+          });
+        }catch(e){}
+      }
+    }
+  }
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows5),"주간계획");
+
+  // 다운로드
+  XLSX.writeFile(wb,"timesheet_"+dateStr+".xlsx");
 }
 function resetData(){
   if(confirm(state.year+"년 데이터를 모두 초기화하시겠습니까?")){
@@ -1026,30 +1027,30 @@ function resetData(){
 }
 
 function backupData(){
-  const allData={};
-  const allBooks={};
-  const allGoals={};
+  const allData={},allBooks={},allGoals={};
+  const allWeeklyReviews={},allWeeklyPlans={};
   for(let y=2026;y<=2040;y++){
-    const key="timesheet-data-"+y;
-    const raw=localStorage.getItem(key);
-    if(raw){try{allData[y]=JSON.parse(raw)}catch(e){}}
-    const bkey="books-data-"+y;
-    const braw=localStorage.getItem(bkey);
-    if(braw){try{allBooks[y]=JSON.parse(braw)}catch(e){}}
-    const gkey="goals-data-"+y;
-    const graw=localStorage.getItem(gkey);
-    if(graw){try{allGoals[y]=JSON.parse(graw)}catch(e){}}
+    try{const r=localStorage.getItem("timesheet-data-"+y);if(r)allData[y]=JSON.parse(r)}catch(e){}
+    try{const r=localStorage.getItem("books-data-"+y);if(r)allBooks[y]=JSON.parse(r)}catch(e){}
+    try{const r=localStorage.getItem("goals-data-"+y);if(r)allGoals[y]=JSON.parse(r)}catch(e){}
+    // 주간리뷰 + 주간계획 (월별×주별)
+    for(let m=1;m<=12;m++){
+      for(let w=1;w<=6;w++){
+        const rk="weekly-review-"+y+"-"+m+"-"+w;
+        const pk="weekly-plan-"+y+"-"+m+"-"+w;
+        try{const r=localStorage.getItem(rk);if(r){if(!allWeeklyReviews[y])allWeeklyReviews[y]={};allWeeklyReviews[y][rk]=JSON.parse(r)}}catch(e){}
+        try{const r=localStorage.getItem(pk);if(r){if(!allWeeklyPlans[y])allWeeklyPlans[y]={};allWeeklyPlans[y][pk]=JSON.parse(r)}}catch(e){}
+      }
+    }
   }
-  if(Object.keys(allData).length===0&&Object.keys(allBooks).length===0&&Object.keys(allGoals).length===0){alert("백업할 데이터가 없습니다.");return}
-  const backup={version:3,exportDate:new Date().toISOString(),data:allData,books:allBooks,goals:allGoals};
+  if(Object.keys(allData).length===0&&Object.keys(allBooks).length===0){alert("백업할 데이터가 없습니다.");return}
+  const backup={version:4,exportDate:new Date().toISOString(),data:allData,books:allBooks,goals:allGoals,weeklyReviews:allWeeklyReviews,weeklyPlans:allWeeklyPlans};
   const blob=new Blob([JSON.stringify(backup,null,2)],{type:"application/json;charset=utf-8;"});
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a");
-  const dateStr=new Date().toISOString().slice(0,10);
-  a.href=url;a.download="timesheet_backup_"+dateStr+".json";a.click();
+  a.href=url;a.download="timesheet_backup_"+new Date().toISOString().slice(0,10)+".json";a.click();
   URL.revokeObjectURL(url);
   state.showMenu=false;render();
-  alert("백업 파일이 다운로드되었습니다.");
 }
 
 function restoreData(){
@@ -1078,6 +1079,22 @@ function restoreData(){
         if(backup.goals){
           Object.keys(backup.goals).forEach(y=>{
             localStorage.setItem("goals-data-"+y,JSON.stringify(backup.goals[y]));
+          });
+        }
+        // 주간리뷰 복원
+        if(backup.weeklyReviews){
+          Object.values(backup.weeklyReviews).forEach(function(yObj){
+            Object.keys(yObj).forEach(function(k){
+              localStorage.setItem(k,JSON.stringify(yObj[k]));
+            });
+          });
+        }
+        // 주간계획 복원
+        if(backup.weeklyPlans){
+          Object.values(backup.weeklyPlans).forEach(function(yObj){
+            Object.keys(yObj).forEach(function(k){
+              localStorage.setItem(k,JSON.stringify(yObj[k]));
+            });
           });
         }
         state.data=load();
@@ -1145,11 +1162,8 @@ function renderHeader(){
     dd.appendChild(h("button",{onClick:()=>{state.showMenu=false;state.showSettings=!state.showSettings;render()}},"☁ 클라우드 설정"));
     if(CLOUD_URL)dd.appendChild(h("button",{onClick:()=>{state.showMenu=false;cloudLoad()}},"🔄 클라우드에서 불러오기"));
     if(CLOUD_URL)dd.appendChild(h("button",{onClick:()=>{state.showMenu=false;cloudSave();cloudSaveBooks()}},"⬆ 클라우드에 저장"));
-    dd.appendChild(h("button",{onClick:exportCSV},"📤 시간통계 CSV"));
-    dd.appendChild(h("button",{onClick:exportBookCSV},"📤 독서통계 CSV"));
-    dd.appendChild(h("button",{onClick:exportGoalCSV},"📤 목표 CSV"));
-    dd.appendChild(h("button",{onClick:exportWeeklyReviewCSV},"📤 주간리뷰 CSV"));
-    dd.appendChild(h("button",{onClick:backupData},"💾 데이터 백업"));
+    dd.appendChild(h("button",{onClick:exportExcel},"📊 Excel 내보내기"));
+    dd.appendChild(h("button",{onClick:backupData},"💾 데이터 백업 (JSON)"));
     dd.appendChild(h("button",{onClick:restoreData},"📥 데이터 복원"));
     dd.appendChild(h("button",{className:"danger",onClick:resetData},"🗑 데이터 초기화"));
     hdr.appendChild(dd);
@@ -3792,10 +3806,122 @@ function renderWeeklyReview(){
   navMid.appendChild(h("span",{style:"font-size:14px;font-weight:700;color:#e2e8f0"},y+"년 "+fmt(monDate)+" ~ "+fmt(sunDate)));
   navMid.appendChild(h("span",{style:"font-size:10px;color:"+(isThisWeek?"#0d9488":"#64748b")},isThisWeek?"이번 주":m+"월 "+wIdx+"주"));
   nav.appendChild(navMid);
-  const nextBtn=h("button",{className:"goal-date-arrow",style:state.weeklyReviewOffset>=0?"opacity:.3;cursor:default":"",onClick:function(){if(state.weeklyReviewOffset<0){state.weeklyReviewOffset++;_isAutoRender=true;render()}}});
+  const nextBtn=h("button",{className:"goal-date-arrow",onClick:function(){state.weeklyReviewOffset++;_isAutoRender=true;render()}});
   nextBtn.textContent="▶";
   nav.appendChild(nextBtn);
   wrap.appendChild(nav);
+
+  const DOW_LABELS=["월","화","수","목","금","토","일"];
+  const DOW_KEYS=["mon","tue","wed","thu","fri","sat","sun"];
+
+  // ── 주간 계획 ──────────────────────────────────────────────
+  const plan=loadWeeklyPlan(y,m,wIdx);
+  const planBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:14px;border:1px solid #1e293b"});
+  const planHdr=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"});
+  planHdr.appendChild(h("span",{style:"font-size:10px;color:#64748b;font-weight:700;letter-spacing:.5px"},"📅 주간 계획"));
+  // 적용 버튼
+  const applyBtn=h("button",{style:"font-size:11px;color:#fff;background:#7c3aed;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;font-weight:700",onClick:function(){
+    // 기존 plan 있는지 확인
+    var hasExisting=false;
+    for(var i=0;i<7;i++){
+      var dd2=new Date(monDate);dd2.setDate(monDate.getDate()+i);
+      var dk2=(dd2.getMonth()+1)+"-"+dd2.getDate();
+      var slots=state.data.entries[dk2]||{};
+      for(var t in slots){if(t!=='_diary'&&slots[t].plan){hasExisting=true;break;}}
+      if(hasExisting)break;
+    }
+    var overwrite=false;
+    if(hasExisting){overwrite=confirm("이미 입력된 Plan이 있습니다. 덮어쓸까요?\n(취소하면 빈 슬롯에만 추가됩니다)")}
+    var cnt=applyWeeklyPlan(monDate,plan,overwrite);
+    applyBtn.textContent="✅ "+cnt+"개 적용됨";
+    setTimeout(function(){applyBtn.textContent="▶ Plan에 적용"},1500);
+    _isAutoRender=true;render();
+  }},"▶ Plan에 적용");
+  planHdr.appendChild(applyBtn);
+  planBox.appendChild(planHdr);
+
+  // 요일별 계획 입력
+  for(var di=0;di<7;di++){
+    (function(dayIdx){
+      var dow=DOW_KEYS[dayIdx];
+      var dd=new Date(monDate);dd.setDate(monDate.getDate()+dayIdx);
+      var dateLabel=DOW_LABELS[dayIdx]+" ("+(dd.getMonth()+1)+"/"+dd.getDate()+")";
+      var dayItems=plan[dow]||(plan[dow]=[]);
+      var isWeekend=dayIdx>=5;
+
+      var dayBox=h("div",{style:"margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #1e293b"+(di===6?";border-bottom:none":"")});
+      var dayHdr=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:4px"});
+      dayHdr.appendChild(h("span",{style:"font-size:10px;font-weight:700;color:"+(isWeekend?"#f472b6":"#94a3b8")},dateLabel));
+      // + 추가 버튼
+      var addItemBtn=h("button",{style:"font-size:10px;color:#3b82f6;background:transparent;border:none;cursor:pointer;padding:0 4px"},"+추가");
+      addItemBtn.addEventListener("click",function(){
+        dayItems.push({time:"9:00",cat:"R1",memo:""});
+        saveWeeklyPlan(y,m,wIdx,plan);
+        _isAutoRender=true;render();
+      });
+      dayHdr.appendChild(addItemBtn);
+      dayBox.appendChild(dayHdr);
+
+      // 항목 목록
+      dayItems.forEach(function(item,itemIdx){
+        var itemRow=h("div",{style:"display:grid;grid-template-columns:52px 52px 1fr 22px;gap:4px;align-items:center;margin-bottom:3px"});
+
+        // 시간 선택
+        var timeSel=h("select",{style:"font-size:10px;background:#111827;border:1px solid #334155;border-radius:4px;color:#cbd5e1;padding:2px 2px"});
+        SLOTS.forEach(function(t){
+          var opt=h("option",{value:t},t);
+          if(t===item.time)opt.selected=true;
+          timeSel.appendChild(opt);
+        });
+        timeSel.addEventListener("change",function(e){
+          item.time=e.target.value;
+          saveWeeklyPlan(y,m,wIdx,plan);
+        });
+        itemRow.appendChild(timeSel);
+
+        // 카테고리 선택
+        var catSel=h("select",{style:"font-size:10px;background:#111827;border:1px solid #334155;border-radius:4px;padding:2px 2px"});
+        CATEGORIES.forEach(function(c){
+          var opt=h("option",{value:c.code,style:"color:"+c.color},c.code);
+          if(c.code===item.cat)opt.selected=true;
+          catSel.appendChild(opt);
+        });
+        var catObj=catByCode(item.cat);
+        catSel.style.color=catObj?catObj.color:"#94a3b8";
+        catSel.addEventListener("change",function(e){
+          item.cat=e.target.value;
+          var co=catByCode(item.cat);
+          catSel.style.color=co?co.color:"#94a3b8";
+          saveWeeklyPlan(y,m,wIdx,plan);
+        });
+        itemRow.appendChild(catSel);
+
+        // 메모
+        var memoInp=h("input",{style:"font-size:10px;background:transparent;border:none;border-bottom:1px solid #334155;color:#94a3b8;padding:2px 4px;outline:none;font-family:'Noto Sans KR',sans-serif;width:100%",placeholder:"메모...",value:item.memo||""});
+        memoInp.addEventListener("input",function(e){item.memo=e.target.value});
+        memoInp.addEventListener("change",function(){saveWeeklyPlan(y,m,wIdx,plan)});
+        itemRow.appendChild(memoInp);
+
+        // 삭제
+        var delBtn=h("button",{style:"font-size:10px;color:#475569;background:transparent;border:none;cursor:pointer;padding:0"},("✕"));
+        (function(idx){
+          delBtn.addEventListener("click",function(){
+            plan[dow].splice(idx,1);
+            saveWeeklyPlan(y,m,wIdx,plan);
+            _isAutoRender=true;render();
+          });
+        })(itemIdx);
+        itemRow.appendChild(delBtn);
+        dayBox.appendChild(itemRow);
+      });
+
+      if(dayItems.length===0){
+        dayBox.appendChild(h("div",{style:"font-size:9px;color:#334155;padding:2px 0"},"계획 없음"));
+      }
+      planBox.appendChild(dayBox);
+    })(di);
+  }
+  wrap.appendChild(planBox);
 
   // ── 지난 주 실적 자동 집계 ──
   const summaryBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:14px;border:1px solid #1e293b"});

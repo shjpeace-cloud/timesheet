@@ -2199,7 +2199,12 @@ function addPeriodGoal(scope){
 }
 function updateGoalProgress(scope,id,progress){
   const g=state.goalData[scope].find(x=>x.id===id);
-  if(g){g.progress=progress;saveGoalData();}
+  if(g){
+    g.progress=progress;
+    if(progress>=100&&!g.completedAt)g.completedAt=new Date().toISOString().slice(0,10);
+    if(progress<100)delete g.completedAt;
+    saveGoalData();
+  }
 }
 function removePeriodGoal(scope,id){
   state.goalData[scope]=state.goalData[scope].filter(x=>x.id!==id);
@@ -2238,7 +2243,10 @@ function recomputeProgress(scope,goalId){
   if(!g||!g.subtasks||g.subtasks.length===0)return;
   let done=0;
   g.subtasks.forEach(s=>{if(s.done)done+=(s.weight||0)});
+  const prev=g.progress||0;
   g.progress=Math.min(100,done);
+  if(g.progress>=100&&prev<100&&!g.completedAt)g.completedAt=new Date().toISOString().slice(0,10);
+  if(g.progress<100)delete g.completedAt;
 }
 function toggleGoalExpand(scope,goalId){
   const key=scope+"-"+goalId;
@@ -2488,6 +2496,34 @@ function fmtHours(hrs){
   if(hrs===0)return "";
   if(hrs===Math.floor(hrs))return hrs+"h";
   return hrs.toFixed(1)+"h";
+}
+
+// 목표 시작 기간 문자열
+function fmtGoalStart(scope,g){
+  if(scope==="weekly") return (g.year||"")+"년 "+(g.month||"")+"월 W"+(g.weekIdx||"");
+  if(scope==="monthly"){
+    const sm=g.startMonth||g.month;const em=g.endMonth||g.month;
+    return (g.year||"")+"년 "+(sm===em?sm+"월":sm+"~"+em+"월");
+  }
+  if(scope==="longterm"){
+    const sy=g.startYear||g.targetYear||"";const ey=g.endYear||g.targetYear||"";
+    return sy===(ey||sy)?sy+"년":sy+"~"+ey+"년";
+  }
+  return "";
+}
+// 목표 완료일 문자열 (completedAt 우선, 없으면 종료 기간)
+function fmtGoalDone(scope,g){
+  if(g.completedAt) return g.completedAt;
+  if(scope==="weekly") return (g.year||"")+"년 "+(g.month||"")+"월 W"+(g.weekIdx||"");
+  if(scope==="monthly"){
+    const em=g.endMonth||g.month;
+    return (g.year||"")+"년 "+em+"월";
+  }
+  if(scope==="longterm"){
+    const ey=g.endYear||g.targetYear||"";
+    return ey+"년";
+  }
+  return "";
 }
 
 // Build parentIds from state.goalNewParentIds for new goal creation
@@ -3546,7 +3582,7 @@ function renderPeriodGoals(scope){
       const doneList=h("div",{className:"goal-list"});
       completedGoals.forEach(g=>{
         const cat=catByCode(g.cat);
-        const item=h("div",{className:"goal-item done",style:"opacity:.5"});
+        const item=h("div",{className:"goal-item done",style:"opacity:.6"});
         const r=h("div",{className:"goal-item-row"});
         r.appendChild(h("span",{style:"font-size:14px;color:#10b981;flex-shrink:0"},"✓"));
         r.appendChild(h("span",{className:"goal-cat-tag",style:"background:"+(cat?cat.color:"#475569")},g.cat));
@@ -3562,6 +3598,15 @@ function renderPeriodGoals(scope){
           if(confirm("완료된 목표를 삭제할까요?"))removePeriodGoal(scope,g.id);
         }},"✕"));
         item.appendChild(r);
+        // ── 시작일 · 완료일 표시 (weekly 이상) ──────────────────
+        const startStr=fmtGoalStart(scope,g);
+        const doneStr=fmtGoalDone(scope,g);
+        if(startStr||doneStr){
+          const dateRow=h("div",{style:"display:flex;align-items:center;gap:10px;padding:2px 4px 4px 22px;font-size:10px;color:#475569;font-family:monospace"});
+          if(startStr)dateRow.appendChild(h("span",{},"▶ "+startStr));
+          if(doneStr) dateRow.appendChild(h("span",{style:"color:#10b981"},"✓ "+doneStr));
+          item.appendChild(dateRow);
+        }
         const pr=h("div",{className:"goal-progress-row"});
         const track=h("div",{style:"flex:1;height:6px;background:#1e293b;border-radius:3px;overflow:hidden"});
         track.appendChild(h("div",{style:"height:100%;width:100%;background:#10b981"}));

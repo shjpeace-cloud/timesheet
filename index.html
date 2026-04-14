@@ -272,10 +272,28 @@ function isHabitAutoChecked(habit,y,m,d){
   var dk=(m)+"-"+(d);
   var slots=state.data.entries[dk]||{};
   var id=habit.id;
+  // 직접 연결된 슬롯 확인
   for(var t in slots){
     if(t==="_diary")continue;
-    var s=slots[t];
-    if(s.actualGoalId===id)return true;
+    if(slots[t].actualGoalId===id)return true;
+  }
+  // 하위 목표 ID 수집 (재귀)
+  var descIds=new Set();
+  function collectDesc(gid){
+    var children=getChildGoals(gid);
+    children.forEach(function(ch){
+      if(!descIds.has(ch.goal.id)){
+        descIds.add(ch.goal.id);
+        collectDesc(ch.goal.id);
+      }
+    });
+  }
+  collectDesc(id);
+  if(descIds.size>0){
+    for(var t2 in slots){
+      if(t2==="_diary")continue;
+      if(slots[t2].actualGoalId&&descIds.has(slots[t2].actualGoalId))return true;
+    }
   }
   return false;
 }
@@ -308,19 +326,25 @@ function calcHabitWeeklyPct(habit,monDate){
 }
 // 장기 전체 진도: (수동 completions + 자동체크) 합집합 날짜 수 / HABIT_TOTAL_DAYS * 100
 function calcHabitLongtermPct(habit){
-  // 수동 completions 키 (Y-M-D 형식)
   var manualKeys=new Set(Object.keys(habit.completions||{}));
-  // 자동체크: entries에서 habit.id와 연결된 슬롯의 날짜 수 (M-D 형식)
   var entries=state.data.entries||{};
   var autoKeys=new Set();
+  // 하위 목표 ID 수집
+  var descIds=new Set();
+  function collectDesc(gid){
+    getChildGoals(gid).forEach(function(ch){
+      if(!descIds.has(ch.goal.id)){descIds.add(ch.goal.id);collectDesc(ch.goal.id);}
+    });
+  }
+  collectDesc(habit.id);
   for(var dk in entries){
     var slots=entries[dk];
     for(var t in slots){
       if(t==="_diary")continue;
-      if(slots[t].actualGoalId===habit.id){autoKeys.add(dk);break;}
+      var gid=slots[t].actualGoalId;
+      if(gid===habit.id||descIds.has(gid)){autoKeys.add(dk);break;}
     }
   }
-  // 합집합 (중복 없이)
   var total=manualKeys.size+autoKeys.size;
   return Math.min(100,Math.round(total/HABIT_TOTAL_DAYS*100));
 }
@@ -369,6 +393,15 @@ function getChurchDays(y){
 function isChurchDay(y,m,d){var cd=getChurchDays(y);return cd[m+"-"+d]||null}
 const GN={D:"Devotion",R:"Research & Teaching",E:"Enrichment",A:"Attachment",M:"Maintenance"};
 const GROUPS=["D","R","E","A","M"];
+// DREAM 순 정렬 키: D1=01, D2=02, R1=11, R2=12, ...
+function dreamSortKey(cat){
+  const g=GROUPS.indexOf((cat||"")[0]);
+  const n=parseInt((cat||"")[1])||0;
+  return (g<0?99:g)*10+n;
+}
+function sortByDream(arr){
+  return arr.slice().sort(function(a,b){return dreamSortKey(a.cat)-dreamSortKey(b.cat);});
+}
 const SLOTS=[];
 for(let h=5;h<=23;h++){SLOTS.push(h+":00");SLOTS.push(h+":30")}
 SLOTS.push("24:00");
@@ -522,7 +555,7 @@ function loadGoals(){
       seenIds[h.id]=true;return true;
     });
     if(deduped.length<habits.length){habits=deduped;migrated=true;}
-    var result={daily:p.daily||{},weekly:p.weekly||[],monthly:p.monthly||[],longterm:longterm,habits:habits,readingGoals:p.readingGoals||[]};
+    var result={daily:p.daily||{},weekly:sortByDream(p.weekly||[]),monthly:sortByDream(p.monthly||[]),longterm:sortByDream(longterm),habits:habits,readingGoals:p.readingGoals||[]};
     if(migrated)try{localStorage.setItem(goalStorageKey(),JSON.stringify(result))}catch(e){}
     return result;
   }catch(e){return{daily:{},weekly:[],monthly:[],longterm:[],habits:[],readingGoals:[]}}
@@ -657,7 +690,7 @@ function cloudLoadGoals(){
           var hIds=cloudHabits.map(function(h){return h.longtermId}).filter(Boolean);
           cloudLongterm=cloudLongterm.filter(function(g){return hIds.indexOf(g.id)===-1});
         }
-        state.goalData={daily:cloud.daily||{},weekly:cloud.weekly||[],monthly:cloud.monthly||[],longterm:cloudLongterm,habits:cloudHabits,readingGoals:cloud.readingGoals||[]};
+        state.goalData={daily:cloud.daily||{},weekly:sortByDream(cloud.weekly||[]),monthly:sortByDream(cloud.monthly||[]),longterm:sortByDream(cloudLongterm),habits:cloudHabits,readingGoals:cloud.readingGoals||[]};
         localStorage.setItem(goalStorageKey(),JSON.stringify(state.goalData));
         _isAutoRender=true;render();
       }
@@ -1747,11 +1780,11 @@ function renderDashboard(){
     else if(sc==="readingGoals") list=state.goalData.readingGoals||[];
     else list=state.goalData[sc]||[];
     list.forEach(function(g){
+      // 다른 목표의 하위로 이미 표시되는 목표는 루트에서 제외
+      const pids=getParentIds(g);
+      if(Object.keys(pids).length>0)return;
       const node=renderGoalTree(g.id,sc,g.name,g.cat,0,null);
       if(node){
-        if(!hasAny){
-          // 첫 항목 전 구분선 없음
-        }
         hasAny=true;
         goalSec.appendChild(node);
       }
@@ -2194,6 +2227,7 @@ function addPeriodGoal(scope){
     item.endYear=state.goalLtEndYear;
   }
   state.goalData[scope].push(item);
+  state.goalData[scope]=sortByDream(state.goalData[scope]);
   state.goalNewName="";state.goalNewMemo="";state.goalNewDeadline="";state.goalNewParentIds={};
   saveGoalData();render(true);
 }

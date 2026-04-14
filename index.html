@@ -1524,55 +1524,61 @@ function renderDailyMonthChart(){
 function renderDashboard(){
   const wrap=h("div",{});
 
-  // ── 오늘 요약 (일간 탭 통합) ──
+  // ── 1. 오늘 요약 (Plan vs Actual) ──────────────────────────
   const ds=dailySummary();
-  const todaySec=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:10px;margin-bottom:12px;border:1px solid #1e293b"});
-  const todayTitle=h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:8px;letter-spacing:.5px;display:flex;justify-content:space-between;align-items:center"});
-  todayTitle.appendChild(h("span",{},"📋 오늘 ("+state.month+"/"+state.day+") Plan vs Actual"));
-  // 합계 표시
   const planTotal=Object.values(ds.plan).reduce((a,b)=>a+b,0);
   const actualTotal=Object.values(ds.actual).reduce((a,b)=>a+b,0);
-  todayTitle.appendChild(h("span",{style:"font-family:monospace;font-size:11px;color:#94a3b8"},"P:"+planTotal+"h A:"+actualTotal+"h"));
-  todaySec.appendChild(todayTitle);
-  // DREAM 그룹별 P/A 바
+  const todaySec=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:10px;margin-bottom:12px;border:1px solid #1e293b"});
+  const todayHdr=h("div",{style:"display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"});
+  todayHdr.appendChild(h("span",{style:"font-size:10px;color:#64748b;font-weight:700;letter-spacing:.5px"},"📋 오늘 "+state.month+"/"+state.day+" Plan vs Actual"));
+  todayHdr.appendChild(h("span",{style:"font-size:11px;color:#94a3b8;font-family:monospace"},"P:"+planTotal+"h  A:"+actualTotal+"h"));
+  todaySec.appendChild(todayHdr);
   GROUPS.forEach(function(g){
-    const planH=groupCats(g).reduce((s,c)=>s+(ds.plan[c.code]||0),0);
-    const actualH=groupCats(g).reduce((s,c)=>s+(ds.actual[c.code]||0),0);
-    if(planH===0&&actualH===0)return;
-    const row=h("div",{style:"display:flex;align-items:center;gap:6px;margin-bottom:4px"});
+    const ph=groupCats(g).reduce((s,c)=>s+(ds.plan[c.code]||0),0);
+    const ah=groupCats(g).reduce((s,c)=>s+(ds.actual[c.code]||0),0);
+    if(ph===0&&ah===0)return;
+    const row=h("div",{style:"display:flex;align-items:center;gap:6px;margin-bottom:3px"});
     row.appendChild(h("span",{style:"font-size:10px;color:"+GC[g]+";font-weight:700;width:16px;flex-shrink:0"},g));
-    const barWrap=h("div",{style:"flex:1;display:flex;flex-direction:column;gap:2px"});
-    // Plan 바
-    if(planH>0){
+    const bw=h("div",{style:"flex:1;display:flex;flex-direction:column;gap:2px"});
+    if(ph>0){
       const pb=h("div",{style:"display:flex;align-items:center;gap:4px"});
-      pb.appendChild(h("span",{style:"font-size:8px;color:#64748b;width:8px;flex-shrink:0"},"P"));
-      const pTrack=h("div",{style:"flex:1;height:4px;background:#1e293b;border-radius:2px;overflow:hidden"});
-      pTrack.appendChild(h("div",{style:"height:100%;width:"+Math.min(planH/16*100,100)+"%;background:"+GC[g]+";opacity:.5"}));
-      pb.appendChild(pTrack);
-      pb.appendChild(h("span",{style:"font-size:9px;color:#64748b;font-family:monospace;width:28px;text-align:right"},planH+"h"));
-      barWrap.appendChild(pb);
+      pb.appendChild(h("span",{style:"font-size:8px;color:#64748b;width:8px"},"P"));
+      const pt=h("div",{style:"flex:1;height:4px;background:#1e293b;border-radius:2px;overflow:hidden"});
+      pt.appendChild(h("div",{style:"height:100%;width:"+Math.min(ph/16*100,100)+"%;background:"+GC[g]+";opacity:.5"}));
+      pb.appendChild(pt);
+      pb.appendChild(h("span",{style:"font-size:9px;color:#64748b;font-family:monospace;width:28px;text-align:right"},ph+"h"));
+      bw.appendChild(pb);
     }
-    // Actual 바
-    if(actualH>0){
+    if(ah>0){
       const ab=h("div",{style:"display:flex;align-items:center;gap:4px"});
-      ab.appendChild(h("span",{style:"font-size:8px;color:#0d9488;width:8px;flex-shrink:0"},"A"));
-      const aTrack=h("div",{style:"flex:1;height:4px;background:#1e293b;border-radius:2px;overflow:hidden"});
-      aTrack.appendChild(h("div",{style:"height:100%;width:"+Math.min(actualH/16*100,100)+"%;background:"+GC[g]}));
-      ab.appendChild(aTrack);
-      ab.appendChild(h("span",{style:"font-size:9px;color:#94a3b8;font-family:monospace;width:28px;text-align:right"},actualH+"h"));
-      barWrap.appendChild(ab);
+      ab.appendChild(h("span",{style:"font-size:8px;color:#0d9488;width:8px"},"A"));
+      const at=h("div",{style:"flex:1;height:4px;background:#1e293b;border-radius:2px;overflow:hidden"});
+      at.appendChild(h("div",{style:"height:100%;width:"+Math.min(ah/16*100,100)+"%;background:"+GC[g]}));
+      ab.appendChild(at);
+      ab.appendChild(h("span",{style:"font-size:9px;color:#94a3b8;font-family:monospace;width:28px;text-align:right"},ah+"h"));
+      bw.appendChild(ab);
     }
-    row.appendChild(barWrap);
+    row.appendChild(bw);
     todaySec.appendChild(row);
   });
   wrap.appendChild(todaySec);
 
+  // ── 2. 월 선택 + 일별 stacked bar ─────────────────────────
   const mbar=h("div",{className:"dash-month-bar"});
   for(let m=1;m<=12;m++){
-    mbar.appendChild(h("button",{className:"dash-month-btn"+(m===state.dashMonth?" active":""),onClick:()=>{state.dashMonth=m;render()}},String(m)));
+    mbar.appendChild(h("button",{className:"dash-month-btn"+(m===state.dashMonth?" active":""),onClick:()=>{state.dashMonth=m;_isAutoRender=true;render()}},String(m)));
   }
   wrap.appendChild(mbar);
 
+  // 일별 stacked bar chart
+  const dailyChartSec=h("div",{className:"chart-container"});
+  dailyChartSec.appendChild(h("h3",{className:"chart-title"},state.dashMonth+"월 일별 DREAM 추이"));
+  const dailyChartWrap=h("div",{className:"chart-wrap",style:"height:200px"});
+  dailyChartWrap.appendChild(h("canvas",{id:"dashDailyChart"}));
+  dailyChartSec.appendChild(dailyChartWrap);
+  wrap.appendChild(dailyChartSec);
+
+  // ── 3. 월간 DREAM 집계 ────────────────────────────────────
   const ms=monthlySummary();
   const monthDays=daysInMonth(state.year,state.dashMonth);
   const sec=h("div",{className:"dash-section"});
@@ -1580,6 +1586,7 @@ function renderDashboard(){
   GROUPS.forEach(g=>{
     const cats=groupCats(g);
     const gt=cats.reduce((s,c)=>s+(ms[c.code]||0),0);
+    if(gt===0)return;
     const avg=(gt/monthDays).toFixed(1);
     const dg=h("div",{className:"dash-group"});
     const dgh=h("div",{className:"dash-group-header",style:"background:"+GC[g]+"18;border-left:3px solid "+GC[g]});
@@ -1590,6 +1597,7 @@ function renderDashboard(){
     dgh.appendChild(ghVals);
     dg.appendChild(dgh);
     cats.forEach(c=>{
+      if(!(ms[c.code]||0))return;
       const row=h("div",{className:"dash-cat-row"});
       row.appendChild(h("span",{className:"dash-cat-code",style:"color:"+c.color},c.code));
       row.appendChild(h("span",{},c.label));
@@ -1601,14 +1609,11 @@ function renderDashboard(){
     });
     sec.appendChild(dg);
   });
-  const total=Object.values(ms).reduce((a,b)=>a+b,0);
-  const totalAvg=(total/monthDays).toFixed(1);
-  const totalDiv=h("div",{className:"dash-total"});
-  totalDiv.appendChild(document.createTextNode("월간 합계: "+total+"h"));
-  totalDiv.appendChild(h("span",{style:"font-size:12px;color:#64748b;margin-left:12px"},"(일평균 "+totalAvg+"h)"));
-  sec.appendChild(totalDiv);
+  const mTotal=Object.values(ms).reduce((a,b)=>a+b,0);
+  sec.appendChild(h("div",{className:"dash-total"},"월간 합계: "+mTotal+"h  (일평균 "+(mTotal/monthDays).toFixed(1)+"h)"));
   wrap.appendChild(sec);
 
+  // ── 4. 연간 집계 테이블 + 차트 ───────────────────────────
   const ys=yearSummary();
   const sec2=h("div",{className:"dash-section"});
   sec2.appendChild(h("h3",{className:"dash-title"},"DREAM 연간 집계 (일평균)"));
@@ -1618,99 +1623,174 @@ function renderDashboard(){
   for(let m=1;m<=12;m++)hdr.appendChild(h("span",{className:"year-cell",style:"font-weight:600;color:#64748b;font-size:10px"},m+"월"));
   hdr.appendChild(h("span",{className:"year-cell",style:"font-weight:700;color:#64748b;font-size:10px"},"연평균"));
   yt.appendChild(hdr);
-
   GROUPS.forEach(g=>{
     const row=h("div",{className:"year-row"});
     row.appendChild(h("span",{className:"year-cell",style:"color:"+GC[g]+";font-weight:700"},g));
-    let yTotal=0;let yDays=0;
+    let yTotal=0,yDays=0;
     for(let m=1;m<=12;m++){
       const v=groupCats(g).reduce((s,c)=>s+((ys[m]||{})[c.code]||0),0);
       const md=daysInMonth(state.year,m);
       const avg=v>0?(v/md).toFixed(1):"–";
-      yTotal+=v;
-      if(v>0)yDays+=md;
+      yTotal+=v;if(v>0)yDays+=md;
       row.appendChild(h("span",{className:"year-cell",style:"background:"+(v>0?GC[g]+"20":"transparent")},avg));
     }
     row.appendChild(h("span",{className:"year-cell",style:"font-weight:700"},yDays>0?(yTotal/yDays).toFixed(1):"–"));
     yt.appendChild(row);
   });
-
   const totalRow=h("div",{className:"year-row"});
   totalRow.appendChild(h("span",{className:"year-cell",style:"font-weight:700"},"합계"));
-  let grandTotal=0;let grandDays=0;
+  let grandTotal=0,grandDays=0;
   for(let m=1;m<=12;m++){
     const t=CATEGORIES.reduce((s,c)=>s+((ys[m]||{})[c.code]||0),0);
     const md=daysInMonth(state.year,m);
-    const avg=t>0?(t/md).toFixed(1):"–";
-    grandTotal+=t;
-    if(t>0)grandDays+=md;
-    totalRow.appendChild(h("span",{className:"year-cell",style:"font-weight:600"},avg));
+    grandTotal+=t;if(t>0)grandDays+=md;
+    totalRow.appendChild(h("span",{className:"year-cell",style:"font-weight:600"},t>0?(t/md).toFixed(1):"–"));
   }
   totalRow.appendChild(h("span",{className:"year-cell",style:"font-weight:900;font-size:13px"},grandDays>0?(grandTotal/grandDays).toFixed(1):"–"));
   yt.appendChild(totalRow);
   sec2.appendChild(yt);
   wrap.appendChild(sec2);
 
-  // DREAM 월간 시간 추이 (Line Chart)
+  // 연간 라인차트
   const lineSection=h("div",{className:"chart-container"});
   lineSection.appendChild(h("h3",{className:"chart-title"},"DREAM 월간 일평균 추이 (h/일)"));
   const lineWrap=h("div",{className:"chart-wrap"});
-  const lineCanvas=h("canvas",{id:"lineChart"});
-  lineWrap.appendChild(lineCanvas);
+  lineWrap.appendChild(h("canvas",{id:"lineChart"}));
   lineSection.appendChild(lineWrap);
   wrap.appendChild(lineSection);
 
-  // DREAM 월별 비중 (Stacked Bar Chart)
+  // 월별 비중 바차트
   const barSection=h("div",{className:"chart-container"});
   barSection.appendChild(h("h3",{className:"chart-title"},"DREAM 월별 비중 (%)"));
   const barWrap=h("div",{className:"chart-wrap"});
-  const barCanvas=h("canvas",{id:"barChart"});
-  barWrap.appendChild(barCanvas);
+  barWrap.appendChild(h("canvas",{id:"barChart"}));
   barSection.appendChild(barWrap);
   wrap.appendChild(barSection);
 
-  setTimeout(()=>renderCharts(ys),0);
+  setTimeout(()=>{renderDailyBarChart();renderCharts(ys)},0);
 
-  // Goal hours summary section
+  // ── 5. 목표별 투입시간 트리 ────────────────────────────────
   const goalSec=h("div",{className:"dash-section"});
   goalSec.appendChild(h("h3",{className:"dash-title"},"🎯 목표별 투입시간"));
-  const allScopes=["longterm","monthly","weekly"];
-  let hasGoalHours=false;
-  allScopes.forEach(scope=>{
-    const goals=(state.goalData[scope]||[]).filter(g=>(g.progress||0)<100);
-    if(goals.length===0)return;
-    const scopeLabel={longterm:"장기",monthly:"월간",weekly:"주간"}[scope];
-    goals.forEach(g=>{
-      const totalHrs=calcGoalTotalHours(g.id);
-      const directHrs=calcGoalDirectHours(g.id);
-      if(totalHrs===0&&directHrs===0)return;
-      hasGoalHours=true;
-      const cat=catByCode(g.cat);
-      const row=h("div",{style:"display:flex;align-items:center;gap:6px;padding:6px 8px;font-size:12px;border-bottom:1px solid #0f172a"});
-      row.appendChild(h("span",{style:"font-size:9px;color:#64748b;width:28px;flex-shrink:0"},scopeLabel));
-      row.appendChild(h("span",{style:"font-size:10px;font-weight:700;color:"+(cat?cat.color:"#94a3b8")+";font-family:'JetBrains Mono',monospace;width:22px;flex-shrink:0"},g.cat));
-      row.appendChild(h("span",{style:"flex:1;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},g.name));
-      // Hours bar
-      const maxHrs=Math.max.apply(null,allScopes.flatMap(s=>(state.goalData[s]||[]).map(x=>calcGoalTotalHours(x.id))).concat([1]));
-      const barW=Math.max(4,Math.round(totalHrs/maxHrs*80));
-      const track=h("div",{style:"width:80px;height:8px;background:#1e293b;border-radius:4px;overflow:hidden;flex-shrink:0"});
-      track.appendChild(h("div",{style:"height:100%;width:"+barW+"px;background:#f59e0b;border-radius:4px"}));
-      row.appendChild(track);
-      // Hours text
-      const hrsText=totalHrs===directHrs?fmtHours(totalHrs):fmtHours(directHrs)+"(+"+fmtHours(totalHrs-directHrs)+")";
-      row.appendChild(h("span",{style:"font-size:11px;color:#f59e0b;font-family:'JetBrains Mono',monospace;font-weight:700;width:60px;text-align:right;flex-shrink:0"},hrsText));
-      goalSec.appendChild(row);
+
+  // 트리 렌더 함수 (재귀)
+  function renderGoalTree(goalId,scope,name,cat,depth,visited){
+    if(!visited)visited={};
+    if(visited[goalId])return null;
+    visited[goalId]=true;
+    const totalHrs=calcGoalTotalHours(goalId);
+    const directHrs=calcGoalDirectHours(goalId);
+    if(totalHrs===0)return null;
+    const catObj=catByCode(cat);
+    const indent=depth*14;
+    const node=h("div",{style:"border-bottom:1px solid #0f172a"});
+    const row=h("div",{style:"display:flex;align-items:center;gap:6px;padding:5px 8px;font-size:12px;padding-left:"+(8+indent)+"px"});
+    if(depth>0)row.appendChild(h("span",{style:"font-size:9px;color:#334155;flex-shrink:0"},"└"));
+    row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:"+(catObj?catObj.color:"#94a3b8")+";font-family:monospace;flex-shrink:0"},cat));
+    row.appendChild(h("span",{style:"flex:1;color:"+(depth===0?"#e2e8f0":"#94a3b8")+";overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:"+(depth===0?"600":"400")},name));
+    // 시간 바
+    const maxH=200; // 최대 200h 기준
+    const barW=Math.max(2,Math.min(Math.round(totalHrs/maxH*60),60));
+    const track=h("div",{style:"width:60px;height:6px;background:#1e293b;border-radius:3px;overflow:hidden;flex-shrink:0"});
+    track.appendChild(h("div",{style:"height:100%;width:"+barW+"px;background:#f59e0b;border-radius:3px"}));
+    row.appendChild(track);
+    // 직접h vs 총h
+    if(totalHrs===directHrs){
+      row.appendChild(h("span",{style:"font-size:11px;color:#f59e0b;font-family:monospace;font-weight:700;width:52px;text-align:right;flex-shrink:0"},fmtHours(totalHrs)));
+    }else{
+      const txt=h("div",{style:"display:flex;flex-direction:column;align-items:flex-end;width:52px;flex-shrink:0"});
+      txt.appendChild(h("span",{style:"font-size:11px;color:#f59e0b;font-family:monospace;font-weight:700"},fmtHours(totalHrs)));
+      txt.appendChild(h("span",{style:"font-size:9px;color:#78350f;font-family:monospace"},"직"+fmtHours(directHrs)));
+      row.appendChild(txt);
+    }
+    node.appendChild(row);
+    // 하위 목표 재귀
+    const children=getChildGoals(goalId);
+    children.forEach(function(ch){
+      const child=renderGoalTree(ch.goal.id,ch.scope,ch.goal.name,ch.goal.cat,depth+1,visited);
+      if(child)node.appendChild(child);
+    });
+    return node;
+  }
+
+  // longterm → monthly → weekly → habits → readingGoals 순으로 루트 노드
+  let hasAny=false;
+  const allRootScopes=["longterm","monthly","weekly","habits","readingGoals"];
+  const scopeLabel={longterm:"장기",monthly:"월간",weekly:"주간",habits:"습관",readingGoals:"독서목표"};
+  allRootScopes.forEach(function(sc){
+    let list=[];
+    if(sc==="habits") list=state.goalData.habits||[];
+    else if(sc==="readingGoals") list=state.goalData.readingGoals||[];
+    else list=state.goalData[sc]||[];
+    list.forEach(function(g){
+      const node=renderGoalTree(g.id,sc,g.name,g.cat,0,null);
+      if(node){
+        if(!hasAny){
+          // 첫 항목 전 구분선 없음
+        }
+        hasAny=true;
+        goalSec.appendChild(node);
+      }
     });
   });
-  if(!hasGoalHours){
-    goalSec.appendChild(h("div",{style:"text-align:center;padding:20px 0;color:#475569;font-size:12px"},"입력탭에서 시간 슬롯에 목표를 연결하면 여기에 통계가 표시됩니다"));
+  if(!hasAny){
+    goalSec.appendChild(h("div",{style:"text-align:center;padding:20px;color:#475569;font-size:12px"},"목표에 시간을 연결하면 여기에 트리가 표시됩니다"));
   }
   wrap.appendChild(goalSec);
-
   return wrap;
 }
 
-let lineChartInst=null,barChartInst=null;
+
+let lineChartInst=null,barChartInst=null,dashDailyChartInst=null;
+function renderDailyBarChart(){
+  if(typeof Chart==='undefined')return;
+  try{
+    if(dashDailyChartInst){dashDailyChartInst.destroy();dashDailyChartInst=null}
+    const cv=document.getElementById("dashDailyChart");
+    if(!cv)return;
+    const m=state.dashMonth;
+    const maxD=daysInMonth(state.year,m);
+    const labels=[];
+    const groupData={};
+    GROUPS.forEach(g=>{groupData[g]=[]});
+    // dashMonth가 현재 연도 데이터 사용 (state.data는 현재 연도)
+    for(let d=1;d<=maxD;d++){
+      labels.push(String(d));
+      const k=m+"-"+d;
+      const slots=state.data.entries[k]||{};
+      const dayCats={};
+      CATEGORIES.forEach(c=>{dayCats[c.code]=0});
+      Object.entries(slots).forEach(([sk,s])=>{if(sk!=="_diary"&&s.actual)dayCats[s.actual]=(dayCats[s.actual]||0)+0.5});
+      GROUPS.forEach(g=>{
+        groupData[g].push(groupCats(g).reduce((s,c)=>s+(dayCats[c.code]||0),0));
+      });
+    }
+    dashDailyChartInst=new Chart(cv,{
+      type:"bar",
+      data:{
+        labels,
+        datasets:GROUPS.map(g=>({label:g,data:groupData[g],backgroundColor:GC[g],borderWidth:0,borderRadius:1,stack:"d"}))
+      },
+      options:{
+        responsive:true,maintainAspectRatio:false,
+        plugins:{
+          legend:{labels:{color:"#94a3b8",font:{size:10},boxWidth:10,padding:6}},
+          tooltip:{backgroundColor:"#1e293b",titleColor:"#e2e8f0",bodyColor:"#cbd5e1",borderColor:"#334155",borderWidth:1,
+            callbacks:{
+              title:ctx=>m+"월 "+ctx[0].label+"일",
+              label:ctx=>ctx.dataset.label+": "+ctx.parsed.y+"h",
+              footer:ctx=>{let t=0;ctx.forEach(c=>{t+=c.parsed.y});return "합계: "+t+"h"}
+            }
+          }
+        },
+        scales:{
+          x:{stacked:true,ticks:{color:"#64748b",font:{size:8}},grid:{display:false}},
+          y:{stacked:true,beginAtZero:true,ticks:{color:"#64748b",font:{size:9},callback:v=>v+"h"},grid:{color:"#1e293b"}}
+        }
+      }
+    });
+  }catch(e){console.log('dashDailyChart err:',e)}
+}
 function renderCharts(ys){
   if(typeof Chart==='undefined')return;
   try{
@@ -4368,9 +4448,9 @@ function render(force){
       return {id:g.id,cat:g.cat,name:g.name,startDate:"2026-3-1",endDate:"2040-2-29",completions:{},longtermId:g.id};
     });
   }
-  var SEED_DATA={"entries":{"3-24":{"5:30":{"actual":"D1","actualGoalId":1775891208109},"6:00":{"actual":"D1","actualGoalId":1775891208109},"10:00":{"actual":"M3","actualGoalId":1775868948642},"10:30":{"actual":"M3","actualGoalId":1775868948642},"11:00":{"actual":"M3","actualGoalId":1775868948642},"12:00":{"actual":"E1","actualMemo":"산책"},"12:30":{"actual":"M1","actualGoalId":"연구실 정리"},"13:00":{"actual":"M1","actualMemo":"사무실 정리"},"14:00":{"actual":"M3","actualGoalId":1775868948642},"14:30":{"actual":"M3","actualGoalId":1775868948642},"15:00":{"actual":"M3","actualGoalId":1775868948642},"15:30":{"actual":"M3","actualGoalId":1775868948642},"16:00":{"actual":"M1"},"16:30":{"actual":"M1","actualMemo":"KDI 인사 심의"},"18:30":{"actual":"M2"},"19:00":{"actual":"M2"},"19:30":{"actual":"E3","actualGoalId":1775869313050},"20:00":{"actualMemo":"피아노","actual":"E3","actualGoalId":1775869313050},"21:00":{"actual":"D1"},"21:30":{"actualMemo":"말씀 묵상","actual":"D1"},"7:00":{"actual":"E1","actualGoalId":1775887381526}},"3-25":{"5:30":{"plan":"D1","actual":"D1","actualGoalId":1775891208109},"6:00":{"plan":"D1","actual":"D1","actualGoalId":1775891208109},"7:00":{"plan":"E1","actual":"E1","actualGoalId":1775887381526},"7:30":{"actual":"E1","actualGoalId":1775887381526},"10:00":{"actual":"D1","actualGoalId":1775891225514},"10:30":{"actual":"R3","actualGoalId":"영어뉴스"},"12:00":{"actual":"E1","actualGoalId":"산책"},"13:00":{},"13:30":{"actual":"R2","actualGoalId":1775891383250},"14:00":{"actual":"R2","actualGoalId":1775891383250},"14:30":{"actual":"R2","actualGoalId":1775891383250},"15:00":{"actual":"R2","actualGoalId":1775891383250},"24:00":{"actual":"R2","actualGoalId":1775891383250},"23:30":{"actual":"R2","actualGoalId":1775891383250},"23:00":{"actual":"R2","actualGoalId":1775891383250},"22:30":{"actual":"R2","actualGoalId":1775891383250},"22:00":{"actual":"R2","actualGoalId":1775891383250},"20:30":{"actual":"R2","actualGoalId":1775891383250},"21:00":{"actual":"R2","actualGoalId":1775891383250},"21:30":{"actual":"R2","actualGoalId":1775891383250},"17:30":{"actual":"E3","actualGoalId":1775869313050},"18:00":{"actual":"E3","actualGoalId":1775869313050},"18:30":{"actual":"E3","actualGoalId":1775869313050},"16:00":{"actual":"M2"},"16:30":{"actual":"M2"},"20:00":{"actual":"R2","actualGoalId":1775891383250}},"3-26":{"9:00":{"actual":"R2","actualGoalId":1775891383250},"9:30":{"actual":"R2","actualGoalId":1775891383250},"10:00":{"actual":"R2","actualGoalId":1775891383250},"10:30":{"actual":"R2","actualGoalId":1775891383250},"11:00":{"actual":"R2","actualMemo":"국방대 강의","actualGoalId":1775891383250},"5:30":{"actual":"M2","actualGoalId":"운전"},"6:00":{"actual":"M2","actualGoalId":"운전"},"6:30":{"actual":"M2","actualGoalId":"운전"},"7:00":{"actual":"M2","actualGoalId":"운전"},"7:30":{"actual":"M2","actualGoalId":"운전"},"8:00":{"actual":"M2","actualGoalId":"운전"},"14:00":{"actual":"D1","actualGoalId":1775891225514},"12:00":{"actual":"A3","actualMemo":"이종민 교수","actualGoalId":"이종민 교수"},"12:30":{"actual":"A3","actualGoalId":"이종민 교수"},"13:00":{"actual":"A3","actualGoalId":"이종민 교수"},"15:00":{"actual":"R1","actualGoalId":1775799879214},"15:30":{"actual":"R1","actualMemo":"북러 강화","actualGoalId":1775799879214},"18:00":{"actual":"R1","actualGoalId":1775799879214},"18:30":{"actual":"R1","actualGoalId":1775799879214},"19:00":{"actual":"R1","actualGoalId":1775799879214},"20:30":{"actual":"M2","actualGoalId":"운전"},"21:00":{"actual":"M2","actualGoalId":"운전"},"24:00":{"actual":"A1","actualGoalId":"영화"},"23:30":{"actual":"A1","actualGoalId":"영화"},"23:00":{"actual":"A1","actualGoalId":"영화"},"22:30":{"actual":"M2","actualGoalId":"운전"}},"3-27":{"6:00":{},"6:30":{},"7:00":{},"11:30":{"actual":"A1","actualGoalId":"딸기축제"},"12:00":{"actual":"A1","actualGoalId":"딸기축제"},"12:30":{"actual":"A1","actualGoalId":"딸기축제"},"13:00":{"actual":"A1","actualGoalId":"딸기축제"},"11:00":{"actual":"A1","actualGoalId":"딸기축제"},"13:30":{"actual":"A1","actualGoalId":"딸기축제"},"14:00":{"actual":"A1","actualGoalId":"딸기축제"},"14:30":{"actual":"A1","actualGoalId":"딸기축제"},"15:00":{"actual":"A1","actualGoalId":"딸기축제"},"15:30":{"actual":"A1","actualGoalId":"딸기축제"},"16:00":{"actual":"A1","actualGoalId":"딸기축제"},"16:30":{"actual":"A1","actualGoalId":"딸기축제"},"17:30":{"actual":"A3","actualGoalId":"이종민 교수 가족"},"18:00":{"actual":"A3","actualGoalId":"이종민 교수 가족"},"18:30":{"actual":"A3","actualGoalId":"이종민 교수 가족"},"20:30":{},"21:00":{"actual":"A1","actualGoalId":"영화"},"21:30":{"actual":"A1","actualGoalId":"영화"},"22:00":{"actual":"A1","actualGoalId":"영화"},"22:30":{"actual":"A1","actualGoalId":"영화"},"23:00":{"actual":"A1","actualGoalId":"영화"},"_diary":"딸기축제, 딸기 따기 체험, 명재 고택 방문, 이종민 교수 가족과 식사"},"3-29":{"18:30":{},"8:30":{"actual":"D3","actualGoalId":1775893771920},"9:00":{"actual":"M2","actualGoalId":"아침"},"10:30":{"actual":"D3","actualGoalId":1775893771920},"11:00":{"actual":"D3","actualGoalId":1775893771920},"11:30":{"actual":"D2","actualGoalId":"주일예배"},"12:00":{"actual":"D2","actualGoalId":"주일예배"},"12:30":{"actual":"D2","actualGoalId":"주일예배"},"13:30":{"actual":"D3","actualGoalId":1775893785949},"14:00":{"actual":"D3","actualGoalId":1775893785949},"14:30":{"actual":"D3","actualGoalId":1775893785949},"19:30":{"actual":"A1","actualGoalId":"가족예배"},"20:00":{"actual":"A1","actualGoalId":"가족예배"},"20:30":{"actual":"M2","actualGoalId":"청소"},"18:00":{"actual":"E3","actualGoalId":1775869313050}},"3-30":{"5:30":{"actual":"D1","actualGoalId":1775891208109},"6:00":{"actual":"D1","actualGoalId":1775891208109},"7:00":{"actual":"E1","actualGoalId":1775887381526},"7:30":{"actual":"E1","actualGoalId":1775887381526}},"3-28":{"9:00":{"actual":"M2","actualGoalId":"운전"},"9:30":{"actual":"M2","actualGoalId":"운전"},"8:30":{"actual":"A1","actualGoalId":"산책"},"10:00":{"actual":"A1","actualGoalId":"션샤인 랜드"},"10:30":{"actual":"A1","actualGoalId":"션샤인 랜드"},"11:00":{"actual":"A1","actualGoalId":"션샤인 랜드"},"11:30":{"actual":"A1","actualMemo":"션샤인 랜드","actualGoalId":"션샤인 랜드"},"12:30":{"actual":"A1","actualGoalId":"딸기농장 체험"},"13:00":{"actual":"A1","actualGoalId":"딸기농장 체험"},"13:30":{"actual":"A1","actualGoalId":"딸기농장 체험"},"14:00":{"actual":"A1","actualGoalId":"딸기농장 체험"},"14:30":{"actual":"A1","actualGoalId":"딸기농장 체험"},"15:00":{"actual":"A1","actualGoalId":"명재고택"},"15:30":{"actual":"A1","actualGoalId":"명재고택"},"16:00":{"actual":"A1","actualMemo":"명재고택"},"16:30":{"actual":"M2","actualGoalId":"운전"},"17:00":{"actual":"M2","actualGoalId":"운전"},"17:30":{"actual":"M2","actualGoalId":"운전"},"18:00":{"actual":"M2","actualGoalId":"운전"},"18:30":{"actual":"M2","actualGoalId":"운전"},"19:00":{"actual":"M2","actualGoalId":"운전"},"20:00":{"actual":"M2","actualGoalId":"저녁"},"20:30":{"actual":"M2","actualGoalId":"뒷정리"},"21:00":{"actual":"M2","actualGoalId":"뒷정리"}},"3-31":{"5:30":{"actual":"D1","actualGoalId":1775891208109},"6:00":{"actual":"D1","actualGoalId":1775891208109},"11:30":{"actual":"A1"},"12:00":{"actual":"A1"},"12:30":{"actual":"A1"},"13:00":{"actual":"M2"},"13:30":{"actual":"M2"},"14:00":{"actual":"M2"},"15:00":{"actual":"D1","actualGoalId":1775891225514},"10:00":{"actual":"M3","actualGoalId":1775868948642},"10:30":{"actual":"M3","actualGoalId":1775868948642},"11:00":{"actual":"M3","actualGoalId":1775868948642},"_diary":"2일차 (개인적 깨달음과 의문) 아버지의 이름을 부르며 기도할 때, 아버지께서 함께하심을 깊이 느끼게 된다. 이 동행 자체가 하나님께 영광이 되고, 동시에 내게는 모든 필요가 이미 채워져 있다는 믿음을 준다.","15:30":{"plan":"R3","actual":"R2"},"22:00":{"actual":"D3","actualGoalId":1775893771920},"21:30":{"actual":"D3","actualGoalId":1775893771920},"16:00":{"actual":"R2"},"16:30":{"actual":"R2"},"17:00":{"actual":"M1","actualGoalId":"연구실 청소"},"17:30":{"actual":"M1","actualGoalId":"연구실 청소"},"18:00":{"actual":"M1","actualGoalId":"연구실 청소"},"18:30":{"actual":"M1","actualGoalId":"연구실 정리"},"20:00":{"actual":"M2","actualGoalId":"연구실 정리"},"20:30":{"actual":"M2","actualGoalId":"연구실 정리"}},"4-1":{"5:30":{"actual":"D1","plan":"D1","actualGoalId":1775891208109},"6:00":{"actual":"D1","plan":"D1","actualGoalId":1775891208109},"7:00":{"actual":"E1","plan":"E1","actualGoalId":1775887381526},"7:30":{"actual":"E1","plan":"E1","actualGoalId":1775887381526},"9:30":{"plan":"M2","actual":"M2","actualGoalId":"운전"},"10:00":{"plan":"M2","actual":"M2","actualGoalId":"운전"},"10:30":{"plan":"M2","actual":"M2","actualGoalId":"대출"},"11:00":{"plan":"M2","planMemo":"대출","actual":"D1","actualGoalId":1775891225514},"12:00":{"plan":"D2","actual":"M1","actualGoalId":"대출"},"12:30":{"plan":"D2","actual":"D2","actualGoalId":"한은 신우회"},"13:00":{"plan":"D2","planMemo":"한은 예뱨"},"16:00":{"plan":"M2","actual":"M2","actualGoalId":"운전"},"16:30":{"plan":"M2","actual":"M2","actualGoalId":"운전"},"17:00":{"plan":"M2"},"17:30":{"plan":"E3"},"18:00":{"plan":"E3","actual":"E3","actualGoalId":1775869313050},"18:30":{"plan":"E3","actual":"E3","actualGoalId":1775869313050},"19:30":{"plan":"M2","actual":"M2","actualGoalId":"청소"},"20:00":{"plan":"M2","actual":"E1","actualGoalId":"산책"},"20:30":{"plan":"D1"},"21:00":{"plan":"E2"},"21:30":{"plan":"E2"},"14:00":{"plan":"R2","actual":"R1","actualGoalId":1775802712186},"14:30":{"plan":"R2","planMemo":"통일의식","actual":"R1","actualMemo":"반통일 의식","actualGoalId":1775802712186},"8:00":{"actual":"M3","actualGoalId":"계획"},"11:30":{"actual":"M1","actualGoalId":"대출"},"15:30":{"actual":"M2","actualGoalId":"운전"},"15:00":{"actual":"M2","actualGoalId":"운전"},"19:00":{"actual":"M2","actualGoalId":"저녁"},"_diary":"3일차 (하나님 찾기) 왜 주님께서는 기도를 가르치시면서 용서를 이토록 강조하시는가? 짧은 기도의 가르침 가운데서도 용서에 대한 말씀이 거듭 반복된다. 그것은 아마도 용서로부터 관계가 다시 시작되기 때문일 것이다. 예수께서 이 땅에 오신 것도 우리의 죄값을 대신 치르시고 우리를 용서하시기 위해서이다. 우리는 주로 무엇을 먹을까, 무엇을 마실까를 두고 기도하지만, 주님께서는 용서를 위해서도 기도하라고 하신다. 아버지께서 우리에게 행하신 것처럼, 우리도 나 자신과 화해하고 이웃과 화해하며 세상과도 화해하기를 원하시기 때문인 것 같다.\n\n* 교원공제회, 사학연급에서 1억 3천만원 정도의 빚을 냈다. 빨리 우리집이 나가길을 기도한다. "},"4-2":{"5:30":{"actual":"D1","actualGoalId":1775891208109},"6:00":{"actual":"D1","actualGoalId":1775891208109},"22:00":{"actual":"M1","actualMemo":"연구실 정리","actualGoalId":"연구실 정리"},"21:30":{"actual":"M1","actualGoalId":"연구실 정리"},"21:00":{"actual":"M1","actualGoalId":"연구실 정리"},"20:30":{"actual":"M1","actualGoalId":"연구실 정리"},"20:00":{"actual":"M1","actualGoalId":"연구실 정리"},"19:30":{"actual":"M1","actualGoalId":"연구실 정리"},"19:00":{"actual":"M1","actualGoalId":"연구실 정리"},"13:00":{"actual":"M1","actualGoalId":"연구실 정리"},"13:30":{"actual":"M1","actualGoalId":"연구실 정리"},"14:00":{"actual":"M1","actualGoalId":"연구실 정리"},"14:30":{"actual":"M1","actualGoalId":"연구실 정리"},"15:00":{"actual":"M1","actualGoalId":"연구실 정리"},"15:30":{"actual":"M1","actualGoalId":"연구실 정리"},"16:00":{"actual":"M1","actualGoalId":"연구실 정리"},"10:00":{"actual":"M3","actualGoalId":1775868948642},"10:30":{"actual":"M3","actualGoalId":1775868948642},"11:00":{"actual":"M3","actualGoalId":1775868948642},"11:30":{"actual":"M3","actualMemo":"시간통계 앱 개발","actualGoalId":1775868948642},"16:30":{"actual":"M1","actualGoalId":"연구실 정리"},"17:00":{"actual":"M1","actualGoalId":"연구실 정리"},"_diary":"오늘 종일 연구실 정리했다. 하나님이 주신 인천대 내 마음이 잘 묶여 있기를 기도한다. "},"4-3":{"5:30":{"actual":"D1","actualGoalId":1775891208109},"6:00":{"actual":"D1","actualGoalId":1775891208109},"7:00":{"actual":"E1","actualGoalId":1775887381526},"7:30":{"actual":"E1","actualMemo":"수영","actualGoalId":1775887381526},"10:30":{"actual":"M3","actualGoalId":1775868948642},"11:00":{"actual":"M3","actualGoalId":1775868948642},"11:30":{"actual":"M3","actualMemo":"시간통계 앱 개발","actualGoalId":1775868948642},"12:00":{"actual":"D1","actualGoalId":1775891225514},"_diary":"4일차 (메시지 찾기) 주님께서 돌아가신 성금요일을 보내며, 나를 용서하신 주님을 묵상합니다. 나의 부족함, 부끄러움, 허물을 품어주시고, 나의 죄악을 씻어주심에 감사합니다. 주님의 용서에 힘입어, 나도 내 자신을 용서하고, 나의 이웃을 용서하겠습니다. 새벽말씀 처럼 오실 주님을 소망하며 넉넉한 마음으로 걸림없이 세상을 살아가겠습니다. ","12:30":{"actual":"D1","actualGoalId":1775891225514},"13:00":{"actual":"A2","actualGoalId":"목사님 부부"},"13:30":{"actualMemo":"목사님 식사","actual":"A2","actualGoalId":"목사님 부부"},"14:00":{"actual":"M2","actualGoalId":"운전"},"14:30":{"actual":"M2","actualGoalId":"운전"},"15:00":{"actual":"M2","actualGoalId":"정형외과(100퍼센트)"},"15:30":{"actual":"M2","actualGoalId":"운전"},"16:00":{"actual":"M2","actualMemo":"정형외과 진로","actualGoalId":"운전"},"17:30":{"actual":"E3","actualGoalId":1775869313050},"18:00":{"actual":"E3","actualGoalId":1775869313050},"18:30":{"actual":"E3","actualMemo":"피아노","actualGoalId":1775869313050}},"4-4":{"7:30":{"actual":"D1","actualGoalId":1775891208109},"8:00":{"actual":"E1","actualGoalId":"산책"},"8:30":{"actual":"E1","actualGoalId":"산책"},"9:00":{"actual":"E2","actualGoalId":1775895003055},"9:30":{"actual":"E2","actualGoalId":1775895003055},"16:00":{"actual":"M2","actualMemo":"장보기","actualGoalId":"장보기"},"15:30":{"actual":"M2","actualGoalId":"장보기"},"15:00":{"actual":"M2","actualGoalId":"장보기"},"14:30":{"actual":"M2","actualGoalId":"장보기"},"14:00":{"actual":"M2","actualGoalId":"장보기"},"10:00":{"actual":"D2","actualGoalId":"애들과 성경나눔"},"10:30":{"actual":"D2","actualMemo":"하브루타","actualGoalId":"애들과 성경나눔"},"11:30":{"actual":"M2","actualGoalId":"청소"},"12:00":{"actual":"M2","actualGoalId":"청소"},"12:30":{"actual":"M2","actualGoalId":"청소"},"18:30":{"actual":"M2","actualGoalId":"청소"},"19:00":{"actual":"M2","actualGoalId":"청소"},"19:30":{"actual":"M2","actualGoalId":"청소"},"20:30":{"actual":"D3","actualGoalId":1775893771920},"21:00":{"actual":"D3","actualGoalId":1775893771920},"21:30":{"actual":"M2","actualGoalId":"청소"},"22:00":{"actual":"M2","actualGoalId":"청소"},"_diary":"오늘 아침에 기도하는데 하나의 깨달음이 생겼다. 목사님께서 고난주간 새벽설교로 요한계시록을 한것에 대한 반감이 있었는데, 그에 대한 반성을 하게 되었다. 그리스도의 고난만이 아니라, 성도의 고난도 중요한 것이고, 그에 대한 위로의 책이 요한계시록이라면 고난 주간과 요한계시록이 무관할 이유도 없는 것이다. 나에게 위로를 주시기 위한 은혜의 자리 일 수 있는데 나 경험, 판단때문에 괜시리 주신 은혜를 거부한 것이다. 반성하고 요한계시록을 다시 읽고, 관련해서 '요한계시록 뒷조사'라는 앱툰책도 읽기도 했다. "},"4-5":{"9:00":{"actual":"D3","actualGoalId":1775893771920},"9:30":{"actual":"D3","actualGoalId":1775893771920},"11:00":{"actual":"D3","actualGoalId":1775893771920},"11:30":{"actual":"D2","actualGoalId":"주일예배"},"12:00":{"actual":"D2","actualGoalId":"부활주일 예배"},"12:30":{"actual":"D2","actualGoalId":"부활주일 예배"},"13:00":{"actual":"D3","actualGoalId":1775893785949},"13:30":{"actual":"D3","actualGoalId":1775893785949},"14:30":{"actual":"D2","actualGoalId":"교사셀 모임"},"15:00":{"actual":"D2","actualGoalId":"교사셀 모임"},"15:30":{"actual":"D2","actualGoalId":"교사셀 모임"},"16:00":{"actual":"D3","actualGoalId":"교사모임"},"17:30":{"actual":"M2","actualGoalId":"저녁"},"18:00":{"actual":"E3","actualGoalId":1775869313050},"18:30":{"actual":"M2","actualGoalId":"청소"},"19:00":{"actual":"M2","actualGoalId":"청소"},"20:00":{"actual":"A1","actualGoalId":"가족예배"},"21:00":{"actual":"E2","actualGoalId":1775895003055},"_diary":"부활주일 예배 때, 지우와 제민이가 성극 뮤지컬에 참여했다. 지우는 예수로 제민이는 군중 중 하나로 참여했다. 진지하지 못하고 웃음이 나오면 어떻하지 하고 걱정했는데... 오히려 감동까지 받았다. 열심히 해주는 아이들이 모습이 너무 고맙다. "},"4-6":{"_diary":"*1일차 (중심주제) 내게 주신 재물을 바르게 분별하여 하나님 뜻에 맞게 사용해야 한다. 분별이 흐려지면, 재물을 주신 하나님보다 재물 자체를 더 의지하고 섬기게 된다고 주님은 경고하신다.","5:30":{"actual":"D1","actualGoalId":1775891208109},"6:00":{"actual":"D1","actualGoalId":1775891208109},"7:00":{"actual":"E1","actualGoalId":1775887381526},"7:30":{"actual":"E1","actualMemo":"수영","actualGoalId":1775887381526},"10:30":{"actual":"D1","actualGoalId":1775891225514},"11:00":{"actual":"M3","actualGoalId":1775868948642},"13:30":{"actual":"M3","actualGoalId":1775868948642},"14:00":{"actual":"M1","actualGoalId":"연구실 정리"},"14:30":{"actual":"M1","actualGoalId":"연구실 정리"},"15:00":{"actual":"M1","actualGoalId":"연구실 정리"},"16:00":{"actual":"M2","actualGoalId":"치과교정"},"16:30":{"actual":"M2","actualGoalId":"치과교정"},"17:00":{"actual":"E3","actualGoalId":1775869313050},"17:30":{"actual":"E3","actualGoalId":1775869313050},"18:00":{"actual":"E3","actualGoalId":1775869313050},"18:30":{"actual":"E3","actualGoalId":1775869313050},"19:00":{"actual":"M2","actualGoalId":"저녁"},"19:30":{"actual":"M2","actualGoalId":"저녁"},"20:00":{"actual":"M2","actualGoalId":"청소"},"20:30":{"actual":"M2","actualGoalId":"청소"},"21:30":{"actual":"E3","actualGoalId":1775869313050},"21:00":{"actual":"E3","actualGoalId":1775869313050}},"4-7":{"_diary":"*새벽설교 : 이사야 40 :311\n4절 골짜기가 매워지고, 언덕이 낮아지고 대로가 열린다. 하나님의 위로 순서를 따라야 한다. 먼저 나를 고치고, 나의 필요한 것을 공급해 주신다. 일상은 반복의 연속이다. 알상은 반복되지만, 뚜렷한 열매가 없을 수 있다. 그 일상 속에 하나님의 위로가 필요하다. \"풀은 마르고, 꽃은 시든다. \" 강대국을 향한 말씀이자. 우리를 향한 말씀. 열심히 살았는데 남음이 없는 인생.. 8절 말씀은 영원히 선다. 영원한  말씀이 우리 삶 속에 들어올때 남김의 삶을 살 수 있다. 위로의 순서 1. 우리를 돌이킴 2. 길을 열어주심 3. 말씀을 주심 -> 영원한 말씀을 통해 남김이 있는 인생을 산다. \n\n* 2일차 (개인적 깨달음과 의문) 나는 무엇에 마음을 두고, 무엇을 바라보며, 누구를 섬기고 있는가? 많은 대상이 있는 것처럼 보이지만, 주님은 결국 두 대상만을 말씀하신다. 하나님과 재물이다. 땅의 것과 하늘의 것, 밝음과 어두움 사이에서 결국 결정은 양자택일이다. 오늘 내 앞에 놓인 수많은 선택 가운데, 돈에 대한 염려와 집착은 버리고 하늘의 보물을 택하며 하나님을 섬기는 쪽을 선택하는 하루가 되기를 기도한다.\n\n* 저녁 성경일기 : 요한계시록 1~2","5:30":{"actual":"D1","actualGoalId":1775891208109},"6:00":{"actual":"D1","actualGoalId":1775891208109},"6:30":{"actual":"D3","actualMemo":"화장실 청소"},"7:00":{"actual":"E1","actualGoalId":1775887381526},"7:30":{"actual":"E1","actualGoalId":1775887381526},"10:00":{"actual":"D1","actualGoalId":1775891225514},"10:30":{"plan":"M3","actual":"M3","actualGoalId":"계획"},"11:00":{"plan":"R3","planMemo":"영어뉴스","actual":"R3","actualGoalId":1775892309708},"18:00":{"plan":"E3","actual":"E3","actualGoalId":1775869313050},"18:30":{"plan":"E3","actual":"E3","actualGoalId":1775869313050},"17:30":{"plan":"E3"},"16:30":{"plan":"M2","actual":"M2","actualGoalId":"청소"},"16:00":{"plan":"M2"},"12:00":{"plan":"E1"},"13:00":{"plan":"R2"},"13:30":{"plan":"R2","actual":"R3","actualGoalId":1775892309708},"14:00":{"plan":"R2","actual":"R2","actualGoalId":"IRB 강의 수강"},"15:00":{"plan":"R1","actual":"R2","actualGoalId":"IRB 강의 수강"},"15:30":{"plan":"R1","planMemo":"기근연구","actual":"R2","actualGoalId":"IRB 강의 수강"},"19:30":{"plan":"M2","actual":"M2","actualGoalId":"청소"},"20:00":{"plan":"M2","actual":"D1","actualGoalId":1775895969162},"19:00":{"plan":"M2","actual":"M2","actualGoalId":"청소"},"20:30":{"plan":"D1","planMemo":"성경","actual":"D1","actualGoalId":1775895969162},"21:00":{"plan":"E2","planMemo":"인간실격"},"21:30":{"plan":"E1","planMemo":"스트레칭"},"14:30":{"actual":"R2","actualGoalId":"IRB 강의 수강"},"17:00":{"actual":"M2","actualGoalId":"저녁"}},"4-8":{"_diary":"*새벽설교,  이사야 40: 12~17\n\n하나님이 지으시고, 섭리하고 계시기에 모든 것이 안전하고, 아름답다. 우리의 인생도 그와 같다. 우리는 과거만 보지만, 하나님은 우리의 미래까지 보신다. 세상에게 보내기 이전에 이미 우리에게 사명이 주어졌다. 모세의 과거만 놓고 보면 이해되지 않지만, 출애굽의 지도자, 선지자라는 사명의 관점에서 보면 모든 것이 잘 준비되면 삶으로 해석될 수 있다. 하나님 앞에서 심는 것 중에 허망한 것이 없다. 반드시 거두게 하신다. \n\n*3일차 (하나님 찾기) 하나님은 우리 마음의 중심을 보신다. 내 마음속의 진짜 보물이 무엇인지, 내가 진짜 의지하는 것이 무엇인지, 내 삶을 진정 다스리는 주인이 누구인지 하나님은 아신다. 주님, 주님 자신을 내게 주소서. 주님만을 갈망합니다. 내 안의 어두움과 탐심과 두려움을 몰아내 주시고, 내 안에 오셔서 내 삶의 주인으로 다스려 주소서.\n\n\n* 기독인 연합회 개강예배를 드렸다. 장소 대여는 내가 했는데, 다행히 교수회관 1층 다목적실이 비워있었다. 음향 준비 등도 신경썼다. 주님의 일에 사용해 주시니 감사하다. 생각보다 학생들이 많이 참석했다. 이동선 교수님께서 학생들의 환영을 받고 우셨다. 그 순수한 마음이 좋았다. 많이 도전이 되는 시간이었다. ","5:30":{"actual":"D1","actualGoalId":1775891208109},"6:00":{"actual":"D1","actualGoalId":1775891208109},"7:00":{"actual":"E1","actualGoalId":1775887381526},"7:30":{"actual":"E1","actualGoalId":1775887381526},"10:00":{"plan":"D1","actual":"D1","actualGoalId":1775891225514},"10:30":{"plan":"R3"},"11:00":{"plan":"R3","actual":"R3","actualGoalId":1775892309708},"12:00":{"plan":"E1","actual":"E1","actualGoalId":"산책"},"13:30":{"plan":"R1"},"14:00":{"plan":"R1","actual":"R1","actualGoalId":1775896149443},"14:30":{"plan":"R1","planMemo":"IRB 연구계획서","actual":"R1","actualGoalId":1775896149443},"13:00":{"plan":"R1","actual":"R3","actualGoalId":1775892309708},"15:30":{"plan":"R1","actual":"R1","actualMemo":"IRB 연구계획서","actualGoalId":1775896149443},"16:00":{"plan":"R1","actual":"D3","actualGoalId":"연합예배 음향 점검"},"17:00":{"plan":"R2","actual":"R2","actualGoalId":1775896220202},"17:30":{"plan":"R2","planMemo":"미시"},"18:00":{"plan":"A2","actual":"A2","actualGoalId":"박승룡 교수님"},"18:30":{"plan":"D2","actual":"D2","actualGoalId":"기독인 연합회 개강모임"},"19:00":{"plan":"D2","actual":"D2","actualGoalId":"기독인 연합회 개강예배"},"19:30":{"plan":"D2","actual":"D2","actualGoalId":"기독인 연합회 개강예배"},"20:00":{"plan":"M2","actual":"D2","actualGoalId":"기독인 연합회 개강예배"},"20:30":{"plan":"M2"},"21:00":{"plan":"D1"},"21:30":{"plan":"D1","planMemo":"요한계시록","actual":"E3","actualGoalId":1775869313050},"15:00":{"actual":"R1","actualGoalId":1775896149443},"16:30":{"actual":"R2","actualGoalId":1775896220202}},"4-9":{"_diary":"*새벽말씀, 이사야 40 : 18~26\n\n소중한 것이 있다면, 그것에 붙들려 있을 수 있다. 소중한 것이 있다면 하나님을 먼저 붙들고 있어야 한다.  하나님보다 붙들고 있는 것이 우상숭배다. 하나님을 무엇과 비기겠느냐? 우상은 사람들이 만드는것, 하나님은 우리를 만드셨다. 우상은 움직일 수 없지만, 하나님은 만유 가운데 계신다. 우상이 우리를 타락시키는 것이 아니라, 우리가 타락할 때 우상을 만들게 된다. 25절 하나님은 누구와 비길 수 없는 분이다. 귀한 것이 있을수록 하나님을 붙드는 자가 되어야 한다. 하나님의 전능성은 우리에 대해 모든 것은 아신다는 것이다. 부모가 돈이 많다고 자식에게 말한다면, 자량이 아니라 격려다. 하나님의 전능성은 이와 같은 것이다.\n\n*4일차 (메시지 찾기) 오직 하늘에 보물을 쌓을 때에만 남김이 있는 인생을 살 수 있다. 그렇다면 어떻게 하늘에 보물을 쌓는 삶을 살 수 있을까? 본문은 하나님을 주인 삼을 때에만 가능하다고 말한다. 우리가 삶의 모든 영역에서 주님의 주되심을 인정한다면, 종된 우리가 걱정할 것이 무엇인가? 내 것도 아닌 것에 왜 탐심을 내겠는가? 종된 삶은 주인이 책임지시는 삶이다. 그때 하늘에 보물을 쌓는 삶은 단지 헌금하고 구제하는 일에만 머물지 않는다. 내가 연구하고, 강의하고, 가족을 돌보고, 함께 기쁨을 나누고, 교회를 섬기고, 친구들과 우정을 나누며, 사랑으로 행하는 모든 일이 하늘에 보물을 쌓는 일이 된다. 그렇게 살아갈 때 내 인생은 결국 헛되지 않을 인생이 되고, 죽음이후 주님 앞에서도 칭찬받는 인생이 될 것이라 믿는다.\n\n* 기독교수회 예배때 채진석 교수님께서 강의해 주셨는데, 정말 큰 감동을 받았다. 교수님의 아버님께서 자동차 사고로 큰 화상을 입으셨는데 이를 극복하고 건강보험 도입 등 사회발전에 큰 기여를 하신 것이다. 채 교수님도 불우한 환경에서도 잘 자라셨고, 지극히 작은자 한사람에게 한것이 나에게 한것이라는 그리스도의 말씀을 푯대 삼고 사셨다고 한다. 요즈음 여러가지로 큰 은혜를 받는다. 감사하다.  ","5:30":{"actual":"D1","actualGoalId":1775891208109},"6:00":{"actual":"D1","actualGoalId":1775891208109},"17:00":{"actual":"M2","actualGoalId":"도수치료"},"17:30":{"actual":"M2","actualGoalId":"도수치료"},"20:30":{"actual":"E3","actualGoalId":1775869313050},"21:00":{"actual":"E3","actualGoalId":1775869313050},"19:00":{"actual":"M2","actualGoalId":"청소"},"19:30":{"actual":"M2","actualGoalId":"청소"},"12:00":{"actual":"D2","actualGoalId":"기독교수회 예배"},"12:30":{"actual":"D2","actualGoalId":"기독교수회 예배"},"13:00":{"actual":"A1","actualGoalId":"미미"},"13:30":{"actual":"A1","actualGoalId":"미미"},"14:00":{"actual":"A1","actualGoalId":"미미"},"14:30":{"actual":"A1","actualMemo":"미미","actualGoalId":"미미"},"15:30":{"actual":"R2","actualGoalId":1775896220202},"16:00":{"actual":"R2","actualMemo":"미시","actualGoalId":1775896220202},"10:30":{"actual":"D1","actualGoalId":1775891225514},"11:00":{"actual":"D1","actualGoalId":1775891225514},"18:30":{"actual":"A1","actualGoalId":"어머니 외식"}},"4-10":{"_diary":"* 새벽설교, 이사야 40: 27~31\n현실에는 막힘이 있다. 27 여호와께 숨겨졌다. 그러나 하나님은 여전하다. 내 마음이 바뀌는 것이다. 하나님 안에서 선을 넘지 말아야 한다. 내 느낌 , 경험으로 하나님을 재단하지 말아야 한다. 그것이 하나님을 앙망하는 것이다. 하나님께서 새힘을 주신다. 27-> 28절의 확신을 바뀌게 된다. \n\n*금요기도회, 골로새서 1: 15~18\n말씀을 듣게 되면, 행함이 생긴다. 흑암에서 옮겨 아들의 나라에 들어가게 한다. 진짜 본향이 모르면 흑암 속에서 삶이 된다. 탕자가 있어야 자리인 아버지의 집에 있는 것이 아들의 나라에서 사는 것이다. 하나님이 행하신 일을 아는것. 오늘은 하나님 자체를 아는 것.. 15절 예수님은 하나님의 형상. 형상되신 예수를 통해 하나님을 알 수 있다. 예수를 주목할 때 하나님을 잘 알게 된다. 16절 만물이 그에게서 창조되었다. 예수님은 창조자 이시다. 우리삶의 문제가 있다면 주께서 나아가야 한다. 창조자이시면 기도의 자리로 나아가야 한다. 예수님을 알았다면 우리는 어떤 변화가 일어날까? 그로말고 그를 위하여 창조되었다. 안다면 삶의 방향이 바뀌어야 한다. 그를 위해 살아야 한다. 하나님의 설계도대로 살겠다는 고백이다 .18절 예수가 교회의 머리다. 부활의 첫열매. 교회의 머리 - 대속, 거듭 값을 지불하신 분이다. -> 모든 것에 결정권을 예수님께 맡겨야 한다.  묻는 중심이 중요하다. 부활의 첫열매- 오직 예수만이 영원함으로 이어진다. 진짜 소망은 예수 안에 두어야 한다. 나머지 것은 다 사라진다. 방향성과 소망... 주님은 주인 삼고, 영원한 소망을 주님께 주자. \n \n","5:30":{"actual":"D1","actualGoalId":1775891208109},"6:00":{"actual":"D1","actualGoalId":1775891208109},"7:00":{"actual":"E1","actualGoalId":1775887381526},"7:30":{"actual":"E1","actualGoalId":1775887381526},"8:30":{"plan":"D1","actual":"M2","actualGoalId":"아침"},"9:00":{"plan":"R2","actual":"M2","actualGoalId":"정리"},"9:30":{"plan":"R2"},"10:00":{"plan":"R1","actual":"D1","actualGoalId":1775891225514},"10:30":{"plan":"R1","actual":"M3","actualGoalId":1775868948642},"11:00":{"plan":"R1","actual":"M3","actualGoalId":1775868948642},"13:00":{"plan":"M3","actual":"M3","actualGoalId":1775868948642},"13:30":{"plan":"M3","actual":"M3","actualGoalId":1775868948642},"14:30":{"plan":"M3","actual":"M3","actualGoalId":1775868948642},"15:00":{"plan":"R2","actual":"M3","actualGoalId":1775868948642},"15:30":{"plan":"R2","actual":"M3","actualGoalId":1775868948642},"16:00":{"plan":"R2","actual":"M3","actualGoalId":1775868948642},"14:00":{"plan":"M3","actual":"M3","actualGoalId":1775868948642},"21:00":{"plan":"D2","actual":"D2","actualGoalId":"금요기도회"},"21:30":{"plan":"D2","actual":"D2","actualGoalId":"금요기도회"},"22:00":{"plan":"D2","actual":"D2","actualGoalId":"금요기도회"},"18:00":{"plan":"E3","actual":"E3","actualGoalId":1775869313050},"18:30":{"plan":"E3","actual":"E3","actualGoalId":1775869313050},"17:30":{"plan":"E3","actual":"E3","actualGoalId":1775869313050},"17:00":{"plan":"E3"},"19:30":{"plan":"M2","actual":"M3","actualGoalId":1775868948642},"20:00":{"plan":"M2","actual":"M3","actualGoalId":1775868948642},"23:00":{"actual":"M3","actualGoalId":1775868948642},"23:30":{"actual":"M3","actualGoalId":1775868948642},"16:30":{"actual":"M3","actualGoalId":1775868948642}},"4-11":{"8:30":{"actual":"E1","actualGoalId":"산책"},"9:00":{"actual":"E1","actualGoalId":"산책"},"7:30":{"actual":"M3","actualGoalId":1775868948642},"7:00":{"actual":"M3","actualGoalId":1775868948642},"17:30":{"actual":"M3","actualGoalId":1775868948642},"17:00":{"actual":"M3","actualGoalId":1775868948642},"16:30":{"actual":"M3","actualGoalId":1775868948642},"16:00":{"actual":"M3","actualGoalId":1775868948642},"15:30":{"actual":"M3","actualGoalId":1775868948642},"15:00":{"actual":"M3","actualGoalId":1775868948642},"14:30":{"actual":"M3","actualGoalId":1775868948642},"14:00":{"actual":"M3","actualGoalId":1775868948642},"11:00":{"actual":"E1","actualGoalId":1775887381526},"11:30":{"actual":"E1","actualGoalId":1775887381526},"13:00":{"actual":"A1","actualGoalId":"지우, 제민과 외식"},"13:30":{"actual":"A1","actualGoalId":"지우, 제민과 외식"},"18:30":{"actual":"M1","actualGoalId":"장보기"},"19:30":{"actual":"M2","actualGoalId":"청소"},"20:00":{"actual":"M3","actualGoalId":1775868948642},"21:00":{"actual":"A1","actualGoalId":"영화: 휴고"},"21:30":{"actual":"A1","actualGoalId":"영화: 휴고"},"22:00":{"actual":"A1","actualGoalId":"영화: 휴고"},"22:30":{"actual":"A1","actualGoalId":"영화: 휴고"}}}};
+  var SEED_DATA={"entries":{}};
   var SEED_BOOKS={"1":[{"type":"en","title":"Magician's Elephant","id":1775097742502},{"type":"kr","title":"오딧세이(요약본)","id":1775097769208},{"type":"kr","title":"호밀밭의 파수꾼","id":1775097786627}],"4":[{"type":"kr","title":"요한계시록 뒷조사","memo":"나는 어떤 대안적인 삶을 살고 있난 계시록에서 말하고 있는..","id":1775480859986}]};
-  var SEED_GOALS={"daily":{"4-10":[{"id":1775800043487,"cat":"R2","name":"미시3강","done":false},{"id":1775800125807,"cat":"R1","name":"인천대 교내 연구과제 제안서 작성","done":false},{"id":1775800140540,"cat":"M3","name":"시간통계 앱 업데이트","done":true}]},"weekly":[{"id":1775800455390,"cat":"R1","name":"Global NK 원고","memo":"","progress":0,"subtasks":[],"period":"2026-04-W3","month":4,"weekIdx":3,"year":2026},{"id":1775800472545,"cat":"R2","name":"전략연 세미나 원고","memo":"","progress":0,"subtasks":[],"period":"2026-04-W3","month":4,"weekIdx":3,"year":2026},{"id":1775800556876,"cat":"R2","name":"미시4, 5강","memo":"","progress":0,"subtasks":[],"period":"2026-04-W3","month":4,"weekIdx":3,"year":2026},{"id":1775806241659,"cat":"R1","name":"교내 연구과제 제안서 작성(기근연구)","memo":"","progress":0,"subtasks":[],"period":"2026-04-W2","month":4,"weekIdx":2,"year":2026},{"id":1775806351905,"cat":"R1","name":"통일의식 논문 리딩","memo":"","progress":0,"subtasks":[],"period":"2026-04-W4","month":4,"weekIdx":4,"year":2026},{"id":1775891383250,"cat":"R2","name":"국방대 강의","memo":"","progress":100,"subtasks":[],"period":"2026-03-W4","month":3,"weekIdx":4,"year":2026}],"monthly":[{"id":1775799879214,"cat":"R1","name":"북러, 북중 관계 논문 게재","memo":"","progress":70,"subtasks":[],"year":2026,"startMonth":3,"endMonth":4,"month":3},{"id":1775800894008,"cat":"R1","name":"북대 교과서 작성","memo":"","progress":0,"subtasks":[],"year":2026,"startMonth":5,"endMonth":8,"month":5},{"id":1775802712186,"cat":"R1","name":"통일의식 논문","memo":"","progress":50,"subtasks":[],"year":2026,"startMonth":4,"endMonth":6,"month":4},{"id":1775804356825,"cat":"R1","name":"탈북자 건강 (Asian perspective) 발간","memo":"","progress":90,"subtasks":[{"id":1775804432223,"name":"초안 accept","weight":90,"done":true},{"id":1775804458757,"name":"교정","weight":5,"done":false},{"id":1775804480655,"name":"출간","weight":5,"done":false}],"year":2026,"startMonth":4,"endMonth":9,"month":4},{"id":1775805752089,"cat":"R2","name":"한국경제발전론 과정개발","memo":"","progress":0,"subtasks":[],"year":2026,"startMonth":5,"endMonth":8,"month":5},{"id":1775869313050,"cat":"E3","name":"바이엘","memo":"","progress":0,"subtasks":[{"id":1775885422014,"name":"60~80","weight":30,"done":false},{"id":1775885436202,"name":"81~90","weight":30,"done":false},{"id":1775885449985,"name":"91~106","weight":40,"done":false}],"parentIds":{"longterm":1775798034668},"year":2026,"startMonth":3,"endMonth":6,"month":3},{"id":1775887381526,"cat":"E1","name":"자유형","memo":"","progress":0,"subtasks":[{"id":1775888441698,"name":"자유형 연속 50m","weight":50,"done":false},{"id":1775888472943,"name":"자유형 연속 100m","weight":50,"done":false}],"parentIds":{"longterm":1775885963745},"year":2026,"startMonth":3,"endMonth":5,"month":3},{"id":1775895003055,"cat":"E2","name":"요한계시록 뒷조사","memo":"","progress":100,"subtasks":[],"year":2026,"startMonth":4,"endMonth":4,"month":4},{"id":1775896149443,"cat":"R1","name":"IRB 면제 신청","memo":"","progress":100,"subtasks":[],"year":2026,"startMonth":4,"endMonth":4,"month":4},{"id":1775896220202,"cat":"R2","name":"미시 강의 수강","memo":"","progress":0,"subtasks":[],"year":2026,"startMonth":4,"endMonth":6,"month":4}],"longterm":[{"id":1775798034668,"cat":"E3","name":"새벽기도 피아노 반주자 되기","memo":"","progress":0,"subtasks":[{"id":1775798052897,"name":"바이엘","weight":20,"done":false},{"id":1775798113296,"name":"체르니100","weight":20,"done":false},{"id":1775798150778,"name":"체르니30","weight":40,"done":false},{"id":1775798168813,"name":"체르니40","weight":20,"done":false}],"startYear":2026,"endYear":2028},{"id":1775798292050,"cat":"R1","name":"북한경제 교과서 집필","memo":"","progress":90,"subtasks":[],"startYear":2026,"endYear":2028},{"id":1775799202628,"cat":"R2","name":"경제학 기초 다지기","memo":"","progress":0,"subtasks":[{"id":1775799217231,"name":"미시","weight":30,"done":false},{"id":1775799226539,"name":"거시","weight":30,"done":false},{"id":1775799272625,"name":"경제수학","weight":10,"done":false},{"id":1775799312106,"name":"통계학/계량","weight":30,"done":false}],"startYear":2026,"endYear":2028},{"id":1775868948642,"cat":"M3","name":"시간통계 앱 개발","memo":"","progress":0,"subtasks":[],"startYear":2026,"endYear":2027},{"id":1775885963745,"cat":"E1","name":"수영 마스터하기","memo":"","progress":0,"subtasks":[{"id":1775886913331,"name":"자유형 50m 연속수영","weight":10,"done":false},{"id":1775886931950,"name":"자유형 100m 연속수영","weight":10,"done":false},{"id":1775886999898,"name":"배형 25m 연속수영","weight":10,"done":false},{"id":1775887108687,"name":"평형 25m 연속수영","weight":20,"done":false},{"id":1775887136889,"name":"접형 25m 연속수영","weight":20,"done":false},{"id":1775887304979,"name":"상급반으로 올라가기","weight":30,"done":false}],"startYear":2026,"endYear":2028},{"id":1775893785949,"cat":"D3","name":"청소년부","memo":"","progress":0,"subtasks":[],"startYear":2026,"endYear":2040}],"habits":[{"id":1775891208109,"cat":"D1","name":"새벽기도","startDate":"2026-3-1","endDate":"2040-2-29","completions":{},"longtermId":1775891208109},{"id":1775891225514,"cat":"D1","name":"묵상","startDate":"2026-3-1","endDate":"2040-2-29","completions":{},"longtermId":1775891225514},{"id":1775892309708,"cat":"R3","name":"영어뉴스 스터디","startDate":"2026-3-1","endDate":"2040-2-29","completions":{},"longtermId":1775892309708},{"id":1775893771920,"cat":"D3","name":"성가대","startDate":"2026-3-1","endDate":"2040-2-29","completions":{},"longtermId":1775893771920},{"id":1775895969162,"cat":"D1","name":"성경읽기","startDate":"2026-3-1","endDate":"2040-2-29","completions":{},"longtermId":1775895969162}]};
+  var SEED_GOALS={"daily":{},"weekly":[],"monthly":[],"longterm":[],"habits":[],"readingGoals":[]};
 
   // timesheet data: 없거나 entries가 비어있으면 시드 적용
   var rawD=localStorage.getItem("timesheet-data-2026");

@@ -4047,129 +4047,80 @@ function renderWeeklyReview(){
   return wrap;
 }
 
-function renderGoals(){
-  const wrap=h("div",{});
-  // ── 검색창 ──────────────────────────────────────────────────
-  const searchBox=h("div",{style:"display:flex;align-items:center;gap:8px;padding:8px 12px;background:#0c0f1a;border-bottom:1px solid #1e293b"});
-  const searchInp=h("input",{
-    placeholder:"🔍  목표 / 습관 / 독서목표 검색...",
-    value:state.goalSearch||"",
-    style:"flex:1;background:#111827;border:1px solid #1e293b;border-radius:8px;padding:7px 10px;font-size:12px;color:#e2e8f0;outline:none"
-  });
-  searchInp.addEventListener("input",function(e){
-    state.goalSearch=e.target.value;
-    _isEditing=true;
-    render();
-    // 포커스 복원
-    requestAnimationFrame(function(){
-      const el=document.querySelector(".goal-search-inp");
-      if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}
-    });
-  });
-  searchInp.className="goal-search-inp";
-  searchBox.appendChild(searchInp);
-  if(state.goalSearch){
-    const clr=h("button",{style:"background:transparent;border:none;color:#64748b;font-size:14px;cursor:pointer;padding:0 4px",onClick:function(){state.goalSearch="";render()}},"✕");
-    searchBox.appendChild(clr);
-  }
-  wrap.appendChild(searchBox);
-
-  // ── 검색 중이면 전체 검색결과 표시 ──────────────────────────
-  if(state.goalSearch&&state.goalSearch.trim()){
-    const q=state.goalSearch.trim().toLowerCase();
-    const sec=h("div",{className:"goal-section"});
-    sec.appendChild(h("h3",{className:"goal-section-title"},"🔍 검색 결과"));
-
-    const SCOPE_META=[
-      {sc:"longterm",icon:"🎯",label:"장기"},
-      {sc:"monthly",icon:"🗓",label:"월간"},
-      {sc:"weekly",icon:"📆",label:"주간"},
-      {sc:"daily",icon:"📌",label:"일간"},
-      {sc:"habits",icon:"🔁",label:"습관"},
-      {sc:"readingGoals",icon:"📚",label:"독서목표"},
-    ];
-    let totalFound=0;
-
-    SCOPE_META.forEach(function(sm){
-      let list=[];
-      if(sm.sc==="daily"){
-        Object.entries(state.goalData.daily||{}).forEach(function([dk,arr]){
-          (arr||[]).forEach(function(g){if(g.name&&g.name.toLowerCase().indexOf(q)>=0)list.push({g:g,extra:dk});});
-        });
-      }else if(sm.sc==="habits"){
-        list=(state.goalData.habits||[]).filter(function(g){return g.name&&g.name.toLowerCase().indexOf(q)>=0;}).map(function(g){return{g:g};});
-      }else if(sm.sc==="readingGoals"){
-        list=(state.goalData.readingGoals||[]).filter(function(g){return g.name&&g.name.toLowerCase().indexOf(q)>=0;}).map(function(g){return{g:g};});
-      }else{
-        list=(state.goalData[sm.sc]||[]).filter(function(g){return g.name&&g.name.toLowerCase().indexOf(q)>=0;}).map(function(g){return{g:g};});
-      }
-      if(list.length===0)return;
-      totalFound+=list.length;
-
-      // 구분 헤더
-      const grpHeader=h("div",{style:"font-size:10px;color:#64748b;font-weight:700;letter-spacing:.5px;padding:8px 4px 4px"},sm.icon+" "+sm.label);
-      sec.appendChild(grpHeader);
-
-      list.forEach(function(item){
-        const g=item.g;
-        const catObj=catByCode(g.cat);
-        const hrs=calcGoalTotalHours(g.id);
-        const row=h("div",{style:"display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;margin-bottom:3px;background:#111827;border:1px solid #1e293b;cursor:pointer",
-          onClick:function(){
-            // 해당 scope 탭으로 이동
-            if(sm.sc==="daily"){state.goalScope="daily";}
-            else if(sm.sc==="habits"){state.goalScope="habits";}
-            else if(sm.sc==="readingGoals"){state.tab="books";}
-            else{
-              state.goalScope=sm.sc;
-              // monthly/weekly 기간 맞추기
-              if(sm.sc==="monthly"&&g.startMonth)state.goalMonth=g.startMonth;
-              if(sm.sc==="weekly"&&g.month){state.goalWeekMonth=g.month;state.goalWeekIdx=g.weekIdx||1;}
-            }
-            state.goalSearch="";
-            render();
-          }
-        });
-        // 카테고리 뱃지
-        row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:"+(catObj?catObj.color:"#94a3b8")+";font-family:monospace;flex-shrink:0;min-width:28px"},g.cat||""));
-        // 이름 (검색어 하이라이트)
-        const nameParts=g.name.split(new RegExp("("+q.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+")","gi"));
-        const nameSpan=h("span",{style:"flex:1;font-size:12px;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"});
-        nameParts.forEach(function(part){
-          if(part.toLowerCase()===q){
-            nameSpan.appendChild(h("mark",{style:"background:#f59e0b40;color:#fcd34d;border-radius:2px;padding:0 1px"},part));
-          }else{
-            nameSpan.appendChild(document.createTextNode(part));
-          }
-        });
-        row.appendChild(nameSpan);
-        // 진도
-        if(typeof g.progress==="number"){
-          const pct=g.progress||0;
-          const pColor=pct>=100?"#10b981":pct>=50?"#f59e0b":"#64748b";
-          row.appendChild(h("span",{style:"font-size:10px;color:"+pColor+";font-family:monospace;flex-shrink:0"},pct+"%"));
-        }
-        // 투입시간
-        if(hrs>0){
-          row.appendChild(h("span",{style:"font-size:10px;color:#f59e0b;font-family:monospace;flex-shrink:0"},fmtHours(hrs)));
-        }
-        // daily 날짜 표시
-        if(item.extra){
-          row.appendChild(h("span",{style:"font-size:9px;color:#475569;flex-shrink:0"},item.extra));
-        }
-        sec.appendChild(row);
+function buildGoalSearchResults(q){
+  const sec=h("div",{className:"goal-section"});
+  sec.appendChild(h("h3",{className:"goal-section-title"},"🔍 검색 결과"));
+  const SCOPE_META=[
+    {sc:"longterm",icon:"🎯",label:"장기"},
+    {sc:"monthly",icon:"🗓",label:"월간"},
+    {sc:"weekly",icon:"📆",label:"주간"},
+    {sc:"daily",icon:"📌",label:"일간"},
+    {sc:"habits",icon:"🔁",label:"습관"},
+    {sc:"readingGoals",icon:"📚",label:"독서목표"},
+  ];
+  let totalFound=0;
+  SCOPE_META.forEach(function(sm){
+    let list=[];
+    if(sm.sc==="daily"){
+      Object.entries(state.goalData.daily||{}).forEach(function([dk,arr]){
+        (arr||[]).forEach(function(g){if(g.name&&g.name.toLowerCase().indexOf(q)>=0)list.push({g:g,extra:dk});});
       });
-    });
-
-    if(totalFound===0){
-      sec.appendChild(h("div",{style:"text-align:center;padding:30px;color:#475569;font-size:12px"},"\""+state.goalSearch+"\" 검색 결과가 없습니다"));
+    }else if(sm.sc==="habits"){
+      list=(state.goalData.habits||[]).filter(function(g){return g.name&&g.name.toLowerCase().indexOf(q)>=0;}).map(function(g){return{g:g};});
+    }else if(sm.sc==="readingGoals"){
+      list=(state.goalData.readingGoals||[]).filter(function(g){return g.name&&g.name.toLowerCase().indexOf(q)>=0;}).map(function(g){return{g:g};});
+    }else{
+      list=(state.goalData[sm.sc]||[]).filter(function(g){return g.name&&g.name.toLowerCase().indexOf(q)>=0;}).map(function(g){return{g:g};});
     }
-    wrap.appendChild(sec);
-    return wrap;
+    if(list.length===0)return;
+    totalFound+=list.length;
+    sec.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;letter-spacing:.5px;padding:8px 4px 4px"},sm.icon+" "+sm.label));
+    list.forEach(function(item){
+      const g=item.g;
+      const catObj=catByCode(g.cat);
+      const hrs=calcGoalTotalHours(g.id);
+      const row=h("div",{style:"display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;margin-bottom:3px;background:#111827;border:1px solid #1e293b;cursor:pointer",
+        onClick:function(){
+          if(sm.sc==="daily"){state.goalScope="daily";}
+          else if(sm.sc==="habits"){state.goalScope="habits";}
+          else if(sm.sc==="readingGoals"){state.tab="books";}
+          else{
+            state.goalScope=sm.sc;
+            if(sm.sc==="monthly"&&g.startMonth)state.goalMonth=g.startMonth;
+            if(sm.sc==="weekly"&&g.month){state.goalWeekMonth=g.month;state.goalWeekIdx=g.weekIdx||1;}
+          }
+          state.goalSearch="";render();
+        }
+      });
+      row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:"+(catObj?catObj.color:"#94a3b8")+";font-family:monospace;flex-shrink:0;min-width:28px"},g.cat||""));
+      const nameParts=g.name.split(new RegExp("("+q.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+")","gi"));
+      const nameSpan=h("span",{style:"flex:1;font-size:12px;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"});
+      nameParts.forEach(function(part){
+        if(part.toLowerCase()===q){
+          nameSpan.appendChild(h("mark",{style:"background:#f59e0b40;color:#fcd34d;border-radius:2px;padding:0 1px"},part));
+        }else{
+          nameSpan.appendChild(document.createTextNode(part));
+        }
+      });
+      row.appendChild(nameSpan);
+      if(typeof g.progress==="number"){
+        const pct=g.progress||0;
+        const pColor=pct>=100?"#10b981":pct>=50?"#f59e0b":"#64748b";
+        row.appendChild(h("span",{style:"font-size:10px;color:"+pColor+";font-family:monospace;flex-shrink:0"},pct+"%"));
+      }
+      if(hrs>0)row.appendChild(h("span",{style:"font-size:10px;color:#f59e0b;font-family:monospace;flex-shrink:0"},fmtHours(hrs)));
+      if(item.extra)row.appendChild(h("span",{style:"font-size:9px;color:#475569;flex-shrink:0"},item.extra));
+      sec.appendChild(row);
+    });
+  });
+  if(totalFound===0){
+    sec.appendChild(h("div",{style:"text-align:center;padding:30px;color:#475569;font-size:12px"},'"'+q+'" 검색 결과가 없습니다'));
   }
+  return sec;
+}
 
-  // ── 일반 scope 뷰 ────────────────────────────────────────────
-  // Scope selector
+function buildGoalScopeContent(){
+  const frag=document.createDocumentFragment();
   const bar=h("div",{className:"goal-scope-bar"});
   [{id:"daily",icon:"📌",label:"일간"},{id:"weekly",icon:"📆",label:"주간"},{id:"monthly",icon:"🗓",label:"월간"},{id:"longterm",icon:"🎯",label:"장기"},{id:"habits",icon:"🔁",label:"습관"}].forEach(s=>{
     const b=h("button",{className:"goal-scope-btn"+(state.goalScope===s.id?" active":""),onClick:()=>{state.goalScope=s.id;state.goalNewName="";state.goalNewMemo="";state.goalNewDeadline="";render()}});
@@ -4177,19 +4128,67 @@ function renderGoals(){
     b.appendChild(h("span",{},s.label));
     bar.appendChild(b);
   });
-  wrap.appendChild(bar);
-
+  frag.appendChild(bar);
   const sec=h("div",{className:"goal-section"});
   const titles={daily:"📌 일간 목표",weekly:"📆 주간 목표",monthly:"🗓 월간 목표",longterm:"🎯 장기 목표",habits:"🔁 습관 목표"};
   sec.appendChild(h("h3",{className:"goal-section-title"},titles[state.goalScope]));
-  if(state.goalScope==="daily"){
-    sec.appendChild(renderDailyGoals());
-  }else if(state.goalScope==="habits"){
-    sec.appendChild(renderHabitsTab());
-  }else{
-    sec.appendChild(renderPeriodGoals(state.goalScope));
-  }
-  wrap.appendChild(sec);
+  if(state.goalScope==="daily") sec.appendChild(renderDailyGoals());
+  else if(state.goalScope==="habits") sec.appendChild(renderHabitsTab());
+  else sec.appendChild(renderPeriodGoals(state.goalScope));
+  frag.appendChild(sec);
+  return frag;
+}
+
+function _refreshGoalContent(){
+  const ct=document.getElementById("__gsContent");
+  if(!ct){render();return;}
+  while(ct.firstChild)ct.removeChild(ct.firstChild);
+  const q=state.goalSearch.trim().toLowerCase();
+  const clrBtn=document.getElementById("__gsClr");
+  if(clrBtn)clrBtn.style.display=state.goalSearch?"":"none";
+  if(q) ct.appendChild(buildGoalSearchResults(q));
+  else  ct.appendChild(buildGoalScopeContent());
+}
+
+function renderGoals(){
+  const wrap=h("div",{});
+  // 검색창 (render()와 무관, input 엘리먼트 재생성 없음)
+  const searchBox=h("div",{style:"display:flex;align-items:center;gap:8px;padding:8px 12px;background:#0c0f1a;border-bottom:1px solid #1e293b"});
+  const searchInp=h("input",{
+    placeholder:"🔍  목표 / 습관 / 독서목표 검색...",
+    value:state.goalSearch||"",
+    style:"flex:1;background:#111827;border:1px solid #1e293b;border-radius:8px;padding:7px 10px;font-size:12px;color:#e2e8f0;outline:none"
+  });
+  searchInp.className="goal-search-inp";
+  let _srComposing=false;
+  searchInp.addEventListener("compositionstart",function(){_srComposing=true;});
+  searchInp.addEventListener("compositionend",function(e){
+    _srComposing=false;
+    state.goalSearch=e.target.value;
+    _refreshGoalContent();
+  });
+  searchInp.addEventListener("input",function(e){
+    if(_srComposing)return;
+    state.goalSearch=e.target.value;
+    _refreshGoalContent();
+  });
+  searchInp.addEventListener("keydown",function(e){
+    if(e.key==="Escape"){state.goalSearch="";searchInp.value="";_refreshGoalContent();}
+  });
+  const clrBtn=h("button",{
+    id:"__gsClr",
+    style:"background:transparent;border:none;color:#64748b;font-size:14px;cursor:pointer;padding:0 4px;display:"+(state.goalSearch?"":"none"),
+    onClick:function(){state.goalSearch="";searchInp.value="";_refreshGoalContent();searchInp.focus();}
+  },"✕");
+  searchBox.appendChild(searchInp);
+  searchBox.appendChild(clrBtn);
+  wrap.appendChild(searchBox);
+  // 콘텐츠 영역 (검색결과 or scope뷰)
+  const ct=h("div",{id:"__gsContent"});
+  const q=(state.goalSearch||"").trim().toLowerCase();
+  if(q) ct.appendChild(buildGoalSearchResults(q));
+  else  ct.appendChild(buildGoalScopeContent());
+  wrap.appendChild(ct);
   return wrap;
 }
 

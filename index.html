@@ -2482,12 +2482,10 @@ function getActiveGoalsForCat(cat){
     }
     results.push({scope:"readingGoals",goal:{id:rg.id,cat:rg.cat,name:rg.name,progress:null}});
   });
-  // Daily: current date
+  // Daily: 당일 목표 전체 (카테고리 무관, 미완료만)
   var dk=curM+"-"+curD;
   (state.goalData.daily[dk]||[]).forEach(function(g){
-    if(g.cat===cat&&!g.done){
-      results.push({scope:"daily",goal:g});
-    }
+    if(!g.done) results.push({scope:"daily",goal:g});
   });
   return results;
 }

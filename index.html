@@ -887,6 +887,7 @@ function showGoalPicker(time,goalField,catCode){
         btn.appendChild(h("span",{style:"flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},g.name));
         if(s==="habits")btn.appendChild(h("span",{style:"font-size:9px;color:#7c3aed;font-family:monospace"},"🔁"));
         if(s==="readingGoals")btn.appendChild(h("span",{style:"font-size:9px;color:#3b82f6;font-family:monospace"},"📚"));
+        if(item.fromDate)btn.appendChild(h("span",{style:"font-size:9px;color:#ef4444;font-family:monospace;flex-shrink:0"},"↩"+item.fromDate));
         box.appendChild(btn);
       });
     });
@@ -2454,6 +2455,21 @@ function getActiveGoalsForCat(cat){
     if(g.cat!==cat||(g.progress||0)>=100)return;
     if(g.year===state.year&&g.month===curM&&g.weekIdx===curWk)results.push({scope:"weekly",goal:g});
   });
+  // Weekly 이연: 이미 지난 주의 미완료 목표
+  (function(){
+    var today=new Date();
+    var todayY=today.getFullYear(),todayM=today.getMonth()+1,todayD=today.getDate();
+    var todayWk=weekIdxOfDay(todayY,todayM,todayD);
+    (state.goalData.weekly||[]).forEach(function(g){
+      if(g.cat!==cat||(g.progress||0)>=100)return;
+      if(g.year!==state.year)return;
+      var isPast=(g.month<todayM)||(g.month===todayM&&g.weekIdx<todayWk);
+      if(!isPast)return;
+      // 현재 주 필터와 중복 방지
+      if(g.month===curM&&g.weekIdx===curWk)return;
+      results.push({scope:"weekly",goal:g,fromDate:g.month+"월 W"+g.weekIdx});
+    });
+  })();
   // Habits: 카테고리 일치하는 습관 (피커에서는 날짜 무관하게 표시)
   (state.goalData.habits||[]).forEach(function(hb){
     if(hb.cat!==cat)return;
@@ -2487,6 +2503,19 @@ function getActiveGoalsForCat(cat){
   (state.goalData.daily[dk]||[]).forEach(function(g){
     if(!g.done) results.push({scope:"daily",goal:g});
   });
+  // Daily 이연: 오늘 이전 30일 내 미완료 목표도 포함
+  (function(){
+    var viewDate=new Date(state.year,curM-1,curD);
+    for(var i=1;i<=30;i++){
+      var past=new Date(viewDate);
+      past.setDate(viewDate.getDate()-i);
+      if(past.getFullYear()!==state.year)break;
+      var pk=(past.getMonth()+1)+"-"+past.getDate();
+      (state.goalData.daily[pk]||[]).forEach(function(g){
+        if(!g.done) results.push({scope:"daily",goal:g,fromDate:pk});
+      });
+    }
+  })();
   return results;
 }
 

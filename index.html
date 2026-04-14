@@ -174,6 +174,7 @@ html,body{background:#0c0f1a;font-family:'Noto Sans KR',sans-serif;color:#e2e8f0
 .goal-scope-bar::-webkit-scrollbar{display:none}
 .goal-scope-btn{flex:1;min-width:60px;padding:10px 8px;border-radius:10px;border:1px solid #1e293b;background:#111827;color:#64748b;font-size:12px;cursor:pointer;font-weight:600;font-family:'Noto Sans KR',sans-serif;display:flex;flex-direction:column;align-items:center;gap:2px}
 .goal-scope-btn.active{background:#0d9488;color:#fff;border-color:#0d9488}
+.goal-search-inp:focus{border-color:#0d9488!important;outline:none}
 .goal-scope-icon{font-size:16px}
 .goal-section{background:#111827;border-radius:14px;padding:14px;border:1px solid #1e293b;margin-bottom:12px}
 .goal-section-title{font-size:14px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between}
@@ -397,6 +398,7 @@ let state={
   // Goals state
   goalData:{daily:{},weekly:[],monthly:[],longterm:[],habits:[],readingGoals:[]},
   goalScope:"daily",
+  goalSearch:"",
   goalNewName:"",
   goalNewCat:"R1",
   goalNewMemo:"",
@@ -1692,6 +1694,15 @@ function renderDashboard(){
     if(!visited)visited={};
     if(visited[goalId])return null;
     visited[goalId]=true;
+    // 루트 노드(depth===0)이고 완료된 목표는 제외 (habits 제외)
+    if(depth===0&&scope!=="habits"){
+      // findGoalById로 실제 goal 객체를 가져와 done/progress 확인
+      const _g=findGoalById(goalId);
+      if(_g){
+        if(_g.done===true)return null;
+        if(scope!=="readingGoals"&&(_g.progress||0)>=100)return null;
+      }
+    }
     const totalHrs=calcGoalTotalHours(goalId);
     const directHrs=calcGoalDirectHours(goalId);
     if(totalHrs===0)return null;
@@ -1737,11 +1748,6 @@ function renderDashboard(){
     else if(sc==="readingGoals") list=state.goalData.readingGoals||[];
     else list=state.goalData[sc]||[];
     list.forEach(function(g){
-      // 완료된 목표는 대시보드 트리에서 제외 (habits 제외)
-      if(sc!=="habits"){
-        if(g.done===true)return;
-        if(sc!=="readingGoals"&&(g.progress||0)>=100)return;
-      }
       const node=renderGoalTree(g.id,sc,g.name,g.cat,0,null);
       if(node){
         if(!hasAny){
@@ -4043,6 +4049,126 @@ function renderWeeklyReview(){
 
 function renderGoals(){
   const wrap=h("div",{});
+  // ── 검색창 ──────────────────────────────────────────────────
+  const searchBox=h("div",{style:"display:flex;align-items:center;gap:8px;padding:8px 12px;background:#0c0f1a;border-bottom:1px solid #1e293b"});
+  const searchInp=h("input",{
+    placeholder:"🔍  목표 / 습관 / 독서목표 검색...",
+    value:state.goalSearch||"",
+    style:"flex:1;background:#111827;border:1px solid #1e293b;border-radius:8px;padding:7px 10px;font-size:12px;color:#e2e8f0;outline:none"
+  });
+  searchInp.addEventListener("input",function(e){
+    state.goalSearch=e.target.value;
+    _isEditing=true;
+    render();
+    // 포커스 복원
+    requestAnimationFrame(function(){
+      const el=document.querySelector(".goal-search-inp");
+      if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}
+    });
+  });
+  searchInp.className="goal-search-inp";
+  searchBox.appendChild(searchInp);
+  if(state.goalSearch){
+    const clr=h("button",{style:"background:transparent;border:none;color:#64748b;font-size:14px;cursor:pointer;padding:0 4px",onClick:function(){state.goalSearch="";render()}},"✕");
+    searchBox.appendChild(clr);
+  }
+  wrap.appendChild(searchBox);
+
+  // ── 검색 중이면 전체 검색결과 표시 ──────────────────────────
+  if(state.goalSearch&&state.goalSearch.trim()){
+    const q=state.goalSearch.trim().toLowerCase();
+    const sec=h("div",{className:"goal-section"});
+    sec.appendChild(h("h3",{className:"goal-section-title"},"🔍 검색 결과"));
+
+    const SCOPE_META=[
+      {sc:"longterm",icon:"🎯",label:"장기"},
+      {sc:"monthly",icon:"🗓",label:"월간"},
+      {sc:"weekly",icon:"📆",label:"주간"},
+      {sc:"daily",icon:"📌",label:"일간"},
+      {sc:"habits",icon:"🔁",label:"습관"},
+      {sc:"readingGoals",icon:"📚",label:"독서목표"},
+    ];
+    let totalFound=0;
+
+    SCOPE_META.forEach(function(sm){
+      let list=[];
+      if(sm.sc==="daily"){
+        Object.entries(state.goalData.daily||{}).forEach(function([dk,arr]){
+          (arr||[]).forEach(function(g){if(g.name&&g.name.toLowerCase().indexOf(q)>=0)list.push({g:g,extra:dk});});
+        });
+      }else if(sm.sc==="habits"){
+        list=(state.goalData.habits||[]).filter(function(g){return g.name&&g.name.toLowerCase().indexOf(q)>=0;}).map(function(g){return{g:g};});
+      }else if(sm.sc==="readingGoals"){
+        list=(state.goalData.readingGoals||[]).filter(function(g){return g.name&&g.name.toLowerCase().indexOf(q)>=0;}).map(function(g){return{g:g};});
+      }else{
+        list=(state.goalData[sm.sc]||[]).filter(function(g){return g.name&&g.name.toLowerCase().indexOf(q)>=0;}).map(function(g){return{g:g};});
+      }
+      if(list.length===0)return;
+      totalFound+=list.length;
+
+      // 구분 헤더
+      const grpHeader=h("div",{style:"font-size:10px;color:#64748b;font-weight:700;letter-spacing:.5px;padding:8px 4px 4px"},sm.icon+" "+sm.label);
+      sec.appendChild(grpHeader);
+
+      list.forEach(function(item){
+        const g=item.g;
+        const catObj=catByCode(g.cat);
+        const hrs=calcGoalTotalHours(g.id);
+        const row=h("div",{style:"display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;margin-bottom:3px;background:#111827;border:1px solid #1e293b;cursor:pointer",
+          onClick:function(){
+            // 해당 scope 탭으로 이동
+            if(sm.sc==="daily"){state.goalScope="daily";}
+            else if(sm.sc==="habits"){state.goalScope="habits";}
+            else if(sm.sc==="readingGoals"){state.tab="books";}
+            else{
+              state.goalScope=sm.sc;
+              // monthly/weekly 기간 맞추기
+              if(sm.sc==="monthly"&&g.startMonth)state.goalMonth=g.startMonth;
+              if(sm.sc==="weekly"&&g.month){state.goalWeekMonth=g.month;state.goalWeekIdx=g.weekIdx||1;}
+            }
+            state.goalSearch="";
+            render();
+          }
+        });
+        // 카테고리 뱃지
+        row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:"+(catObj?catObj.color:"#94a3b8")+";font-family:monospace;flex-shrink:0;min-width:28px"},g.cat||""));
+        // 이름 (검색어 하이라이트)
+        const nameParts=g.name.split(new RegExp("("+q.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+")","gi"));
+        const nameSpan=h("span",{style:"flex:1;font-size:12px;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"});
+        nameParts.forEach(function(part){
+          if(part.toLowerCase()===q){
+            nameSpan.appendChild(h("mark",{style:"background:#f59e0b40;color:#fcd34d;border-radius:2px;padding:0 1px"},part));
+          }else{
+            nameSpan.appendChild(document.createTextNode(part));
+          }
+        });
+        row.appendChild(nameSpan);
+        // 진도
+        if(typeof g.progress==="number"){
+          const pct=g.progress||0;
+          const pColor=pct>=100?"#10b981":pct>=50?"#f59e0b":"#64748b";
+          row.appendChild(h("span",{style:"font-size:10px;color:"+pColor+";font-family:monospace;flex-shrink:0"},pct+"%"));
+        }
+        // 투입시간
+        if(hrs>0){
+          row.appendChild(h("span",{style:"font-size:10px;color:#f59e0b;font-family:monospace;flex-shrink:0"},fmtHours(hrs)));
+        }
+        // daily 날짜 표시
+        if(item.extra){
+          row.appendChild(h("span",{style:"font-size:9px;color:#475569;flex-shrink:0"},item.extra));
+        }
+        sec.appendChild(row);
+      });
+    });
+
+    if(totalFound===0){
+      sec.appendChild(h("div",{style:"text-align:center;padding:30px;color:#475569;font-size:12px"},"\""+state.goalSearch+"\" 검색 결과가 없습니다"));
+    }
+    wrap.appendChild(sec);
+    return wrap;
+  }
+
+  // ── 일반 scope 뷰 ────────────────────────────────────────────
   // Scope selector
   const bar=h("div",{className:"goal-scope-bar"});
   [{id:"daily",icon:"📌",label:"일간"},{id:"weekly",icon:"📆",label:"주간"},{id:"monthly",icon:"🗓",label:"월간"},{id:"longterm",icon:"🎯",label:"장기"},{id:"habits",icon:"🔁",label:"습관"}].forEach(s=>{

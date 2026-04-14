@@ -1696,11 +1696,10 @@ function renderDashboard(){
     visited[goalId]=true;
     // 루트 노드(depth===0)이고 완료된 목표는 제외 (habits 제외)
     if(depth===0&&scope!=="habits"){
-      // findGoalById로 실제 goal 객체를 가져와 done/progress 확인
-      const _g=findGoalById(goalId);
-      if(_g){
-        if(_g.done===true)return null;
-        if(scope!=="readingGoals"&&(_g.progress||0)>=100)return null;
+      const _gr=findGoalById(goalId);
+      if(_gr&&_gr.goal){
+        if(_gr.goal.done===true)return null;
+        if(scope!=="readingGoals"&&(_gr.goal.progress||0)>=100)return null;
       }
     }
     const totalHrs=calcGoalTotalHours(goalId);

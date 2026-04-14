@@ -1737,6 +1737,11 @@ function renderDashboard(){
     else if(sc==="readingGoals") list=state.goalData.readingGoals||[];
     else list=state.goalData[sc]||[];
     list.forEach(function(g){
+      // 완료된 목표는 대시보드 트리에서 제외 (habits 제외)
+      if(sc!=="habits"){
+        if(g.done===true)return;
+        if(sc!=="readingGoals"&&(g.progress||0)>=100)return;
+      }
       const node=renderGoalTree(g.id,sc,g.name,g.cat,0,null);
       if(node){
         if(!hasAny){

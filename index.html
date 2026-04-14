@@ -305,6 +305,7 @@ function isHabitDone(habit,y,m,d){
 function toggleHabit(habitId,y,m,d){
   var habit=(state.goalData.habits||[]).find(function(h){return h.id===habitId});
   if(!habit)return;
+  if(!habit.completions)habit.completions={};
   var k=habitKey(y,m,d);
   if(habit.completions[k])delete habit.completions[k];
   else habit.completions[k]=true;
@@ -1231,7 +1232,7 @@ function renderHeader(){
 function renderTabs(){
   const nav=h("nav",{className:"tab-bar"});
   [{id:"input",icon:"✏️",label:"입력"},{id:"goals",icon:"🎯",label:"목표"},{id:"weekly",icon:"🗓",label:"주간"},{id:"dashboard",icon:"📈",label:"대시보드"},{id:"books",icon:"📚",label:"독서"}].forEach(t=>{
-    const btn=h("button",{className:"tab"+(state.tab===t.id?" active":""),onClick:()=>{state.tab=t.id;render()}});
+    const btn=h("button",{className:"tab"+(state.tab===t.id?" active":""),onClick:()=>{state.tab=t.id;state.goalSearch="";render()}});
     btn.appendChild(h("span",{className:"tab-icon"},t.icon));
     btn.appendChild(h("span",{className:"tab-label"},t.label));
     nav.appendChild(btn);
@@ -1780,7 +1781,7 @@ function renderDashboard(){
     if(sc==="habits") list=state.goalData.habits||[];
     else if(sc==="readingGoals") list=state.goalData.readingGoals||[];
     else list=state.goalData[sc]||[];
-    list.forEach(function(g){
+    sortByDream(list).forEach(function(g){
       // 다른 목표의 하위로 이미 표시되는 목표는 루트에서 제외
       const pids=getParentIds(g);
       if(Object.keys(pids).length>0)return;
@@ -2506,11 +2507,13 @@ function getActiveGoalsForCat(cat){
   // Daily 이연: 오늘 이전 30일 내 미완료 목표도 포함
   (function(){
     var viewDate=new Date(state.year,curM-1,curD);
+    var viewKey=curM+"-"+curD;
     for(var i=1;i<=30;i++){
       var past=new Date(viewDate);
       past.setDate(viewDate.getDate()-i);
       if(past.getFullYear()!==state.year)break;
       var pk=(past.getMonth()+1)+"-"+past.getDate();
+      if(pk===viewKey)continue; // 당일과 중복 방지
       (state.goalData.daily[pk]||[]).forEach(function(g){
         if(!g.done) results.push({scope:"daily",goal:g,fromDate:pk});
       });
@@ -4244,57 +4247,23 @@ function buildGoalScopeContent(){
   return frag;
 }
 
-function _refreshGoalContent(){
-  const ct=document.getElementById("__gsContent");
+function _refreshGlobalSearch(){
+  const ct=document.getElementById("__globalSearchContent");
   if(!ct){render();return;}
-  while(ct.firstChild)ct.removeChild(ct.firstChild);
-  const q=state.goalSearch.trim().toLowerCase();
+  const q=(state.goalSearch||"").trim().toLowerCase();
   const clrBtn=document.getElementById("__gsClr");
   if(clrBtn)clrBtn.style.display=state.goalSearch?"":"none";
-  if(q) ct.appendChild(buildGoalSearchResults(q));
-  else  ct.appendChild(buildGoalScopeContent());
+  if(q){
+    while(ct.firstChild)ct.removeChild(ct.firstChild);
+    ct.appendChild(buildGoalSearchResults(q));
+  }else{
+    // 검색 해제 시 현재 탭 콘텐츠 복원
+    render();
+  }
 }
 
 function renderGoals(){
-  const wrap=h("div",{});
-  // 검색창 (render()와 무관, input 엘리먼트 재생성 없음)
-  const searchBox=h("div",{style:"display:flex;align-items:center;gap:8px;padding:8px 12px;background:#0c0f1a;border-bottom:1px solid #1e293b"});
-  const searchInp=h("input",{
-    placeholder:"🔍  목표 / 습관 / 독서목표 검색...",
-    value:state.goalSearch||"",
-    style:"flex:1;background:#111827;border:1px solid #1e293b;border-radius:8px;padding:7px 10px;font-size:12px;color:#e2e8f0;outline:none"
-  });
-  searchInp.className="goal-search-inp";
-  let _srComposing=false;
-  searchInp.addEventListener("compositionstart",function(){_srComposing=true;});
-  searchInp.addEventListener("compositionend",function(e){
-    _srComposing=false;
-    state.goalSearch=e.target.value;
-    _refreshGoalContent();
-  });
-  searchInp.addEventListener("input",function(e){
-    if(_srComposing)return;
-    state.goalSearch=e.target.value;
-    _refreshGoalContent();
-  });
-  searchInp.addEventListener("keydown",function(e){
-    if(e.key==="Escape"){state.goalSearch="";searchInp.value="";_refreshGoalContent();}
-  });
-  const clrBtn=h("button",{
-    id:"__gsClr",
-    style:"background:transparent;border:none;color:#64748b;font-size:14px;cursor:pointer;padding:0 4px;display:"+(state.goalSearch?"":"none"),
-    onClick:function(){state.goalSearch="";searchInp.value="";_refreshGoalContent();searchInp.focus();}
-  },"✕");
-  searchBox.appendChild(searchInp);
-  searchBox.appendChild(clrBtn);
-  wrap.appendChild(searchBox);
-  // 콘텐츠 영역 (검색결과 or scope뷰)
-  const ct=h("div",{id:"__gsContent"});
-  const q=(state.goalSearch||"").trim().toLowerCase();
-  if(q) ct.appendChild(buildGoalSearchResults(q));
-  else  ct.appendChild(buildGoalScopeContent());
-  wrap.appendChild(ct);
-  return wrap;
+  return buildGoalScopeContent();
 }
 
 function renderBooks(){
@@ -4785,16 +4754,47 @@ function render(force){
   app.innerHTML="";
   app.appendChild(renderHeader());
   app.appendChild(renderTabs());
-  const main=h("div",{className:"main"});
-  if(state.tab==="input"){
-    main.appendChild(renderDateBar());
-    if(state.showDatePicker)main.appendChild(renderDatePicker());
+  // ── 전역 검색창 ──────────────────────────────────────────────
+  const searchBar=h("div",{style:"display:flex;align-items:center;gap:8px;padding:7px 12px;background:#0c0f1a;border-bottom:1px solid #1e293b;position:sticky;top:98px;z-index:39"});
+  const searchInp=h("input",{
+    placeholder:"🔍  목표 / 습관 / 독서목표 검색...",
+    value:state.goalSearch||"",
+    style:"flex:1;background:#111827;border:1px solid #1e293b;border-radius:8px;padding:6px 10px;font-size:12px;color:#e2e8f0;outline:none"
+  });
+  searchInp.className="goal-search-inp";
+  let _srComposing=false;
+  function _srUpdate(val){
+    state.goalSearch=val;
+    _refreshGlobalSearch();
   }
-  if(state.tab==="input")main.appendChild(renderInput());
-  if(state.tab==="dashboard")main.appendChild(renderDashboard());
-  if(state.tab==="goals")main.appendChild(renderGoals());
-  if(state.tab==="books")main.appendChild(renderBooks());
-  if(state.tab==="weekly")main.appendChild(renderWeeklyReview());
+  searchInp.addEventListener("compositionstart",function(){_srComposing=true;});
+  searchInp.addEventListener("compositionend",function(e){_srComposing=false;_srUpdate(e.target.value);});
+  searchInp.addEventListener("input",function(e){if(!_srComposing)_srUpdate(e.target.value);});
+  searchInp.addEventListener("keydown",function(e){if(e.key==="Escape"){state.goalSearch="";searchInp.value="";_refreshGlobalSearch();}});
+  const clrBtn=h("button",{
+    id:"__gsClr",
+    style:"background:transparent;border:none;color:#64748b;font-size:16px;cursor:pointer;padding:0 4px;display:"+(state.goalSearch?"":"none"),
+    onClick:function(){state.goalSearch="";searchInp.value="";_refreshGlobalSearch();searchInp.focus();}
+  },"✕");
+  searchBar.appendChild(searchInp);
+  searchBar.appendChild(clrBtn);
+  app.appendChild(searchBar);
+  // ── 메인 콘텐츠 ─────────────────────────────────────────────
+  const main=h("div",{className:"main",id:"__globalSearchContent"});
+  const _gsq=(state.goalSearch||"").trim().toLowerCase();
+  if(_gsq){
+    main.appendChild(buildGoalSearchResults(_gsq));
+  }else{
+    if(state.tab==="input"){
+      main.appendChild(renderDateBar());
+      if(state.showDatePicker)main.appendChild(renderDatePicker());
+    }
+    if(state.tab==="input")main.appendChild(renderInput());
+    if(state.tab==="dashboard")main.appendChild(renderDashboard());
+    if(state.tab==="goals")main.appendChild(renderGoals());
+    if(state.tab==="books")main.appendChild(renderBooks());
+    if(state.tab==="weekly")main.appendChild(renderWeeklyReview());
+  }
   app.appendChild(main);
   if(state.showDatePicker&&state.tab==="goals")app.appendChild(renderDatePicker());
   if(state.showCatPicker)app.appendChild(renderCatPicker());
@@ -4815,14 +4815,14 @@ function render(force){
 
   // timesheet data: 없거나 entries가 비어있으면 시드 적용
   var rawD=localStorage.getItem("timesheet-data-2026");
-  var existD=rawD?JSON.parse(rawD):null;
+  var existD=null;try{existD=rawD?JSON.parse(rawD):null;}catch(e){}
   if(!existD||Object.keys(existD.entries||{}).length===0)
     localStorage.setItem("timesheet-data-2026",JSON.stringify(SEED_DATA));
   if(!localStorage.getItem("books-data-2026"))
     localStorage.setItem("books-data-2026",JSON.stringify(SEED_BOOKS));
 
   var rawG=localStorage.getItem("goals-data-2026");
-  var gObj=rawG?JSON.parse(rawG):null;
+  var gObj=null;try{gObj=rawG?JSON.parse(rawG):null;}catch(e){}
   if(!gObj){
     localStorage.setItem("goals-data-2026",JSON.stringify(SEED_GOALS));
   }else{

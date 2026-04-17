@@ -5075,9 +5075,43 @@ function renderWeeklyReview(){
 
   // ── 습관 주간 체크 (습관탭에서 이동) ──
   const habits=state.goalData.habits||[];
-  if(habits.length>0){
+  {
     const habBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:14px;border:1px solid #1e293b"});
-    habBox.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:8px;letter-spacing:.5px"},"🔁 습관 체크"));
+    const habHdr=h("div",{style:"display:flex;align-items:center;gap:8px;margin-bottom:8px"});
+    habHdr.appendChild(h("span",{style:"font-size:10px;color:#64748b;font-weight:700;letter-spacing:.5px;flex:1"},"🔁 습관 체크"));
+    // + 새 습관 토글 버튼
+    const addOpen=!!state.habitAddOpen;
+    habHdr.appendChild(h("button",{
+      style:"font-size:10px;color:"+(addOpen?"#fff":"#7c3aed")+";background:"+(addOpen?"#7c3aed":"#7c3aed18")+";border:1px solid #7c3aed"+(addOpen?"":"40")+";border-radius:4px;padding:2px 8px;cursor:pointer",
+      onClick:function(){state.habitAddOpen=!addOpen;render();}
+    },addOpen?"✕ 취소":"+ 새 습관"));
+    habBox.appendChild(habHdr);
+    // 인라인 추가 폼
+    if(addOpen){
+      const form=h("div",{style:"display:flex;gap:4px;margin-bottom:8px;padding:6px;background:#111827;border-radius:6px;border:1px solid #334155"});
+      const sel=h("select",{style:"padding:4px 6px;border-radius:4px;border:1px solid #334155;background:#0c0f1a;color:#e2e8f0;font-size:11px;font-family:'JetBrains Mono',monospace"});
+      CATEGORIES.forEach(function(c){
+        const opt=h("option",{value:c.code},c.code+" "+c.label);
+        if(c.code===(state.habitNewCat||"D1"))opt.selected=true;
+        sel.appendChild(opt);
+      });
+      sel.addEventListener("change",function(e){state.habitNewCat=e.target.value});
+      form.appendChild(sel);
+      const inp=h("input",{style:"flex:1;padding:4px 8px;border-radius:4px;border:1px solid #334155;background:#0c0f1a;color:#e2e8f0;font-size:12px;outline:none",placeholder:"습관 이름 (예: 새벽 기도)",value:state.habitNewName||""});
+      inp.addEventListener("input",function(e){state.habitNewName=e.target.value});
+      inp.addEventListener("keydown",function(e){if(e.key==="Enter"){addHabit();state.habitAddOpen=false;render();}});
+      form.appendChild(inp);
+      form.appendChild(h("button",{
+        style:"padding:4px 10px;border-radius:4px;border:none;background:#7c3aed;color:#fff;font-size:11px;font-weight:700;cursor:pointer",
+        onClick:function(){addHabit();state.habitAddOpen=false;render();}
+      },"추가"));
+      habBox.appendChild(form);
+    }
+    // 습관 없으면 안내
+    if(habits.length===0){
+      habBox.appendChild(h("div",{style:"text-align:center;padding:14px 0;color:#334155;font-size:12px"},addOpen?"습관을 입력하고 '추가'를 누르세요":"아직 등록된 습관이 없습니다"));
+      wrap.appendChild(habBox);
+    } else {
     // 요일 헤더
     const dayLabels2=["월","화","수","목","금"];
     const hdrRow2=h("div",{style:"display:grid;grid-template-columns:1fr repeat(5,32px) 24px;gap:4px;align-items:center;margin-bottom:4px"});
@@ -5134,6 +5168,7 @@ function renderWeeklyReview(){
     sumRow2.appendChild(h("div",{},""));
     habBox.appendChild(sumRow2);
     wrap.appendChild(habBox);
+    }
   }
   const wkGoalsBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:14px;border:1px solid #1e293b"});
   wkGoalsBox.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},"📋 금주 목표"));
@@ -6979,7 +7014,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-17-v17";
+  var SEED_VER="2026-04-17-v18";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

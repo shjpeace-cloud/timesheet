@@ -1160,7 +1160,11 @@ function _doExportExcel(){
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows1),"시간통계");
 
   // ── Sheet2: 목표 ──────────────────────────────────────────
-  const rows3=[["연도","구분","카테고리","목표명","진도(%)","투입시간(h)","기간시작","기간종료","작업날짜","상위목표ID","상위목표명","메모"]];
+  const rows3=[["연도","구분","카테고리","목표명","진도(%)","투입시간(h)","기간시작","기간종료","작업날짜","상위목표ID","상위목표명","언어","완료","완료일","중간목표","메모"]];
+  function fmtSubtasks(g){
+    if(!g.subtasks||g.subtasks.length===0)return "";
+    return g.subtasks.map(function(s){return s.name+"("+(s.weight||0)+"%)"+(s.done?"[✓]":"");}).join(" | ");
+  }
   for(let y=2026;y<=2040;y++){
     let gd;
     try{const r=localStorage.getItem("goals-data-"+y);if(!r)continue;gd=JSON.parse(r)}catch(e){continue}
@@ -1179,7 +1183,8 @@ function _doExportExcel(){
       const hrs=calcGoalTotalHours(g.id);
       const p=safeParentName(g);
       rows3.push([y,"장기",g.cat,g.name,g.progress||0,hrs,
-        g.startYear||g.targetYear||"",g.endYear||g.targetYear||"","",p.ids,p.names,g.memo||""]);
+        g.startYear||g.targetYear||"",g.endYear||g.targetYear||"","",p.ids,p.names,
+        g.language||"",g.done?"Y":"",g.completedAt||"",fmtSubtasks(g),g.memo||""]);
     });
 
     (gd.monthly||[]).forEach(function(g){
@@ -1187,13 +1192,13 @@ function _doExportExcel(){
       const p=safeParentName(g);
       const sm=g.startMonth||g.month||"";const em=g.endMonth||g.month||"";
       rows3.push([y,"월간",g.cat,g.name,g.progress||0,hrs,
-        y+"-"+String(sm).padStart(2,"0"),y+"-"+String(em).padStart(2,"0"),"",p.ids,p.names,g.memo||""]);
+        y+"-"+String(sm).padStart(2,"0"),y+"-"+String(em).padStart(2,"0"),"",p.ids,p.names,
+        g.language||"",g.done?"Y":"",g.completedAt||"",fmtSubtasks(g),g.memo||""]);
     });
 
     (gd.weekly||[]).forEach(function(g){
       const hrs=calcGoalTotalHours(g.id);
       const p=safeParentName(g);
-      // 기간: startDay/endDay 우선, 없으면 weekIdx
       var periodStart="",periodEnd="";
       if(g.startDay&&g.endDay){
         periodStart=(g.year||y)+"-"+String(g.month||"").padStart(2,"0")+"-"+String(g.startDay).padStart(2,"0");
@@ -1203,7 +1208,8 @@ function _doExportExcel(){
       }
       const planDaysStr=(g.planDays||[]).join("|");
       rows3.push([y,"주간",g.cat,g.name,g.progress||0,hrs,
-        periodStart,periodEnd,planDaysStr,p.ids,p.names,g.memo||""]);
+        periodStart,periodEnd,planDaysStr,p.ids,p.names,
+        g.language||"",g.done?"Y":"",g.completedAt||"",fmtSubtasks(g),g.memo||""]);
     });
 
     // 일간목표 — 날짜 키 정렬
@@ -1215,7 +1221,8 @@ function _doExportExcel(){
         const parts=dk.split("-");
         const dateStr2=y+"-"+String(parts[0]).padStart(2,"0")+"-"+String(parts[1]).padStart(2,"0");
         rows3.push([y,"일간",g.cat,g.name,g.done?100:0,hrs,
-          dateStr2,dateStr2,"",p.ids,p.names,g.memo||""]);
+          dateStr2,dateStr2,"",p.ids,p.names,
+          g.language||"",g.done?"Y":"",g.completedAt||"","",g.memo||""]);
       });
     });
 
@@ -1224,7 +1231,7 @@ function _doExportExcel(){
       const totalDone=Object.keys(g.completions||{}).length;
       rows3.push([y,"습관",g.cat,g.name,totalDone,hrs,
         g.startDate||"",g.endDate||"","",g.longtermId||"","",
-        "완료"+totalDone+"일/"+HABIT_TOTAL_DAYS+"일 목표"]);
+        "","","","","완료"+totalDone+"일/"+HABIT_TOTAL_DAYS+"일 목표"]);
     });
 
     (gd.readingGoals||[]).forEach(function(rg){
@@ -1235,7 +1242,8 @@ function _doExportExcel(){
         ?("누적권수 "+rg.bookType+" 목표"+rg.targetCount+"권 현재"+(cnt||0)+"권")
         :("특정책 진도"+pct+"%");
       rows3.push([y,"독서목표",rg.cat,rg.name,pct,hrs,
-        rg.startYear||rg.startDate||"",rg.endYear||rg.endDate||"","","","",detail]);
+        rg.startYear||rg.startDate||"",rg.endYear||rg.endDate||"","","","",
+        rg.bookType||"","",rg.completedAt||"","",detail]);
     });
   }
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows3),"목표");

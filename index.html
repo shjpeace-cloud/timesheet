@@ -6062,6 +6062,16 @@ function renderGoals(){
     const wGoals2=(state.goalData.weekly||[]).filter(function(g){
       return g.cat===catCode&&g.year===calY&&g.month===calM&&g.weekIdx===_refWIdx;
     });
+    // 기존 독서목표 (레거시): 카테고리 일치 + 현재 연도 포함
+    const rgGoals2=(state.goalData.readingGoals||[]).filter(function(g){
+      if(g.cat!==catCode)return false;
+      if(g.type==="specific"){
+        if(!g.startDate||!g.endDate)return true;
+        return g.startDate<=_refDateStr&&g.endDate>=_refDateStr;
+      }
+      const sy=g.startYear||calY,ey=g.endYear||calY;
+      return sy<=calY&&ey>=calY;
+    });
     // 이번 달 일간목표
     const dGoals2=[];
     for(let d2=1;d2<=daysInMonth(calY,calM);d2++){
@@ -6069,7 +6079,7 @@ function renderGoals(){
       (state.goalData.daily[dk2]||[]).filter(g=>g.cat===catCode).forEach(g=>dGoals2.push({g,d:d2,dk:dk2}));
     }
 
-    if(ltGoals.length===0&&mGoals2.length===0&&wGoals2.length===0&&dGoals2.length===0){
+    if(ltGoals.length===0&&mGoals2.length===0&&wGoals2.length===0&&rgGoals2.length===0&&dGoals2.length===0){
       // 폼이 이 카테고리에 열려있으면 섹션 표시
       if(!(state._addForm&&state._addForm.cat===catCode))return;
     }
@@ -6239,7 +6249,7 @@ function renderGoals(){
 
       // ── 하위 목표 추가 버튼 (pill 아래 우측 정렬) ──
       var childScopes=[];
-      if(scope==="longterm"){
+      if(scope==="longterm"||scope==="readingGoals"){
         childScopes=[{s:"monthly",l:"월간"},{s:"weekly",l:"주간"},{s:"daily",l:"일간"}];
       }else if(scope==="monthly"){
         childScopes=[{s:"weekly",l:"주간"},{s:"daily",l:"일간"}];
@@ -6258,6 +6268,7 @@ function renderGoals(){
               else{
                 var pids={};
                 if(scope==="longterm")pids.longterm=g.id;
+                else if(scope==="readingGoals")pids.readingGoals=g.id;
                 else if(scope==="monthly")pids.monthly=g.id;
                 else if(scope==="weekly")pids.weekly=g.id;
                 state._addForm={cat:catDef.code,scope:cs.s,name:"",memo:"",
@@ -6334,8 +6345,8 @@ function renderGoals(){
       }).sort(function(a,b){return a.d-b.d;});
     }
 
-    ltGoals.forEach(function(lt){
-      const ltScope="longterm";
+    ltGoals.concat(rgGoals2).forEach(function(lt,idx){
+      const ltScope=idx<ltGoals.length?"longterm":"readingGoals";
       pillAdd(lt,ltScope,0,undefined,0);
 
       // 하위 월간
@@ -6987,7 +6998,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-17-v22";
+  var SEED_VER="2026-04-17-v23";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

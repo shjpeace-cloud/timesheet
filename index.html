@@ -662,6 +662,58 @@ function saveGoalData(){
   }
 }
 
+// 모든 scope에서 특정 id의 목표를 제거 (parentIds 참조까지 청소)
+function forceDeleteGoalById(gid){
+  if(!gid)return 0;
+  var removed=0;
+  ["longterm","monthly","weekly","habits","readingGoals"].forEach(function(sc){
+    var arr=state.goalData[sc]||[];
+    var before=arr.length;
+    state.goalData[sc]=arr.filter(function(x){return x.id!==gid;});
+    removed+=before-state.goalData[sc].length;
+  });
+  Object.keys(state.goalData.daily||{}).forEach(function(k){
+    var before=(state.goalData.daily[k]||[]).length;
+    state.goalData.daily[k]=(state.goalData.daily[k]||[]).filter(function(x){return x.id!==gid;});
+    removed+=before-state.goalData.daily[k].length;
+    if(state.goalData.daily[k].length===0)delete state.goalData.daily[k];
+  });
+  function cleanP(gg){
+    if(!gg.parentIds)return;
+    Object.keys(gg.parentIds).forEach(function(k){if(gg.parentIds[k]===gid)delete gg.parentIds[k];});
+  }
+  (state.goalData.longterm||[]).forEach(cleanP);
+  (state.goalData.monthly||[]).forEach(cleanP);
+  (state.goalData.weekly||[]).forEach(cleanP);
+  Object.keys(state.goalData.daily||{}).forEach(function(k){(state.goalData.daily[k]||[]).forEach(cleanP);});
+  return removed;
+}
+
+// 이름으로 모든 매치를 강제 삭제 (부분 일치, 대소문자 무시)
+function forceDeleteGoalsByName(needle){
+  if(!needle)return 0;
+  var nn=String(needle).toLowerCase();
+  var ids=[];
+  function scan(list){(list||[]).forEach(function(g){if(g.name&&g.name.toLowerCase().indexOf(nn)>=0)ids.push(g.id);});}
+  scan(state.goalData.longterm);
+  scan(state.goalData.monthly);
+  scan(state.goalData.weekly);
+  scan(state.goalData.habits);
+  scan(state.goalData.readingGoals);
+  Object.keys(state.goalData.daily||{}).forEach(function(k){scan(state.goalData.daily[k]);});
+  var total=0;
+  ids.forEach(function(id){total+=forceDeleteGoalById(id);});
+  if(total>0){
+    try{localStorage.setItem(goalStorageKey(),JSON.stringify(state.goalData))}catch(e){}
+    if(typeof cloudSaveGoals==="function")cloudSaveGoals();
+    if(typeof render==="function"){_isAutoRender=true;render();}
+  }
+  return total;
+}
+// 콘솔 접근용
+window.forceDeleteGoalsByName=forceDeleteGoalsByName;
+window.forceDeleteGoalById=forceDeleteGoalById;
+
 // 기존 독서목표 → longterm/weekly로 이관 (1회성, 이후 no-op)
 function migrateReadingGoals(){
   if(!state.goalData||!state.goalData.readingGoals||state.goalData.readingGoals.length===0)return false;
@@ -5407,8 +5459,7 @@ function renderGoalDetailPanel(g,scope,catDef,dk){
     style:"padding:5px 8px;border-radius:6px;border:1px solid #ef444440;background:transparent;color:#ef4444;font-size:11px;cursor:pointer;flex-shrink:0",
     onClick:function(){
       if(!confirm("\""+g.name+"\" 목표를 삭제하시겠습니까?"))return;
-      if(scope==="daily"&&dk){state.goalData.daily[dk]=(state.goalData.daily[dk]||[]).filter(x=>x.id!==g.id);}
-      else if(state.goalData[scope]){state.goalData[scope]=state.goalData[scope].filter(x=>x.id!==g.id);}
+      forceDeleteGoalById(g.id);
       state._expandedGoal=null;saveGoalData();cloudSaveGoals();render(true);
     }
   },"🗑"));
@@ -6223,6 +6274,17 @@ function renderGoals(){
       render();
     }
   },state._addForm&&!state._addForm._parentGoalId?"✕ 닫기":"+ 목표 추가"));
+  // 🧹 이름으로 강제 삭제
+  quickBar.appendChild(h("button",{
+    style:"padding:5px 10px;border-radius:6px;border:1px solid #7f1d1d;background:transparent;color:#fca5a5;font-size:11px;cursor:pointer;flex-shrink:0",
+    title:"이름 부분일치로 모든 scope에서 일괄 삭제",
+    onClick:function(){
+      var q=prompt("삭제할 목표 이름 (부분 일치, 대소문자 무시):");
+      if(!q||!q.trim())return;
+      var n=forceDeleteGoalsByName(q.trim());
+      alert(n>0?n+"개 목표를 삭제했습니다.":"매치되는 목표가 없습니다.");
+    }
+  },"🧹"));
   wrap.appendChild(quickBar);
 
   // 카테고리 필터
@@ -6434,21 +6496,14 @@ function renderGoals(){
         pill.appendChild(h("span",{style:"font-size:9px;color:"+(done?"#10b981":vis.color)+";font-family:monospace;width:24px;text-align:right;flex-shrink:0"},pct+"%"));
       }
 
-      // 직접 삭제 버튼
+      // 직접 삭제 버튼 (모든 scope 스캔해서 제거)
       pill.appendChild(h("button",{
         style:"font-size:11px;color:#475569;background:transparent;border:none;padding:0 4px;cursor:pointer;flex-shrink:0",
         title:"삭제",
         onClick:function(e){
           e.stopPropagation();
           if(!confirm("\""+g.name+"\" 목표를 삭제할까요?"))return;
-          if(scope==="daily"&&pillDk){
-            state.goalData.daily[pillDk]=(state.goalData.daily[pillDk]||[]).filter(x=>x.id!==g.id);
-            if(state.goalData.daily[pillDk].length===0)delete state.goalData.daily[pillDk];
-          }else if(scope==="readingGoals"){
-            state.goalData.readingGoals=(state.goalData.readingGoals||[]).filter(x=>x.id!==g.id);
-          }else if(state.goalData[scope]){
-            state.goalData[scope]=state.goalData[scope].filter(x=>x.id!==g.id);
-          }
+          forceDeleteGoalById(g.id);
           state._expandedGoal=null;
           saveGoalData();cloudSaveGoals();_isAutoRender=true;render();
         }
@@ -7208,7 +7263,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-17-v28";
+  var SEED_VER="2026-04-17-v29";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

@@ -5466,8 +5466,13 @@ function _refreshGlobalSearch(){
   const q=(state.goalSearch||"").trim().toLowerCase();
   const clrBtn=document.getElementById("__gsClr");
   if(clrBtn)clrBtn.style.display=state.goalSearch?"":"none";
-  // 검색어 변경 시 항상 전체 재렌더 (renderGoals가 검색 처리)
-  render();
+  // 검색어 있으면 결과 영역만 교체(포커스 유지), 비면 전체 재렌더로 원복
+  if(q){
+    ct.innerHTML="";
+    ct.appendChild(buildGoalSearchResults(q));
+  }else{
+    render();
+  }
 }
 
 // ── 목표 상세 패널 (클릭 시 확장) ────────────────────────────
@@ -7326,7 +7331,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-17-v33";
+  var SEED_VER="2026-04-17-v34";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

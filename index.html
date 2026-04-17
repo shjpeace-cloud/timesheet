@@ -5530,18 +5530,20 @@ function renderGoalDetailPanel(g,scope,catDef,dk){
           }else if(state.goalData[scope]){
             state.goalData[scope]=state.goalData[scope].filter(x=>x.id!==g.id);
           }
-          // 2) 대상 scope로 복사 (id, cat, name, memo, parentIds, bookTarget 보존)
+          // 2) 대상 scope로 복사 — 메타데이터 최대 보존
           const base={id:g.id,cat:g.cat,name:g.name,memo:g.memo||""};
           if(g.parentIds)base.parentIds=g.parentIds;
+          if(g.language)base.language=g.language;
+          if(g.completedAt)base.completedAt=g.completedAt;
+          if(g.done)base.done=g.done;
           if(g.bookTarget&&sv[0]==="longterm")base.bookTarget=g.bookTarget;
           if(sv[0]==="daily"){
-            base.done=false;
             const nk=tm+"-"+td;
             if(!state.goalData.daily[nk])state.goalData.daily[nk]=[];
             state.goalData.daily[nk].push(base);
             state._expandedGoal={id:g.id,scope:"daily",dk:nk};
           }else if(sv[0]==="weekly"){
-            base.progress=0;base.subtasks=[];
+            base.progress=g.progress||0;base.subtasks=g.subtasks||[];
             base.year=ty;base.month=tm;
             base.weekIdx=weekIdxOfDay(ty,tm,td);
             base.startDay=td;base.endDay=Math.min(td+6,daysInMonth(ty,tm));
@@ -6272,6 +6274,8 @@ function renderGoals(){
     });
     if(recentDone.length===0)return;
     recentDone.sort(function(a,b){return a.at<b.at?1:-1;});
+    // 기본 열림 — 완료 직후 바로 확인 가능
+    if(state.goalRecentDoneOpen===undefined)state.goalRecentDoneOpen=true;
 
     const box=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:8px 10px;margin-bottom:10px;border:1px solid #065f46"});
     const hdr=h("div",{style:"display:flex;align-items:center;gap:8px;cursor:pointer",
@@ -7331,7 +7335,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-17-v34";
+  var SEED_VER="2026-04-17-v35";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

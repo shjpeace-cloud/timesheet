@@ -6302,6 +6302,25 @@ function renderGoals(){
         pill.appendChild(h("span",{style:"font-size:9px;color:"+(done?"#10b981":vis.color)+";font-family:monospace;width:24px;text-align:right;flex-shrink:0"},pct+"%"));
       }
 
+      // 직접 삭제 버튼
+      pill.appendChild(h("button",{
+        style:"font-size:11px;color:#475569;background:transparent;border:none;padding:0 4px;cursor:pointer;flex-shrink:0",
+        title:"삭제",
+        onClick:function(e){
+          e.stopPropagation();
+          if(!confirm("\""+g.name+"\" 목표를 삭제할까요?"))return;
+          if(scope==="daily"&&pillDk){
+            state.goalData.daily[pillDk]=(state.goalData.daily[pillDk]||[]).filter(x=>x.id!==g.id);
+            if(state.goalData.daily[pillDk].length===0)delete state.goalData.daily[pillDk];
+          }else if(scope==="readingGoals"){
+            state.goalData.readingGoals=(state.goalData.readingGoals||[]).filter(x=>x.id!==g.id);
+          }else if(state.goalData[scope]){
+            state.goalData[scope]=state.goalData[scope].filter(x=>x.id!==g.id);
+          }
+          state._expandedGoal=null;
+          saveGoalData();cloudSaveGoals();_isAutoRender=true;render();
+        }
+      },"✕"));
       // 확장 토글
       pill.appendChild(h("span",{style:"font-size:9px;color:"+(isExpanded?vis.color:"#334155")+";flex-shrink:0"},isExpanded?"▲":"▼"));
       pillWrap.appendChild(pill);
@@ -7059,7 +7078,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-17-v20";
+  var SEED_VER="2026-04-17-v21";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

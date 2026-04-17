@@ -1482,9 +1482,10 @@ function h(tag,attrs,...children){
   const el=document.createElement(tag);
   if(attrs)Object.entries(attrs).forEach(([k,v])=>{
     if(k==="style"&&typeof v==="string")el.setAttribute("style",v);
-    else if(k.startsWith("on"))el.addEventListener(k.slice(2).toLowerCase(),v);
+    else if(k.startsWith("on")){if(typeof v==="function")el.addEventListener(k.slice(2).toLowerCase(),v);}
     else if(k==="className")el.className=v;
     else if(k==="innerHTML")el.innerHTML=v;
+    else if(v===false||v==null)return; // boolean false/null 속성은 건너뛰기 (disabled 등 정상 동작)
     else el.setAttribute(k,v);
   });
   children.flat(Infinity).forEach(c=>{
@@ -5672,7 +5673,8 @@ function renderGoalDetailPanel(g,scope,catDef,dk){
       scRow.appendChild(h("button",{
         style:"padding:3px 7px;border-radius:4px;border:1px solid "+(isCur?sv[2]:"#334155")+";background:"+(isCur?sv[2]+"22":"transparent")+";color:"+(isCur?sv[2]:"#64748b")+";font-size:10px;cursor:"+(isCur?"default":"pointer"),
         disabled:isCur,
-        onClick:isCur?null:function(){
+        onClick:isCur?null:function(e){
+          if(e)e.stopPropagation();
           if(!confirm("\""+g.name+"\" 목표를 "+sv[1]+"(으)로 변경하시겠습니까?"))return;
           const today=new Date();
           const ty=today.getFullYear(),tm=today.getMonth()+1,td=today.getDate();
@@ -7488,7 +7490,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-17-v38";
+  var SEED_VER="2026-04-17-v39";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

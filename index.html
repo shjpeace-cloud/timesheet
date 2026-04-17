@@ -3225,6 +3225,10 @@ function recomputeProgress(scope,goalId){
   g.progress=Math.min(100,done);
   if(g.progress>=100&&prev<100&&!g.completedAt)g.completedAt=new Date().toISOString().slice(0,10);
   if(g.progress<100)delete g.completedAt;
+  // weekly도 g.done 동기화 (체크박스 반영)
+  if(scope==="weekly"||scope==="monthly"||scope==="longterm"){
+    g.done=g.progress>=100;
+  }
 }
 function toggleGoalExpand(scope,goalId){
   const key=scope+"-"+goalId;
@@ -5637,6 +5641,52 @@ function renderGoalDetailPanel(g,scope,catDef,dk){
     panel.appendChild(progSec);
   }
 
+  // ── 중간목표 (서브태스크) — weekly/monthly/longterm ──
+  if(scope==="weekly"||scope==="monthly"||scope==="longterm"){
+    const subSec=h("div",{style:"padding:6px 0;border-top:1px solid #1e293b"});
+    const subHdr=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:4px"});
+    subHdr.appendChild(h("span",{style:"font-size:10px;color:#64748b;font-weight:700"},"🪜 중간목표"));
+    const totalWeight=(g.subtasks||[]).reduce(function(s,x){return s+(x.weight||0);},0);
+    const doneCount=(g.subtasks||[]).filter(function(x){return x.done;}).length;
+    if((g.subtasks||[]).length>0){
+      subHdr.appendChild(h("span",{style:"font-size:9px;color:#64748b;font-family:monospace"},doneCount+"/"+g.subtasks.length+"  ("+totalWeight+"%)"));
+    }
+    subSec.appendChild(subHdr);
+    // 목록
+    (g.subtasks||[]).forEach(function(s){
+      const sr=h("div",{style:"display:flex;align-items:center;gap:6px;padding:3px 0"});
+      const schk=h("input",{type:"checkbox",style:"width:14px;height:14px;accent-color:"+catDef.color+";cursor:pointer"});
+      schk.checked=!!s.done;
+      schk.addEventListener("change",function(){toggleSubtask(scope,g.id,s.id);});
+      sr.appendChild(schk);
+      sr.appendChild(h("span",{style:"flex:1;font-size:11px;color:"+(s.done?"#475569":"#cbd5e1")+(s.done?";text-decoration:line-through":"")},s.name));
+      sr.appendChild(h("span",{style:"font-size:10px;color:"+(s.done?"#10b981":catDef.color)+";font-family:monospace;font-weight:700;flex-shrink:0"},(s.weight||0)+"%"));
+      sr.appendChild(h("button",{style:"font-size:11px;color:#475569;background:transparent;border:none;padding:0 4px;cursor:pointer;flex-shrink:0",title:"중간목표 삭제",onClick:function(){if(confirm("\""+s.name+"\" 중간목표 삭제?"))removeSubtask(scope,g.id,s.id);}},"✕"));
+      subSec.appendChild(sr);
+    });
+    // 추가 폼
+    const subFormKey=scope+"-"+g.id;
+    const addRow=h("div",{style:"display:flex;gap:4px;margin-top:6px;padding-top:6px;border-top:1px dashed #1e293b"});
+    const subInp=h("input",{style:"flex:1;padding:5px 8px;border-radius:5px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px;outline:none",placeholder:"중간목표 이름",value:state.goalSubInputs[subFormKey]||""});
+    subInp.addEventListener("focus",function(){_isEditing=true;});
+    subInp.addEventListener("blur",function(){_isEditing=false;});
+    subInp.addEventListener("input",function(e){state.goalSubInputs[subFormKey]=e.target.value;});
+    subInp.addEventListener("keydown",function(e){if(e.key==="Enter")addSubtask(scope,g.id);});
+    addRow.appendChild(subInp);
+    const wInp=h("input",{type:"number",min:"1",max:"100",style:"width:46px;padding:5px 4px;border-radius:5px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px;text-align:center;outline:none",placeholder:"%",value:state.goalSubWeights[subFormKey]||""});
+    wInp.addEventListener("focus",function(){_isEditing=true;});
+    wInp.addEventListener("blur",function(){_isEditing=false;});
+    wInp.addEventListener("input",function(e){state.goalSubWeights[subFormKey]=e.target.value;});
+    wInp.addEventListener("keydown",function(e){if(e.key==="Enter")addSubtask(scope,g.id);});
+    addRow.appendChild(wInp);
+    addRow.appendChild(h("button",{style:"padding:5px 10px;border-radius:5px;border:none;background:"+catDef.color+";color:#fff;font-size:11px;font-weight:700;cursor:pointer",onClick:function(){addSubtask(scope,g.id);}},"추가"));
+    subSec.appendChild(addRow);
+    if(totalWeight>0&&totalWeight!==100){
+      subSec.appendChild(h("div",{style:"font-size:9px;color:#f59e0b;margin-top:4px"},"⚠ 가중치 합계 "+totalWeight+"% — 100%로 맞추면 진도율이 정확해집니다"));
+    }
+    panel.appendChild(subSec);
+  }
+
   // ── 하위 목표 ──
   var children=getChildGoals(g.id);
   if(children.length>0){
@@ -7244,7 +7294,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-17-v30";
+  var SEED_VER="2026-04-17-v31";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

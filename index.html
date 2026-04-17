@@ -5367,6 +5367,30 @@ function renderGoalDetailPanel(g,scope,catDef,dk){
     eySel.addEventListener("change",function(e){g.endYear=parseInt(e.target.value);if((g.startYear||state.year)>g.endYear)g.startYear=g.endYear;saveGoalData();});
     pRow.appendChild(sySel);pRow.appendChild(h("span",{style:"font-size:10px;color:#475569;flex-shrink:0"},"~"));pRow.appendChild(eySel);
     panel.appendChild(pRow);
+  }else if(scope==="readingGoals"){
+    const pRow=h("div",{style:"display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap"});
+    pRow.appendChild(h("span",{style:"font-size:10px;color:#64748b;flex-shrink:0"},"📚 기간:"));
+    if(g.type==="specific"){
+      const sdInp=h("input",{type:"date",style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px",value:g.startDate||""});
+      sdInp.addEventListener("focus",function(){_isEditing=true;});
+      sdInp.addEventListener("blur",function(){_isEditing=false;});
+      sdInp.addEventListener("change",function(e){g.startDate=e.target.value;if(g.endDate&&g.endDate<g.startDate)g.endDate=g.startDate;saveGoalData();cloudSaveGoals();_isAutoRender=true;render();});
+      pRow.appendChild(sdInp);
+      pRow.appendChild(h("span",{style:"font-size:10px;color:#475569;flex-shrink:0"},"~"));
+      const edInp=h("input",{type:"date",style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px",value:g.endDate||""});
+      edInp.addEventListener("focus",function(){_isEditing=true;});
+      edInp.addEventListener("blur",function(){_isEditing=false;});
+      edInp.addEventListener("change",function(e){g.endDate=e.target.value;if(g.startDate&&g.startDate>g.endDate)g.startDate=g.endDate;saveGoalData();cloudSaveGoals();_isAutoRender=true;render();});
+      pRow.appendChild(edInp);
+    }else{
+      const sySel=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
+      const eySel=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
+      for(let y=2025;y<=2040;y++){const os=h("option",{value:String(y)},y+"년");if(y===(g.startYear||state.year))os.selected=true;sySel.appendChild(os);const oe=h("option",{value:String(y)},y+"년");if(y===(g.endYear||state.year))oe.selected=true;eySel.appendChild(oe);}
+      sySel.addEventListener("change",function(e){g.startYear=parseInt(e.target.value);if((g.endYear||state.year)<g.startYear)g.endYear=g.startYear;saveGoalData();cloudSaveGoals();});
+      eySel.addEventListener("change",function(e){g.endYear=parseInt(e.target.value);if((g.startYear||state.year)>g.endYear)g.startYear=g.endYear;saveGoalData();cloudSaveGoals();});
+      pRow.appendChild(sySel);pRow.appendChild(h("span",{style:"font-size:10px;color:#475569;flex-shrink:0"},"~"));pRow.appendChild(eySel);
+    }
+    panel.appendChild(pRow);
   }else if(scope==="daily"&&dk){
     const pRow=h("div",{style:"display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap"});
     pRow.appendChild(h("span",{style:"font-size:10px;color:#64748b;flex-shrink:0"},"📌 날짜:"));
@@ -5859,15 +5883,22 @@ function renderGoals(){
       if(g.month>tgtM)return false;
       return g.weekIdx<tWIdx;
     });
+    // 이연: endDate 지난 specific 독서목표
+    const tgtDateStr=new Date(tgtY,tgtM-1,tgtD).toISOString().slice(0,10);
+    const readingCarryover=(state.goalData.readingGoals||[]).filter(function(g){
+      if(g.type!=="specific"||!g.endDate)return false;
+      if(g.endDate>=tgtDateStr)return false;
+      return calcReadingGoalProgress(g)<100;
+    });
 
-    if(tWeekly.length===0&&tDaily.length===0&&dailyCarryover.length===0&&weeklyCarryover.length===0)return;
+    if(tWeekly.length===0&&tDaily.length===0&&dailyCarryover.length===0&&weeklyCarryover.length===0&&readingCarryover.length===0)return;
 
     const box=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:10px;margin-bottom:12px;border:1px solid #1e293b"});
     const hdr=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"});
     hdr.appendChild(h("span",{style:"font-size:10px;color:#64748b;font-weight:700;letter-spacing:.5px"},
       "📅 "+tgtM+"/"+tgtD+(isToday?" 금일":"")+" 목표"));
     const summary=[];
-    const coTotal=dailyCarryover.length+weeklyCarryover.length;
+    const coTotal=dailyCarryover.length+weeklyCarryover.length+readingCarryover.length;
     if(coTotal)summary.push("🔴"+coTotal+" 이연");
     if(tWeekly.length)summary.push(tWeekly.filter(g=>g.done).length+"/"+tWeekly.length+" 주간");
     if(tDaily.length)summary.push(tDaily.filter(g=>g.done).length+"/"+tDaily.length+" 일간");
@@ -5890,6 +5921,18 @@ function renderGoals(){
     // 이연 섹션
     if(coTotal>0){
       box.appendChild(h("div",{style:"font-size:9px;color:#ef4444;font-weight:700;padding:4px 0;margin-bottom:2px;border-bottom:1px solid #7f1d1d;letter-spacing:.5px"},"🔴 이연 ("+coTotal+")"));
+      readingCarryover.forEach(function(g){
+        const cat=catByCode(g.cat);
+        const pct=calcReadingGoalProgress(g);
+        const row=h("div",{style:"display:flex;align-items:center;gap:6px;padding:4px 6px;border-bottom:1px solid #0f172a;border-left:2px solid #ef4444;background:#1a0505;margin-bottom:2px;border-radius:3px;cursor:pointer",
+          onClick:function(){navigateToGoal("readingGoals",g);}
+        });
+        row.appendChild(h("span",{style:"font-size:9px;color:#10b981;flex-shrink:0"},"📚"));
+        row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:#fff;background:"+(cat?cat.color:"#475569")+";border-radius:3px;padding:1px 5px;flex-shrink:0;font-family:'JetBrains Mono',monospace"},g.cat));
+        row.appendChild(h("span",{style:"flex:1;font-size:12px;color:#fca5a5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},g.name));
+        row.appendChild(h("span",{style:"font-size:9px;color:#ef4444;font-family:monospace;flex-shrink:0"},(g.endDate||"").slice(5)+" "+pct+"%"));
+        box.appendChild(row);
+      });
       weeklyCarryover.forEach(function(g){
         const cat=catByCode(g.cat);
         const row=h("div",{style:"display:flex;align-items:center;gap:6px;padding:4px 6px;border-bottom:1px solid #0f172a;border-left:2px solid #ef4444;background:#1a0505;margin-bottom:2px;border-radius:3px"});
@@ -7014,7 +7057,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-17-v18";
+  var SEED_VER="2026-04-17-v19";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

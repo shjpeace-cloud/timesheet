@@ -6096,9 +6096,17 @@ function renderGoals(){
       return wrap;
     }
 
-    // ── 트리 구성: 장기 → 월간 → 주간 (+ 독립 주간) → 일간, 습관, 독서 ──
+    // ── 트리 구성: 장기 → 월간 → 주간 → 일간, 습관, 독서 ──
     var renderedM=new Set();
     var renderedW=new Set();
+    var renderedD=new Set();
+    // 특정 goalId를 parent로 갖는 일간목표(이번 달) 수집 (날짜 오름차순)
+    function dailyChildrenOf(goalId){
+      return dGoals2.filter(function(item){
+        var pids=getParentIds(item.g);
+        return Object.values(pids).indexOf(goalId)>=0;
+      }).sort(function(a,b){return a.d-b.d;});
+    }
 
     ltGoals.concat(rgGoals2).forEach(function(lt,idx){
       const ltScope=idx<ltGoals.length?"longterm":"readingGoals";
@@ -6121,13 +6129,36 @@ function renderGoals(){
         childW.forEach(function(wg){
           renderedW.add(wg.id);
           catSec.appendChild(renderGoalPill(wg,"weekly",2,undefined,28));
+          // 주간의 하위 일간
+          dailyChildrenOf(wg.id).forEach(function(item){
+            if(renderedD.has(item.g.id))return;
+            renderedD.add(item.g.id);
+            catSec.appendChild(renderGoalPill(item.g,"daily",3,item.dk,42));
+          });
         });
+        // 월간의 직속 하위 일간 (주간 거치지 않음)
+        dailyChildrenOf(mg.id).forEach(function(item){
+          if(renderedD.has(item.g.id))return;
+          renderedD.add(item.g.id);
+          catSec.appendChild(renderGoalPill(item.g,"daily",2,item.dk,28));
+        });
+      });
+      // 장기/독서의 직속 하위 일간
+      dailyChildrenOf(lt.id).forEach(function(item){
+        if(renderedD.has(item.g.id))return;
+        renderedD.add(item.g.id);
+        catSec.appendChild(renderGoalPill(item.g,"daily",1,item.dk,14));
       });
     });
 
     // 습관
     habits2.forEach(function(hb){
       catSec.appendChild(renderGoalPill(hb,"habits",0,null,0));
+      dailyChildrenOf(hb.id).forEach(function(item){
+        if(renderedD.has(item.g.id))return;
+        renderedD.add(item.g.id);
+        catSec.appendChild(renderGoalPill(item.g,"daily",1,item.dk,14));
+      });
     });
 
     // 부모 없는 월간 (orphan) — 장기와 같은 위치
@@ -6141,7 +6172,20 @@ function renderGoals(){
         const pids2=getParentIds(g);
         return Object.values(pids2).indexOf(mg.id)>=0;
       });
-      childW.forEach(function(wg){renderedW.add(wg.id);catSec.appendChild(renderGoalPill(wg,"weekly",1,undefined,14));});
+      childW.forEach(function(wg){
+        renderedW.add(wg.id);
+        catSec.appendChild(renderGoalPill(wg,"weekly",1,undefined,14));
+        dailyChildrenOf(wg.id).forEach(function(item){
+          if(renderedD.has(item.g.id))return;
+          renderedD.add(item.g.id);
+          catSec.appendChild(renderGoalPill(item.g,"daily",2,item.dk,28));
+        });
+      });
+      dailyChildrenOf(mg.id).forEach(function(item){
+        if(renderedD.has(item.g.id))return;
+        renderedD.add(item.g.id);
+        catSec.appendChild(renderGoalPill(item.g,"daily",1,item.dk,14));
+      });
     });
 
     // 부모 없는 주간 (orphan) — 장기와 같은 위치
@@ -6150,24 +6194,18 @@ function renderGoals(){
       const pids=getParentIds(wg);
       if(Object.keys(pids).length>0)return;
       catSec.appendChild(renderGoalPill(wg,"weekly",0,undefined,0));
+      dailyChildrenOf(wg.id).forEach(function(item){
+        if(renderedD.has(item.g.id))return;
+        renderedD.add(item.g.id);
+        catSec.appendChild(renderGoalPill(item.g,"daily",1,item.dk,14));
+      });
     });
 
-    // 이번 달 일간목표 — orphan은 indent 0
-    if(dGoals2.length>0){
-      // 날짜별 그룹 + 각 날짜 헤더
-      const byDay={};
-      dGoals2.forEach(function(item){
-        if(!byDay[item.d])byDay[item.d]=[];
-        byDay[item.d].push({g:item.g,dk:item.dk});
-      });
-      Object.keys(byDay).sort((a,b)=>parseInt(a)-parseInt(b)).forEach(function(d3){
-        byDay[d3].forEach(function(item){
-          const pids=getParentIds(item.g);
-          const hasParent=Object.keys(pids).length>0;
-          catSec.appendChild(renderGoalPill(item.g,"daily",hasParent?1:0,item.dk,hasParent?14:0));
-        });
-      });
-    }
+    // 부모 없는 일간 (orphan) — 날짜 오름차순
+    const orphanDaily=dGoals2.filter(function(item){return!renderedD.has(item.g.id);}).sort(function(a,b){return a.d-b.d;});
+    orphanDaily.forEach(function(item){
+      catSec.appendChild(renderGoalPill(item.g,"daily",0,item.dk,0));
+    });
 
     wrap.appendChild(catSec);
   });
@@ -6731,7 +6769,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-17-v12";
+  var SEED_VER="2026-04-17-v13";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

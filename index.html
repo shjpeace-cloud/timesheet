@@ -665,11 +665,15 @@ function saveGoalData(){
 // 누적권수 목표 (bookTarget.targetCount >= 1) 일괄 삭제 — 1회성 정리
 function cleanupLegacyBookTargets(){
   var removed=0;
+  var removedIds=[];
   ["longterm","monthly","weekly"].forEach(function(sc){
     var arr=state.goalData[sc]||[];
     var before=arr.length;
     state.goalData[sc]=arr.filter(function(g){
-      if(g.bookTarget&&(g.bookTarget.targetCount||0)>=1)return false;
+      if(g.bookTarget&&(g.bookTarget.targetCount||0)>=1){
+        removedIds.push(g.id);
+        return false;
+      }
       // bookTarget만 있고 count 없으면 → language 필드로 변환 후 유지
       if(g.bookTarget&&g.bookTarget.bookType){
         g.language=g.bookTarget.bookType;
@@ -679,9 +683,24 @@ function cleanupLegacyBookTargets(){
     });
     removed+=before-state.goalData[sc].length;
   });
+  // 고아 parentIds 정리: 삭제된 목표를 가리키는 참조를 모든 자식에서 제거
+  if(removedIds.length>0){
+    function cleanStaleP(g){
+      if(!g.parentIds)return;
+      Object.keys(g.parentIds).forEach(function(k){
+        if(removedIds.indexOf(g.parentIds[k])>=0)delete g.parentIds[k];
+      });
+    }
+    (state.goalData.longterm||[]).forEach(cleanStaleP);
+    (state.goalData.monthly||[]).forEach(cleanStaleP);
+    (state.goalData.weekly||[]).forEach(cleanStaleP);
+    Object.keys(state.goalData.daily||{}).forEach(function(k){
+      (state.goalData.daily[k]||[]).forEach(cleanStaleP);
+    });
+  }
   if(removed>0){
     try{localStorage.setItem(goalStorageKey(),JSON.stringify(state.goalData))}catch(e){}
-    console.log("[cleanupLegacyBookTargets] removed "+removed+" count-based reading goals");
+    console.log("[cleanupLegacyBookTargets] removed "+removed+" count-based reading goals + cleaned "+removedIds.length+" stale parent refs");
   }
   return removed;
 }
@@ -3356,22 +3375,19 @@ function getCandidatesForScope(upperScope,cat){
 // Get children of a goal
 function getChildGoals(goalId){
   var children=[];
-  SCOPE_ORDER.forEach(function(scope){
-    if(scope==="daily"){
-      Object.keys(state.goalData.daily||{}).forEach(function(k){
-        (state.goalData.daily[k]||[]).forEach(function(g){
-          var pids=getParentIds(g);
-          var vals=Object.values(pids);
-          if(vals.indexOf(goalId)>=0)children.push({scope:"daily",goal:g,dateKey:k});
-        });
-      });
-    }else{
-      (state.goalData[scope]||[]).forEach(function(g){
-        var pids=getParentIds(g);
-        var vals=Object.values(pids);
-        if(vals.indexOf(goalId)>=0)children.push({scope:scope,goal:g});
-      });
-    }
+  // longterm/monthly/weekly + habits/readingGoals (레거시) 스캔
+  ["longterm","monthly","weekly","habits","readingGoals"].forEach(function(scope){
+    (state.goalData[scope]||[]).forEach(function(g){
+      var pids=getParentIds(g);
+      if(Object.values(pids).indexOf(goalId)>=0)children.push({scope:scope,goal:g});
+    });
+  });
+  // daily은 dk 키별 객체라 별도 순회
+  Object.keys(state.goalData.daily||{}).forEach(function(k){
+    (state.goalData.daily[k]||[]).forEach(function(g){
+      var pids=getParentIds(g);
+      if(Object.values(pids).indexOf(goalId)>=0)children.push({scope:"daily",goal:g,dateKey:k});
+    });
   });
   return children;
 }
@@ -5616,7 +5632,15 @@ function renderGoalDetailPanel(g,scope,catDef,dk){
       if(scope!=="daily")g.progress=chk.checked?100:0;
       saveGoalData();cloudSaveGoals();_isAutoRender=true;render();
     });
-    doneRow.appendChild(chk);doneRow.appendChild(h("span",{style:"font-size:12px;color:#94a3b8"},"완료"));
+    doneRow.appendChild(chk);doneRow.appendChild(h("span",{style:"font-size:12px;color:#94a3b8;flex:1"},"완료"));
+    // weekly with subtasks: show progress bar for partial %
+    if(scope==="weekly"&&g.subtasks&&g.subtasks.length>0){
+      const wPct=g.progress||0;
+      const wTrack=h("div",{style:"width:60px;height:5px;background:#1e293b;border-radius:3px;overflow:hidden;flex-shrink:0"});
+      wTrack.appendChild(h("div",{style:"height:100%;width:"+wPct+"%;background:"+(wPct>=100?"#10b981":catDef.color)+";transition:width .3s"}));
+      doneRow.appendChild(wTrack);
+      doneRow.appendChild(h("span",{style:"font-size:10px;color:"+(wPct>=100?"#10b981":catDef.color)+";font-family:monospace;width:30px;text-align:right"},wPct+"%"));
+    }
     panel.appendChild(doneRow);
   }else if(scope==="monthly"||scope==="longterm"){
     const pct=g.progress||0;
@@ -7294,7 +7318,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-17-v31";
+  var SEED_VER="2026-04-17-v32";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

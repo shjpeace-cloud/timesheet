@@ -1731,83 +1731,7 @@ function renderInput(){
   });
   wrap.appendChild(list);
 
-  // ── 이 시기의 목표 (컨텍스트) ──
-  (function(){
-    var curWeek=weekIdxOfDay(state.year,state.month,state.day);
-    var weeklyA=(state.goalData.weekly||[]).filter(function(g){return g.year===state.year&&g.month===state.month&&g.weekIdx===curWeek&&!g.done});
-    var monthlyA=(state.goalData.monthly||[]).filter(function(g){
-      if(g.year!==state.year)return false;
-      var sm=g.startMonth||g.month;var em=g.endMonth||g.month;
-      return sm<=state.month&&state.month<=em&&(g.progress||0)<100;
-    });
-    var longtermA=(state.goalData.longterm||[]).filter(function(g){
-      var sy=g.startYear||state.year;var ey=g.endYear||state.year;
-      return sy<=state.year&&state.year<=ey&&(g.progress||0)<100;
-    });
-    var readingA=(state.goalData.readingGoals||[]).filter(function(g){return calcReadingGoalProgress(g)<100;});
-    var total=weeklyA.length+monthlyA.length+longtermA.length+readingA.length;
-    if(total===0)return;
-    var ctx=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:10px;margin-top:10px;border:1px solid #1e293b"});
-    ctx.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:6px;letter-spacing:.5px"},"이 시기의 목표"));
-    var groups=[{label:"🎯 장기",list:longtermA,scope:"longterm"},{label:"📚 독서",list:readingA,scope:"readingGoals"},{label:"📅 월간",list:monthlyA,scope:"monthly"},{label:"🗓 주간",list:weeklyA,scope:"weekly"}];
-    groups.forEach(function(grp){
-      if(!grp.list.length)return;
-      grp.list.forEach(function(g){
-        var cat=catByCode(g.cat);
-        var row=h("div",{style:"display:flex;align-items:center;gap:6px;padding:3px 0;font-size:11px"});
-        row.appendChild(h("span",{style:"font-size:9px;color:#64748b;width:28px;flex-shrink:0"},grp.label.split(" ")[0]));
-        row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:"+(cat?cat.color:"#94a3b8")+";font-family:monospace;background:"+(cat?cat.color+"22":"#1e293b")+";border-radius:3px;padding:0 4px;flex-shrink:0"},g.cat));
-        row.appendChild(h("span",{style:"flex:1;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},g.name));
-        var pct=grp.scope==="readingGoals"?calcReadingGoalProgress(g):(g.progress||0);
-        var track=h("div",{style:"width:36px;height:3px;background:#1e293b;border-radius:2px;overflow:hidden;flex-shrink:0"});
-        track.appendChild(h("div",{style:"height:100%;width:"+pct+"%;background:"+(cat?cat.color:"#0d9488")}));
-        row.appendChild(track);
-        ctx.appendChild(row);
-      });
-    });
-    wrap.appendChild(ctx);
-  })();
 
-  // ── 오늘의 습관 ──
-  (function(){
-    var activeHabits=(state.goalData.habits||[]).filter(function(hb){
-      if(!hb.startDate||!hb.endDate)return true;
-      var sp=hb.startDate.split("-"),ep=hb.endDate.split("-");
-      var sd=new Date(parseInt(sp[0]),parseInt(sp[1])-1,parseInt(sp[2]));
-      var ed=new Date(parseInt(ep[0]),parseInt(ep[1])-1,parseInt(ep[2]));
-      var cur=new Date(state.year,state.month-1,state.day);
-      return cur>=sd&&cur<=ed;
-    });
-    if(!activeHabits.length)return;
-    var hbox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:10px;margin-top:10px;border:1px solid #1e293b"});
-    hbox.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:6px;letter-spacing:.5px"},"오늘의 습관"));
-    var curDt=new Date(state.year,state.month-1,state.day);
-    var curDow=curDt.getDay();
-    var mon=new Date(curDt);mon.setDate(curDt.getDate()+(curDow===0?-6:1-curDow));
-    activeHabits.forEach(function(hb){
-      var autoChecked=isHabitAutoChecked(hb,state.year,state.month,state.day);
-      var manualChecked=!!(hb.completions&&hb.completions[habitKey(state.year,state.month,state.day)]);
-      var done=autoChecked||manualChecked;
-      var row=h("div",{style:"display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #1e293b"});
-      var chk=h("input",{type:"checkbox",style:"width:16px;height:16px;accent-color:"+(autoChecked?"#f59e0b":"#0d9488")+";flex-shrink:0;cursor:"+(autoChecked?"default":"pointer")});
-      chk.checked=done;
-      if(!autoChecked){chk.addEventListener("change",function(){toggleHabit(hb.id,state.year,state.month,state.day);});}
-      row.appendChild(chk);
-      var cat=catByCode(hb.cat);
-      row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:"+(cat?cat.color:"#94a3b8")+";font-family:monospace;background:"+(cat?cat.color+"22":"#1e293b")+";border-radius:3px;padding:0 4px;flex-shrink:0"},hb.cat));
-      var nameWrap=h("div",{style:"flex:1;display:flex;align-items:center;gap:4px;overflow:hidden"});
-      nameWrap.appendChild(h("span",{style:"font-size:12px;color:"+(done?"#0d9488":"#cbd5e1")+(done?";text-decoration:line-through":"")+";overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},hb.name));
-      if(autoChecked)nameWrap.appendChild(h("span",{style:"font-size:9px;color:#f59e0b;flex-shrink:0"},"⚡"));
-      row.appendChild(nameWrap);
-      var wPct=calcHabitWeeklyPct(hb,mon);
-      var wTrack=h("div",{style:"width:32px;height:4px;background:#1e293b;border-radius:2px;overflow:hidden;flex-shrink:0"});
-      wTrack.appendChild(h("div",{style:"height:100%;width:"+wPct+"%;background:#0d9488"}));
-      row.appendChild(wTrack);
-      row.appendChild(h("span",{style:"font-size:9px;color:#0d9488;font-family:monospace;font-weight:700;width:26px;text-align:right;flex-shrink:0"},wPct+"%"));
-      hbox.appendChild(row);
-    });
-    wrap.appendChild(hbox);
-  })();
   const diary=h("div",{style:"margin-top:16px;background:#111827;border-radius:14px;padding:14px;border:1px solid #1e293b"});
   const dk=dateKey();
   const currentDiary=(state.data.entries[dk]&&state.data.entries[dk]._diary)||"";
@@ -2042,11 +1966,63 @@ function renderReflectionBox(reviewKey,labels){
   return box;
 }
 
+// ── 리뷰 공통 데이터 헬퍼 ─────────────────────────────────────
+function getEntriesForYear(y){
+  if(y===state.year)return state.data.entries;
+  try{var raw=localStorage.getItem("timesheet-data-"+y);if(!raw)return{};var p=JSON.parse(raw);return p.entries||{};}catch(e){return{};}
+}
+function getCatHoursByMonth(entries,m){
+  var r={};CATEGORIES.forEach(function(c){r[c.code]=0;});
+  Object.keys(entries).forEach(function(k){
+    if(parseInt(k.split("-")[0])===m){
+      var ds=entries[k];
+      Object.keys(ds).forEach(function(sk){if(sk!=="_diary"&&ds[sk]&&ds[sk].actual)r[ds[sk].actual]=(r[ds[sk].actual]||0)+0.5;});
+    }
+  });
+  return r;
+}
+function getCatHoursByDay(entries,m,d){
+  var r={};CATEGORIES.forEach(function(c){r[c.code]=0;});
+  var slots=entries[m+"-"+d]||{};
+  Object.keys(slots).forEach(function(sk){if(sk!=="_diary"&&slots[sk]&&slots[sk].actual)r[slots[sk].actual]=(r[slots[sk].actual]||0)+0.5;});
+  return r;
+}
+function fmtDiff(cur,prev){
+  if(prev<0.01&&cur<0.01)return{txt:"–",color:"#334155"};
+  if(prev<0.01)return{txt:"new",color:"#10b981"};
+  var pct=Math.round((cur-prev)/prev*100);
+  return{txt:(pct>0?"+":"")+pct+"%",color:pct>5?"#10b981":pct<-5?"#ef4444":"#64748b"};
+}
+function countWeekdays(y,m){
+  // 해당 월의 평일 수 (월~금, 공휴일 제외) — 2400일의 월간 분모
+  var count=0,days=daysInMonth(y,m);
+  for(var d=1;d<=days;d++){if(isWeekday(y,m,d))count++;}
+  return count;
+}
+function countWeekdaysYear(y){
+  // 해당 연도의 평일 수 — 2400일의 연간 분모
+  var count=0;
+  for(var m=1;m<=12;m++)count+=countWeekdays(y,m);
+  return count;
+}
+function getHabitMonthPct(hb,y,m){
+  // 분모: 평일 수 (주간과 동일 기준, 2400일과 비율 일치)
+  var weekdays=countWeekdays(y,m),done=0;
+  for(var d=1;d<=daysInMonth(y,m);d++){if(isWeekday(y,m,d)&&isHabitDone(hb,y,m,d))done++;}
+  return weekdays>0?Math.round(done/weekdays*100):0;
+}
+function getBooksForYearMonth(y,m){
+  try{
+    if(y===state.year){return(state.bookData||{})[m]||[];}
+    var raw=localStorage.getItem("books-data-"+y);if(!raw)return[];
+    var p=JSON.parse(raw);return p[m]||[];
+  }catch(e){return[];}
+}
+// ─────────────────────────────────────────────────────────────
+
 function renderDailyReview(){
   const wrap=h("div",{});
   const today=new Date();
-
-  // ── 날짜 네비게이션 ──
   if(state.reviewDayOffset===undefined)state.reviewDayOffset=0;
   const revDate=new Date(today);revDate.setDate(today.getDate()+state.reviewDayOffset);
   const ry=revDate.getFullYear(),rm=revDate.getMonth()+1,rd=revDate.getDate();
@@ -2054,6 +2030,7 @@ function renderDailyReview(){
   const rDow=["일","월","화","수","목","금","토"][revDate.getDay()];
   const isToday2=state.reviewDayOffset===0;
 
+  // ── 날짜 네비게이션 ──
   const nav=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"});
   nav.appendChild(h("button",{className:"goal-date-arrow",onClick:function(){state.reviewDayOffset--;_isAutoRender=true;render()}},"◀"));
   const navMid=h("div",{style:"display:flex;flex-direction:column;align-items:center;gap:2px"});
@@ -2064,53 +2041,66 @@ function renderDailyReview(){
   nav.appendChild(h("button",{className:"goal-date-arrow",style:isToday2?"opacity:.3;cursor:default":"",onClick:function(){if(!isToday2){state.reviewDayOffset++;_isAutoRender=true;render()}}},"▶"));
   wrap.appendChild(nav);
 
-  const slots=state.data.entries[rdk]||{};
-  const dayCats={};CATEGORIES.forEach(c=>{dayCats[c.code]={plan:0,actual:0}});
-  Object.keys(slots).forEach(function(t){
-    if(t==="_diary")return;
-    const s=slots[t];
-    if(s.plan&&dayCats[s.plan])dayCats[s.plan].plan+=0.5;
-    if(s.actual&&dayCats[s.actual])dayCats[s.actual].actual+=0.5;
-  });
-  var planTotal=0,actualTotal=0;
-  CATEGORIES.forEach(c=>{planTotal+=dayCats[c.code].plan;actualTotal+=dayCats[c.code].actual});
+  // ── 3일치 실적 (오늘/어제/그제), 증감은 어제 대비 ──
+  function getDayInfo(offsetFromRev){
+    var d2=new Date(revDate);d2.setDate(revDate.getDate()+offsetFromRev);
+    var y2=d2.getFullYear(),m2=d2.getMonth()+1,dd=d2.getDate();
+    var ent=getEntriesForYear(y2);
+    var cats=getCatHoursByDay(ent,m2,dd);
+    var total=CATEGORIES.reduce(function(s,c){return s+(cats[c.code]||0);},0);
+    var label=(offsetFromRev===0?"오늘":offsetFromRev===-1?"어제":"그제")+" "+m2+"/"+dd;
+    return{cats:cats,total:total,label:label,y:y2,m:m2,d:dd};
+  }
+  var days3=[getDayInfo(0),getDayInfo(-1),getDayInfo(-2)];
 
-  const pvBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:12px;border:1px solid #1e293b"});
-  const pvHdr=h("div",{style:"display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"});
-  pvHdr.appendChild(h("span",{style:"font-size:10px;color:#64748b;font-weight:700;letter-spacing:.5px"},"📋 Plan vs Actual"));
-  pvHdr.appendChild(h("span",{style:"font-size:11px;color:#94a3b8;font-family:monospace"},"P:"+planTotal+"h  A:"+actualTotal+"h"));
-  pvBox.appendChild(pvHdr);
-  GROUPS.forEach(function(g){
-    const ph=groupCats(g).reduce((s,c)=>s+(dayCats[c.code].plan||0),0);
-    const ah=groupCats(g).reduce((s,c)=>s+(dayCats[c.code].actual||0),0);
-    if(ph===0&&ah===0)return;
-    const row=h("div",{style:"display:flex;align-items:center;gap:6px;margin-bottom:4px"});
-    row.appendChild(h("span",{style:"font-size:10px;color:"+GC[g]+";font-weight:700;width:16px;flex-shrink:0"},g));
-    const bw=h("div",{style:"flex:1;display:flex;flex-direction:column;gap:2px"});
-    if(ph>0){
-      const pb=h("div",{style:"display:flex;align-items:center;gap:4px"});
-      pb.appendChild(h("span",{style:"font-size:8px;color:#64748b;width:8px"},"P"));
-      const pt=h("div",{style:"flex:1;height:4px;background:#1e293b;border-radius:2px;overflow:hidden"});
-      pt.appendChild(h("div",{style:"height:100%;width:"+Math.min(ph/16*100,100)+"%;background:"+GC[g]+";opacity:.4"}));
-      pb.appendChild(pt);
-      pb.appendChild(h("span",{style:"font-size:9px;color:#64748b;font-family:monospace;width:28px;text-align:right"},ph+"h"));
-      bw.appendChild(pb);
-    }
-    if(ah>0){
-      const ab=h("div",{style:"display:flex;align-items:center;gap:4px"});
-      ab.appendChild(h("span",{style:"font-size:8px;color:#0d9488;width:8px"},"A"));
-      const at=h("div",{style:"flex:1;height:4px;background:#1e293b;border-radius:2px;overflow:hidden"});
-      at.appendChild(h("div",{style:"height:100%;width:"+Math.min(ah/16*100,100)+"%;background:"+GC[g]}));
-      ab.appendChild(at);
-      ab.appendChild(h("span",{style:"font-size:9px;color:#94a3b8;font-family:monospace;width:28px;text-align:right"},ah+"h"));
-      bw.appendChild(ab);
-    }
-    row.appendChild(bw);
-    pvBox.appendChild(row);
+  const cmpBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:12px;border:1px solid #1e293b"});
+  // 헤더
+  const cmpHdr=h("div",{style:"display:flex;align-items:center;margin-bottom:6px"});
+  cmpHdr.appendChild(h("span",{style:"font-size:10px;color:#64748b;font-weight:700;letter-spacing:.5px;flex:1"},"⏱ 3일 실적"));
+  days3.forEach(function(di,idx){
+    var shortLabel=idx===0?"오늘":idx===1?"어제":"그제";
+    cmpHdr.appendChild(h("span",{style:"font-size:8px;color:"+(idx===0?"#6366f1":"#475569")+";font-family:monospace;width:32px;text-align:right;font-weight:"+(idx===0?"700":"400")},shortLabel));
   });
-  wrap.appendChild(pvBox);
+  cmpHdr.appendChild(h("span",{style:"font-size:8px;color:#475569;font-family:monospace;width:30px;text-align:right"},"증감"));
+  cmpBox.appendChild(cmpHdr);
+  // 날짜 행
+  const dateSubHdr=h("div",{style:"display:flex;align-items:center;margin-bottom:4px"});
+  dateSubHdr.appendChild(h("span",{style:"flex:1"},""));
+  days3.forEach(function(di){
+    dateSubHdr.appendChild(h("span",{style:"font-size:7px;color:#334155;font-family:monospace;width:32px;text-align:right"},di.m+"/"+di.d));
+  });
+  dateSubHdr.appendChild(h("span",{style:"width:30px"},""));
+  cmpBox.appendChild(dateSubHdr);
 
-  // ── 금월 일별 바차트 ──
+  var anyRow=false;
+  CATEGORIES.forEach(function(c){
+    var vals=days3.map(function(di){return di.cats[c.code]||0;});
+    if(vals[0]===0&&vals[1]===0&&vals[2]===0)return;
+    anyRow=true;
+    var diff=fmtDiff(vals[0],vals[1]); // 오늘 vs 어제
+    var row=h("div",{style:"display:flex;align-items:center;gap:2px;padding:2px 0;border-bottom:1px solid #0f172a"});
+    row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:"+c.color+";font-family:monospace;width:22px;flex-shrink:0"},c.code));
+    var track=h("div",{style:"flex:1;height:4px;background:#1e293b;border-radius:2px;overflow:hidden;margin:0 3px"});
+    track.appendChild(h("div",{style:"height:100%;width:"+Math.min((vals[0]||0)/4*100,100)+"%;background:"+c.color+";border-radius:2px"}));
+    row.appendChild(track);
+    vals.forEach(function(v,idx){
+      row.appendChild(h("span",{style:"font-size:10px;color:"+(v>0?(idx===0?"#e2e8f0":"#94a3b8"):"#334155")+";font-family:monospace;width:32px;text-align:right;font-weight:"+(v>0&&idx===0?"700":"400")},v>0?v+"h":"–"));
+    });
+    row.appendChild(h("span",{style:"font-size:9px;color:"+diff.color+";font-family:monospace;width:30px;text-align:right;font-weight:700"},diff.txt));
+    cmpBox.appendChild(row);
+  });
+  // 합계
+  var totDiff=fmtDiff(days3[0].total,days3[1].total);
+  var tRow=h("div",{style:"display:flex;align-items:center;gap:2px;padding:4px 0;border-top:1px solid #334155;margin-top:2px"});
+  tRow.appendChild(h("span",{style:"font-size:10px;color:#64748b;font-weight:700;flex:1"},"합계"));
+  days3.forEach(function(di,idx){
+    tRow.appendChild(h("span",{style:"font-size:"+(idx===0?"12":"10")+"px;color:"+(idx===0?"#e2e8f0":"#94a3b8")+";font-family:monospace;width:32px;text-align:right;font-weight:"+(idx===0?"900":"400")},di.total>0?di.total+"h":"–"));
+  });
+  tRow.appendChild(h("span",{style:"font-size:10px;color:"+totDiff.color+";font-family:monospace;width:30px;text-align:right;font-weight:700"},totDiff.txt));
+  cmpBox.appendChild(tRow);
+  wrap.appendChild(cmpBox);
+
+  // ── 금월 일별 DREAM 추이 ──
   const dailyChartSec=h("div",{className:"chart-container",style:"margin-bottom:12px"});
   dailyChartSec.appendChild(h("h3",{className:"chart-title"},rm+"월 일별 DREAM 추이"));
   const dailyChartWrap=h("div",{className:"chart-wrap",style:"height:180px"});
@@ -2125,63 +2115,29 @@ function renderDailyReview(){
   if(dailyGoals.length===0){
     goalBox.appendChild(h("div",{style:"text-align:center;padding:12px 0;color:#334155;font-size:12px"},"일간 목표가 없습니다"));
   }else{
-    var activeG=dailyGoals.filter(g=>!g.done);
-    var doneG=dailyGoals.filter(g=>g.done);
+    var activeG=dailyGoals.filter(function(g){return!g.done;});
+    var doneG=dailyGoals.filter(function(g){return g.done;});
     function renderDailyGoalRow(g,isDone){
       const cat=catByCode(g.cat);
-      const row=h("div",{style:"display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #0f172a;cursor:pointer",
-        onClick:function(){navigateToGoal("daily",g);}
-      });
+      const row=h("div",{style:"display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #0f172a;cursor:pointer",onClick:function(){navigateToGoal("daily",g);}});
       row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:"+(cat?cat.color:"#94a3b8")+";font-family:monospace;flex-shrink:0;background:"+(cat?cat.color+"22":"#1e293b")+";border-radius:3px;padding:1px 5px"},g.cat));
       row.appendChild(h("span",{style:"flex:1;font-size:12px;color:"+(isDone?"#475569":"#cbd5e1")+(isDone?";text-decoration:line-through":"")},g.name));
       if(isDone)row.appendChild(h("span",{style:"font-size:12px;color:#10b981"},"✓"));
       row.appendChild(h("span",{style:"font-size:9px;color:#0d9488;flex-shrink:0"},"↗"));
       return row;
     }
-    activeG.forEach(g=>goalBox.appendChild(renderDailyGoalRow(g,false)));
+    activeG.forEach(function(g){goalBox.appendChild(renderDailyGoalRow(g,false));});
     if(doneG.length>0){
       goalBox.appendChild(h("div",{style:"font-size:9px;color:#064e3b;margin:8px 0 4px;font-weight:700"},"✅ 완료 ("+doneG.length+")"));
-      doneG.forEach(g=>goalBox.appendChild(renderDailyGoalRow(g,true)));
+      doneG.forEach(function(g){goalBox.appendChild(renderDailyGoalRow(g,true));});
     }
   }
   wrap.appendChild(goalBox);
 
-  // ── 오늘의 습관 ──
-  (function(){
-    var ry2=ry,rm2=rm,rd2=rd;
-    var todayHabits=(state.goalData.habits||[]).filter(function(hb){
-      if(!hb.startDate||!hb.endDate)return true;
-      var sp=hb.startDate.split("-"),ep=hb.endDate.split("-");
-      var sd=new Date(parseInt(sp[0]),parseInt(sp[1])-1,parseInt(sp[2]));
-      var ed=new Date(parseInt(ep[0]),parseInt(ep[1])-1,parseInt(ep[2]));
-      var cur=new Date(ry2,rm2-1,rd2);
-      return cur>=sd&&cur<=ed;
-    });
-    if(todayHabits.length===0)return;
-    var hbox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:12px;border:1px solid #1e293b"});
-    hbox.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:8px;letter-spacing:.5px"},"🔁 오늘의 습관"));
-    todayHabits.forEach(function(hb){
-      var auto=isHabitAutoChecked(hb,ry2,rm2,rd2);
-      var manual=!!(hb.completions&&hb.completions[ry2+"-"+rm2+"-"+rd2]);
-      var done=auto||manual;
-      var cat=catByCode(hb.cat);
-      var row=h("div",{style:"display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #0f172a"});
-      var chk=h("input",{type:"checkbox",style:"width:14px;height:14px;accent-color:"+(auto?"#f59e0b":"#0d9488")+";flex-shrink:0;cursor:"+(auto?"default":"pointer")});
-      chk.checked=done;
-      if(!auto){chk.addEventListener("change",function(){toggleHabit(hb.id,ry2,rm2,rd2);});}
-      row.appendChild(chk);
-      row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:"+(cat?cat.color:"#94a3b8")+";font-family:monospace;flex-shrink:0;background:"+(cat?cat.color+"22":"#1e293b")+";border-radius:3px;padding:1px 4px"},hb.cat));
-      row.appendChild(h("span",{style:"flex:1;font-size:12px;color:"+(done?"#10b981":"#cbd5e1")+(done?";text-decoration:line-through":"")+";overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},hb.name));
-      if(auto)row.appendChild(h("span",{style:"font-size:9px;color:#f59e0b"},"⚡"));
-      hbox.appendChild(row);
-    });
-    wrap.appendChild(hbox);
-  })();
+  // ── 메모 ──
   const diaryText=(state.data.entries[rdk]&&state.data.entries[rdk]._diary)||"";
   if(diaryText.trim()){
-    const diaryBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;border:1px solid #1e293b;cursor:pointer",
-      onClick:function(){showDiaryModal(diaryText,rm,rd,ry);}
-    });
+    const diaryBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:12px;border:1px solid #1e293b;cursor:pointer",onClick:function(){showDiaryModal(diaryText,rm,rd,ry);}});
     diaryBox.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:8px;letter-spacing:.5px"},"📓 메모"));
     const preview=diaryText.split("\n")[0].slice(0,80)+(diaryText.length>80?"…":"");
     diaryBox.appendChild(h("div",{style:"font-size:13px;color:#94a3b8;line-height:1.6"},preview));
@@ -2189,51 +2145,44 @@ function renderDailyReview(){
     wrap.appendChild(diaryBox);
   }
 
-  // ── 일간 성찰 (감사→잘한것→놓친것→메모) ──
-  wrap.appendChild(renderReflectionBox(
-    "daily-review-"+ry+"-"+rm+"-"+rd,
-    {title:"✍️ 오늘 성찰",next:"🎯 내일 한 가지",nextPh:"내일 반드시 할 것은?"}
-  ));
+  // ── 일간 성찰 ──
+  wrap.appendChild(renderReflectionBox("daily-review-"+ry+"-"+rm+"-"+rd,{title:"✍️ 오늘 성찰",next:"🎯 내일 한 가지",nextPh:"내일 반드시 할 것은?"}));
 
   setTimeout(function(){
-    if(typeof Chart==='undefined')return;
+    if(typeof Chart==="undefined")return;
     try{
       if(window._reviewDailyChartInst){window._reviewDailyChartInst.destroy();window._reviewDailyChartInst=null;}
-      const cv=document.getElementById("reviewDailyChart");
-      if(!cv)return;
-      const maxD=daysInMonth(ry,rm);
-      const labels=[];
-      const groupData={};
-      GROUPS.forEach(g=>{groupData[g]=[]});
-      for(let d2=1;d2<=maxD;d2++){
+      const cv=document.getElementById("reviewDailyChart");if(!cv)return;
+      const maxD=daysInMonth(ry,rm);const labels=[];const groupData={};
+      GROUPS.forEach(function(g){groupData[g]=[];});
+      for(var d2=1;d2<=maxD;d2++){
         labels.push(String(d2));
-        const k2=rm+"-"+d2;
-        const slots2=state.data.entries[k2]||{};
-        const dayCats2={};CATEGORIES.forEach(c=>{dayCats2[c.code]=0});
-        Object.entries(slots2).forEach(([sk,s])=>{if(sk!=="_diary"&&s.actual)dayCats2[s.actual]=(dayCats2[s.actual]||0)+0.5});
-        GROUPS.forEach(g=>{groupData[g].push(groupCats(g).reduce((s,c)=>s+(dayCats2[c.code]||0),0));});
+        const k2=rm+"-"+d2;const slots2=state.data.entries[k2]||{};
+        const dayCats2={};CATEGORIES.forEach(function(c){dayCats2[c.code]=0;});
+        Object.keys(slots2).forEach(function(sk){if(sk!=="_diary"&&slots2[sk]&&slots2[sk].actual)dayCats2[slots2[sk].actual]=(dayCats2[slots2[sk].actual]||0)+0.5;});
+        GROUPS.forEach(function(g){groupData[g].push(groupCats(g).reduce(function(s,c){return s+(dayCats2[c.code]||0);},0));});
       }
       window._reviewDailyChartInst=new Chart(cv,{
         type:"bar",
-        data:{labels,datasets:GROUPS.map(g=>({label:g,data:groupData[g],backgroundColor:GC[g],borderWidth:0,borderRadius:1,stack:"d"}))},
+        data:{labels:labels,datasets:GROUPS.map(function(g){return{label:g,data:groupData[g],backgroundColor:GC[g],borderWidth:0,borderRadius:1,stack:"d"};})},
         options:{responsive:true,maintainAspectRatio:false,
           plugins:{legend:{labels:{color:"#94a3b8",font:{size:10},boxWidth:10,padding:6}},
             tooltip:{backgroundColor:"#1e293b",titleColor:"#e2e8f0",bodyColor:"#cbd5e1",borderColor:"#334155",borderWidth:1,
-              callbacks:{title:ctx=>rm+"월 "+ctx[0].label+"일",label:ctx=>ctx.dataset.label+": "+ctx.parsed.y+"h",footer:ctx=>{let t=0;ctx.forEach(c=>{t+=c.parsed.y});return "합계: "+t+"h"}}}},
+              callbacks:{title:function(ctx){return rm+"월 "+ctx[0].label+"일";},label:function(ctx){return ctx.dataset.label+": "+ctx.parsed.y+"h";},footer:function(ctx){var t=0;ctx.forEach(function(c){t+=c.parsed.y;});return "합계: "+t+"h";}}}},
           scales:{x:{stacked:true,ticks:{color:"#64748b",font:{size:8}},grid:{display:false}},
-            y:{stacked:true,beginAtZero:true,ticks:{color:"#64748b",font:{size:9},callback:v=>v+"h"},grid:{color:"#1e293b"}}}}
+            y:{stacked:true,beginAtZero:true,ticks:{color:"#64748b",font:{size:9},callback:function(v){return v+"h";}},grid:{color:"#1e293b"}}}}
       });
-    }catch(e){console.log("reviewDailyChart err:",e)}
+    }catch(e){console.log("reviewDailyChart err:",e);}
   },0);
-
   return wrap;
 }
 
 
 function renderMonthlyReview(){
   const wrap=h("div",{});
+  if(!state.dashMonth)state.dashMonth=new Date().getMonth()+1;
 
-  // 월 네비게이션
+  // ── 월 네비게이션 ──
   const mbar=h("div",{style:"display:flex;gap:4px;padding:4px 0 12px;overflow-x:auto;scrollbar-width:none"});
   for(let m=1;m<=12;m++){
     mbar.appendChild(h("button",{
@@ -2243,60 +2192,161 @@ function renderMonthlyReview(){
   }
   wrap.appendChild(mbar);
 
-  // 월간 DREAM 집계
-  const ms=monthlySummary();
-  const monthDays=daysInMonth(state.year,state.dashMonth);
-  const sec=h("div",{className:"dash-section"});
-  sec.appendChild(h("h3",{className:"dash-title"},state.dashMonth+"월 카테고리별 — "+monthDays+"일"));
-  GROUPS.forEach(g=>{
-    const cats=groupCats(g);
-    const gt=cats.reduce((s,c)=>s+(ms[c.code]||0),0);
-    if(gt===0)return;
-    const avg=(gt/monthDays).toFixed(1);
-    const dg=h("div",{className:"dash-group"});
-    const dgh=h("div",{className:"dash-group-header",style:"background:"+GC[g]+"18;border-left:3px solid "+GC[g]});
-    dgh.appendChild(h("span",{},g+" · "+GN[g]));
-    const ghVals=h("span",{style:"font-family:'JetBrains Mono',monospace;display:flex;gap:8px;align-items:center"});
-    ghVals.appendChild(h("span",{style:"font-weight:700"},gt+"h"));
-    ghVals.appendChild(h("span",{style:"font-size:10px;color:#64748b"},"일평균 "+avg+"h"));
-    dgh.appendChild(ghVals);
-    dg.appendChild(dgh);
-    cats.forEach(c=>{
-      if(!(ms[c.code]||0))return;
-      const row=h("div",{className:"dash-cat-row"});
-      row.appendChild(h("span",{className:"dash-cat-code",style:"color:"+c.color},c.code));
-      row.appendChild(h("span",{},c.label));
-      const track=h("div",{className:"dash-bar-track"});
-      track.appendChild(h("div",{className:"dash-bar",style:"width:"+Math.min((ms[c.code]/Math.max(gt,1))*100,100)+"%;background:"+c.color}));
-      row.appendChild(track);
-      row.appendChild(h("span",{className:"dash-cat-val"},String(ms[c.code]||0)));
-      dg.appendChild(row);
-    });
-    sec.appendChild(dg);
+  const cy=state.year,cm=state.dashMonth;
+
+  // 3개월 데이터 준비
+  function getMonthInfo(offsetMonths){
+    var d=new Date(cy,cm-1+offsetMonths,1);
+    var y2=d.getFullYear(),m2=d.getMonth()+1;
+    var ent=getEntriesForYear(y2);
+    var raw=getCatHoursByMonth(ent,m2);
+    var days=daysInMonth(y2,m2);
+    var label=(offsetMonths===0?cm+"월":offsetMonths===-1?(cm-1<1?12+"월(전)":m2+"월"):m2+"월");
+    return{y:y2,m:m2,raw:raw,days:days,label:label};
+  }
+  var months3=[getMonthInfo(0),getMonthInfo(-1),getMonthInfo(-2)];
+
+  // ── 3개월 카테고리별 비교표 ──
+  const cmpSec=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:12px;border:1px solid #1e293b"});
+  const cmpHdr=h("div",{style:"display:flex;align-items:center;margin-bottom:4px"});
+  cmpHdr.appendChild(h("span",{style:"font-size:10px;color:#64748b;font-weight:700;letter-spacing:.5px;flex:1"},"📊 3개월 실적 비교"));
+  months3.forEach(function(mi,idx){
+    cmpHdr.appendChild(h("span",{style:"font-size:8px;color:"+(idx===0?"#6366f1":"#475569")+";font-family:monospace;width:34px;text-align:right;font-weight:"+(idx===0?"700":"400")},mi.m+"월"));
   });
-  const mTotal=Object.values(ms).reduce((a,b)=>a+b,0);
-  sec.appendChild(h("div",{className:"dash-total"},"월간 합계: "+mTotal+"h  (일평균 "+(mTotal/monthDays).toFixed(1)+"h)"));
-  wrap.appendChild(sec);
+  cmpHdr.appendChild(h("span",{style:"font-size:8px;color:#475569;font-family:monospace;width:30px;text-align:right"},"증감"));
+  cmpSec.appendChild(cmpHdr);
+
+  var totals3=[0,0,0];
+  GROUPS.forEach(function(g){
+    var gCats=groupCats(g);
+    var gVals=months3.map(function(mi){return gCats.reduce(function(s,c){return s+(mi.raw[c.code]||0);},0);});
+    if(gVals[0]===0&&gVals[1]===0&&gVals[2]===0)return;
+    gVals.forEach(function(v,i){totals3[i]+=v;});
+    var gDiff=fmtDiff(gVals[0]/months3[0].days,gVals[1]/months3[1].days);
+    var gHdr=h("div",{style:"display:flex;align-items:center;padding:4px 0;border-bottom:1px solid #1e293b"});
+    gHdr.appendChild(h("span",{style:"font-size:10px;font-weight:700;color:"+GC[g]+";font-family:monospace;flex:1"},g+" "+GN[g]));
+    gVals.forEach(function(v,idx){
+      gHdr.appendChild(h("span",{style:"font-size:10px;color:"+(idx===0?GC[g]:(v>0?"#475569":"#334155"))+";font-family:monospace;width:34px;text-align:right;font-weight:"+(idx===0?"700":"400")},v>0?v+"h":"–"));
+    });
+    gHdr.appendChild(h("span",{style:"font-size:9px;color:"+gDiff.color+";font-family:monospace;width:30px;text-align:right;font-weight:700"},gDiff.txt));
+    cmpSec.appendChild(gHdr);
+    gCats.forEach(function(c){
+      var vals=months3.map(function(mi){return mi.raw[c.code]||0;});
+      if(vals[0]===0&&vals[1]===0&&vals[2]===0)return;
+      var diff=fmtDiff(vals[0]/months3[0].days,vals[1]/months3[1].days);
+      var row=h("div",{style:"display:flex;align-items:center;padding:2px 0 2px 8px;border-bottom:1px solid #0f172a"});
+      row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:"+c.color+";font-family:monospace;width:22px;flex-shrink:0"},c.code));
+      row.appendChild(h("span",{style:"flex:1;font-size:9px;color:#475569;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},c.label));
+      vals.forEach(function(v,idx){
+        row.appendChild(h("span",{style:"font-size:10px;color:"+(v>0?(idx===0?"#e2e8f0":"#94a3b8"):"#334155")+";font-family:monospace;width:34px;text-align:right;font-weight:"+(v>0&&idx===0?"700":"400")},v>0?v+"h":"–"));
+      });
+      row.appendChild(h("span",{style:"font-size:9px;color:"+diff.color+";font-family:monospace;width:30px;text-align:right;font-weight:700"},diff.txt));
+      cmpSec.appendChild(row);
+    });
+  });
+  // 합계
+  var totDiff=fmtDiff(totals3[0]/months3[0].days,totals3[1]/months3[1].days);
+  var totRow=h("div",{style:"display:flex;align-items:center;padding:5px 0;border-top:1px solid #334155;margin-top:2px"});
+  totRow.appendChild(h("span",{style:"font-size:10px;color:#64748b;font-weight:700;flex:1"},"합계"));
+  totals3.forEach(function(v,idx){
+    totRow.appendChild(h("span",{style:"font-size:"+(idx===0?"12":"10")+"px;color:"+(idx===0?"#e2e8f0":"#94a3b8")+";font-family:monospace;width:34px;text-align:right;font-weight:"+(idx===0?"900":"400")},v>0?v+"h":"–"));
+  });
+  totRow.appendChild(h("span",{style:"font-size:10px;color:"+totDiff.color+";font-family:monospace;width:30px;text-align:right;font-weight:700"},totDiff.txt));
+  cmpSec.appendChild(totRow);
+  // 일평균 행
+  var avgRow=h("div",{style:"display:flex;align-items:center;padding:2px 0"});
+  avgRow.appendChild(h("span",{style:"font-size:9px;color:#475569;flex:1"},"일평균"));
+  months3.forEach(function(mi,idx){
+    var avg=totals3[idx]>0?(totals3[idx]/mi.days).toFixed(1)+"h":"–";
+    avgRow.appendChild(h("span",{style:"font-size:9px;color:"+(idx===0?"#64748b":"#334155")+";font-family:monospace;width:34px;text-align:right"},avg));
+  });
+  avgRow.appendChild(h("span",{style:"width:30px"},""));
+  cmpSec.appendChild(avgRow);
+  wrap.appendChild(cmpSec);
+
+  // ── 습관 달성률 비교 (3개월) ──
+  const habitsM=state.goalData.habits||[];
+  if(habitsM.length>0){
+    const habSec=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:12px;border:1px solid #1e293b"});
+    const habHdr=h("div",{style:"display:flex;align-items:center;margin-bottom:8px"});
+    habHdr.appendChild(h("span",{style:"font-size:10px;color:#64748b;font-weight:700;letter-spacing:.5px;flex:1"},"🔁 습관 달성률 (3개월)"));
+    months3.forEach(function(mi,idx){
+      habHdr.appendChild(h("span",{style:"font-size:8px;color:"+(idx===0?"#6366f1":"#475569")+";font-family:monospace;width:34px;text-align:right;font-weight:"+(idx===0?"700":"400")},mi.m+"월"));
+    });
+    habHdr.appendChild(h("span",{style:"font-size:8px;color:#475569;font-family:monospace;width:30px;text-align:right"},"증감"));
+    habSec.appendChild(habHdr);
+    habitsM.forEach(function(hb){
+      var pcts=months3.map(function(mi){return getHabitMonthPct(hb,mi.y,mi.m);});
+      var diff=fmtDiff(pcts[0],pcts[1]);
+      var cat=catByCode(hb.cat);
+      var row=h("div",{style:"display:flex;align-items:center;gap:4px;padding:4px 0;border-bottom:1px solid #0f172a"});
+      row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:"+(cat?cat.color:"#94a3b8")+";font-family:monospace;width:22px;flex-shrink:0"},hb.cat));
+      row.appendChild(h("span",{style:"flex:1;font-size:11px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},hb.name));
+      var track=h("div",{style:"width:36px;height:4px;background:#1e293b;border-radius:2px;overflow:hidden;flex-shrink:0"});
+      track.appendChild(h("div",{style:"height:100%;width:"+pcts[0]+"%;background:"+(pcts[0]>=80?"#10b981":pcts[0]>=50?"#f59e0b":"#ef4444")}));
+      row.appendChild(track);
+      pcts.forEach(function(p,idx){
+        row.appendChild(h("span",{style:"font-size:10px;color:"+(idx===0?(p>=80?"#10b981":p>=50?"#f59e0b":"#ef4444"):"#475569")+";font-family:monospace;width:34px;text-align:right;font-weight:"+(idx===0?"700":"400")},p+"%"));
+      });
+      row.appendChild(h("span",{style:"font-size:9px;color:"+diff.color+";font-family:monospace;width:30px;text-align:right;font-weight:700"},diff.txt));
+      habSec.appendChild(row);
+    });
+    wrap.appendChild(habSec);
+  }
+
+  // ── 독서 비교 (3개월, EN/KR 분리, 책제목 포함) ──
+  (function(){
+    var booksData=months3.map(function(mi){return getBooksForYearMonth(mi.y,mi.m);});
+    var hasAny=booksData.some(function(b){return b.length>0;});
+    if(!hasAny)return;
+    var bookSec=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:12px;border:1px solid #1e293b"});
+    var bHdr=h("div",{style:"display:flex;align-items:center;margin-bottom:8px"});
+    bHdr.appendChild(h("span",{style:"font-size:10px;color:#64748b;font-weight:700;letter-spacing:.5px;flex:1"},"📚 독서 비교 (3개월)"));
+    months3.forEach(function(mi,idx){
+      bHdr.appendChild(h("span",{style:"font-size:8px;color:"+(idx===0?"#6366f1":"#475569")+";font-family:monospace;width:34px;text-align:right;font-weight:"+(idx===0?"700":"400")},mi.m+"월"));
+    });
+    bHdr.appendChild(h("span",{style:"font-size:8px;color:#475569;font-family:monospace;width:30px;text-align:right"},"증감"));
+    bookSec.appendChild(bHdr);
+    [["en","영어","#3b82f6"],["kr","한국어","#10b981"]].forEach(function(typeInfo){
+      var type=typeInfo[0],label=typeInfo[1],color=typeInfo[2];
+      var cnts=booksData.map(function(b){return b.filter(function(x){return x.type===type;}).length;});
+      if(cnts[0]===0&&cnts[1]===0&&cnts[2]===0)return;
+      var diff=fmtDiff(cnts[0],cnts[1]);
+      var row=h("div",{style:"display:flex;align-items:center;gap:4px;padding:4px 0;border-bottom:1px solid #0f172a"});
+      row.appendChild(h("span",{style:"font-size:10px;font-weight:700;color:"+color+";flex:1"},label));
+      cnts.forEach(function(cnt,idx){
+        row.appendChild(h("span",{style:"font-size:11px;color:"+(idx===0?(cnt>0?"#e2e8f0":"#334155"):"#475569")+";font-family:monospace;width:34px;text-align:right;font-weight:"+(idx===0?"700":"400")},cnt>0?cnt+"권":"–"));
+      });
+      row.appendChild(h("span",{style:"font-size:9px;color:"+diff.color+";font-family:monospace;width:30px;text-align:right;font-weight:700"},diff.txt));
+      bookSec.appendChild(row);
+      // 이번 달 책 제목
+      var thisTitles=booksData[0].filter(function(b){return b.type===type;}).map(function(b){return b.title;});
+      if(thisTitles.length>0){
+        bookSec.appendChild(h("div",{style:"font-size:9px;color:#334155;padding:2px 0 4px 4px;line-height:1.5"},thisTitles.join(" · ")));
+      }
+    });
+    wrap.appendChild(bookSec);
+  })();
 
   // ── 금월 목표 ──
   const mGoalsBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:12px;border:1px solid #1e293b"});
   mGoalsBox.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},"📋 금월 목표"));
   const mGoalsList=(state.goalData.monthly||[]).filter(function(g){
-    if(g.year!==state.year)return false;
-    const sm=g.startMonth||g.month;const em=g.endMonth||g.month;
-    return sm<=state.dashMonth&&state.dashMonth<=em;
+    if(g.year!==cy)return false;
+    var sm=g.startMonth||g.month;var em=g.endMonth||g.month;
+    return sm<=cm&&cm<=em;
   });
   if(mGoalsList.length===0){
     mGoalsBox.appendChild(h("div",{style:"text-align:center;padding:10px 0;color:#334155;font-size:12px"},"이번 달 목표가 없습니다"));
   }else{
-    [mGoalsList.filter(g=>(g.progress||0)<100),mGoalsList.filter(g=>(g.progress||0)>=100)].forEach(function(list,idx){
+    [mGoalsList.filter(function(g){return(g.progress||0)<100;}),mGoalsList.filter(function(g){return(g.progress||0)>=100;})].forEach(function(list,idx){
       if(idx===1&&list.length>0)mGoalsBox.appendChild(h("div",{style:"font-size:9px;color:#064e3b;margin:8px 0 4px;font-weight:700"},"✅ 완료 ("+list.length+")"));
       list.forEach(function(g){
-        const cat=catByCode(g.cat);const pct=g.progress||0;const isDone=idx===1;
-        const row=h("div",{style:"display:flex;align-items:center;gap:7px;padding:5px 0;border-bottom:1px solid #0f172a;cursor:pointer",onClick:function(){navigateToGoal("monthly",g);}});
+        var cat=catByCode(g.cat);var pct=g.progress||0;var isDone=idx===1;
+        var row=h("div",{style:"display:flex;align-items:center;gap:7px;padding:5px 0;border-bottom:1px solid #0f172a;cursor:pointer",onClick:function(){navigateToGoal("monthly",g);}});
         row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:"+(cat?cat.color:"#94a3b8")+";font-family:monospace;flex-shrink:0;background:"+(cat?cat.color+"22":"#1e293b")+";border-radius:3px;padding:1px 5px"},g.cat));
         row.appendChild(h("span",{style:"flex:1;font-size:12px;color:"+(isDone?"#475569":"#cbd5e1")+(isDone?";text-decoration:line-through":"")},g.name));
-        const track=h("div",{style:"width:40px;height:4px;background:#1e293b;border-radius:2px;overflow:hidden;flex-shrink:0"});
+        var track=h("div",{style:"width:40px;height:4px;background:#1e293b;border-radius:2px;overflow:hidden;flex-shrink:0"});
         track.appendChild(h("div",{style:"height:100%;width:"+pct+"%;background:"+(isDone?"#10b981":"#0d9488")}));
         row.appendChild(track);
         row.appendChild(h("span",{style:"font-size:9px;color:"+(isDone?"#10b981":"#0d9488")+";font-family:monospace;width:26px;text-align:right;flex-shrink:0"},pct+"%"));
@@ -2307,13 +2357,8 @@ function renderMonthlyReview(){
   }
   wrap.appendChild(mGoalsBox);
 
-  // ── 월간 성찰 (감사→잘한것→놓친것→다음달→메모 통합) ──
-  wrap.appendChild(renderReflectionBox(
-    "monthly-review-"+state.year+"-"+state.dashMonth,
-    {title:"✍️ 월간 성찰",next:"🎯 다음 달 한 가지",nextPh:"다음 달에 반드시 할 것은?"}
-  ));
-
-  setTimeout(()=>renderDailyBarChart(),0);
+  // ── 월간 성찰 ──
+  wrap.appendChild(renderReflectionBox("monthly-review-"+cy+"-"+cm,{title:"✍️ 월간 성찰",next:"🎯 다음 달 한 가지",nextPh:"다음 달에 반드시 할 것은?"}));
   return wrap;
 }
 
@@ -2321,52 +2366,111 @@ function renderMonthlyReview(){
 function renderYearlyReview(){
   const wrap=h("div",{});
   const ys=yearSummary();
+  const cy=state.year;
 
-  // 연간 집계 테이블
+  // 3개년 데이터
+  function getYearCatTotals(y2){
+    var ent=getEntriesForYear(y2);
+    var r={};CATEGORIES.forEach(function(c){r[c.code]=0;});
+    for(var m=1;m<=12;m++){
+      var mo=getCatHoursByMonth(ent,m);
+      CATEGORIES.forEach(function(c){r[c.code]+=(mo[c.code]||0);});
+    }
+    return r;
+  }
+  var years3=[cy,cy-1,cy-2];
+  var yearTotals=years3.map(function(y2){return getYearCatTotals(y2);});
+
+  // ── 3년 카테고리별 비교표 ──
+  const cmpSec=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:16px;border:1px solid #1e293b"});
+  const cmpH=h("div",{style:"display:flex;align-items:center;margin-bottom:8px"});
+  cmpH.appendChild(h("span",{style:"font-size:10px;color:#64748b;font-weight:700;letter-spacing:.5px;flex:1"},"📊 3년 실적 비교"));
+  years3.forEach(function(y2,idx){
+    cmpH.appendChild(h("span",{style:"font-size:8px;color:"+(idx===0?"#6366f1":"#475569")+";font-family:monospace;width:40px;text-align:right;font-weight:"+(idx===0?"700":"400")},y2+"년"));
+  });
+  cmpH.appendChild(h("span",{style:"font-size:8px;color:#475569;font-family:monospace;width:30px;text-align:right"},"↑↓"));
+  cmpSec.appendChild(cmpH);
+
+  var grandTotals=[0,0,0];
+  GROUPS.forEach(function(g){
+    var gCats=groupCats(g);
+    var gVals=yearTotals.map(function(yt){return gCats.reduce(function(s,c){return s+(yt[c.code]||0);},0);});
+    if(gVals[0]===0&&gVals[1]===0&&gVals[2]===0)return;
+    gVals.forEach(function(v,i){grandTotals[i]+=v;});
+    var gDiff=fmtDiff(gVals[0],gVals[1]);
+    var gHdr=h("div",{style:"display:flex;align-items:center;padding:4px 0;border-bottom:1px solid #1e293b"});
+    gHdr.appendChild(h("span",{style:"font-size:10px;font-weight:700;color:"+GC[g]+";font-family:monospace;flex:1"},g+" "+GN[g]));
+    gVals.forEach(function(v,idx){
+      gHdr.appendChild(h("span",{style:"font-size:10px;color:"+(idx===0?GC[g]:(v>0?"#475569":"#334155"))+";font-family:monospace;width:40px;text-align:right;font-weight:"+(idx===0?"700":"400")},v>0?v+"h":"–"));
+    });
+    gHdr.appendChild(h("span",{style:"font-size:9px;color:"+gDiff.color+";font-family:monospace;width:30px;text-align:right;font-weight:700"},gDiff.txt));
+    cmpSec.appendChild(gHdr);
+    gCats.forEach(function(c){
+      var vals=yearTotals.map(function(yt){return yt[c.code]||0;});
+      if(vals[0]===0&&vals[1]===0&&vals[2]===0)return;
+      var diff=fmtDiff(vals[0],vals[1]);
+      var row=h("div",{style:"display:flex;align-items:center;padding:2px 0 2px 8px;border-bottom:1px solid #0f172a"});
+      row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:"+c.color+";font-family:monospace;width:22px;flex-shrink:0"},c.code));
+      row.appendChild(h("span",{style:"flex:1;font-size:9px;color:#475569;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},c.label));
+      vals.forEach(function(v,idx){
+        row.appendChild(h("span",{style:"font-size:10px;color:"+(v>0?(idx===0?"#e2e8f0":"#94a3b8"):"#334155")+";font-family:monospace;width:40px;text-align:right;font-weight:"+(v>0&&idx===0?"700":"400")},v>0?v+"h":"–"));
+      });
+      row.appendChild(h("span",{style:"font-size:9px;color:"+diff.color+";font-family:monospace;width:30px;text-align:right;font-weight:700"},diff.txt));
+      cmpSec.appendChild(row);
+    });
+  });
+  var totDiff=fmtDiff(grandTotals[0],grandTotals[1]);
+  var totRow=h("div",{style:"display:flex;align-items:center;padding:5px 0;border-top:1px solid #334155;margin-top:2px"});
+  totRow.appendChild(h("span",{style:"font-size:10px;color:#64748b;font-weight:700;flex:1"},"합계"));
+  grandTotals.forEach(function(v,idx){
+    totRow.appendChild(h("span",{style:"font-size:"+(idx===0?"12":"10")+"px;color:"+(idx===0?"#e2e8f0":"#94a3b8")+";font-family:monospace;width:40px;text-align:right;font-weight:"+(idx===0?"900":"400")},v>0?v+"h":"–"));
+  });
+  totRow.appendChild(h("span",{style:"font-size:10px;color:"+totDiff.color+";font-family:monospace;width:30px;text-align:right;font-weight:700"},totDiff.txt));
+  cmpSec.appendChild(totRow);
+  wrap.appendChild(cmpSec);
+
+  // ── 연간 월별 × DREAM 집계 테이블 ──
   const sec2=h("div",{className:"dash-section"});
-  sec2.appendChild(h("h3",{className:"dash-title"},"DREAM 연간 집계 (일평균)"));
+  sec2.appendChild(h("h3",{className:"dash-title"},"DREAM 월별 집계 (일평균 h/일)"));
   const yt=h("div",{className:"year-table"});
   const hdr=h("div",{className:"year-hdr-row"});
   hdr.appendChild(h("span",{className:"year-cell"},""));
   for(let m=1;m<=12;m++)hdr.appendChild(h("span",{className:"year-cell",style:"font-weight:600;color:#64748b;font-size:10px"},m+"월"));
   hdr.appendChild(h("span",{className:"year-cell",style:"font-weight:700;color:#64748b;font-size:10px"},"연평균"));
   yt.appendChild(hdr);
-  GROUPS.forEach(g=>{
-    const row=h("div",{className:"year-row"});
+  GROUPS.forEach(function(g){
+    var row=h("div",{className:"year-row"});
     row.appendChild(h("span",{className:"year-cell",style:"color:"+GC[g]+";font-weight:700"},g));
-    let yTotal=0,yDays=0;
-    for(let m=1;m<=12;m++){
-      const v=groupCats(g).reduce((s,c)=>s+((ys[m]||{})[c.code]||0),0);
-      const md=daysInMonth(state.year,m);
-      const avg=v>0?(v/md).toFixed(1):"–";
+    var yTotal=0,yDays=0;
+    for(var m=1;m<=12;m++){
+      var v=groupCats(g).reduce(function(s,c){return s+((ys[m]||{})[c.code]||0);},0);
+      var md=daysInMonth(cy,m);var avg=v>0?(v/md).toFixed(1):"–";
       yTotal+=v;if(v>0)yDays+=md;
       row.appendChild(h("span",{className:"year-cell",style:"background:"+(v>0?GC[g]+"20":"transparent")},avg));
     }
     row.appendChild(h("span",{className:"year-cell",style:"font-weight:700"},yDays>0?(yTotal/yDays).toFixed(1):"–"));
     yt.appendChild(row);
   });
-  const totalRow=h("div",{className:"year-row"});
+  var totalRow=h("div",{className:"year-row"});
   totalRow.appendChild(h("span",{className:"year-cell",style:"font-weight:700"},"합계"));
-  let grandTotal=0,grandDays=0;
-  for(let m=1;m<=12;m++){
-    const t=CATEGORIES.reduce((s,c)=>s+((ys[m]||{})[c.code]||0),0);
-    const md=daysInMonth(state.year,m);
-    grandTotal+=t;if(t>0)grandDays+=md;
-    totalRow.appendChild(h("span",{className:"year-cell",style:"font-weight:600"},t>0?(t/md).toFixed(1):"–"));
+  var grandTotal2=0,grandDays2=0;
+  for(var m=1;m<=12;m++){
+    var t=CATEGORIES.reduce(function(s,c){return s+((ys[m]||{})[c.code]||0);},0);
+    var md2=daysInMonth(cy,m);grandTotal2+=t;if(t>0)grandDays2+=md2;
+    totalRow.appendChild(h("span",{className:"year-cell",style:"font-weight:600"},t>0?(t/md2).toFixed(1):"–"));
   }
-  totalRow.appendChild(h("span",{className:"year-cell",style:"font-weight:900;font-size:13px"},grandDays>0?(grandTotal/grandDays).toFixed(1):"–"));
+  totalRow.appendChild(h("span",{className:"year-cell",style:"font-weight:900;font-size:13px"},grandDays2>0?(grandTotal2/grandDays2).toFixed(1):"–"));
   yt.appendChild(totalRow);
   sec2.appendChild(yt);
   wrap.appendChild(sec2);
 
-  // 라인차트 + 바차트
+  // ── 차트 ──
   const lineSection=h("div",{className:"chart-container"});
   lineSection.appendChild(h("h3",{className:"chart-title"},"DREAM 월간 일평균 추이 (h/일)"));
   const lineWrap=h("div",{className:"chart-wrap"});
   lineWrap.appendChild(h("canvas",{id:"lineChart"}));
   lineSection.appendChild(lineWrap);
   wrap.appendChild(lineSection);
-
   const barSection=h("div",{className:"chart-container"});
   barSection.appendChild(h("h3",{className:"chart-title"},"DREAM 월별 비중 (%)"));
   const barWrap=h("div",{className:"chart-wrap"});
@@ -2374,157 +2478,146 @@ function renderYearlyReview(){
   barSection.appendChild(barWrap);
   wrap.appendChild(barSection);
 
-  // ── 금년 목표 (장기 + 이 연도 월간) ──
+  // ── 금년 목표 ──
   const yGoalsBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:16px;border:1px solid #1e293b"});
   yGoalsBox.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},"📋 금년 목표"));
-  // 장기목표 (이 연도 포함)
-  const yLtGoals=(state.goalData.longterm||[]).filter(function(g){
-    const sy=g.startYear||g.targetYear||state.year;
-    const ey=g.endYear||g.targetYear||state.year;
-    return sy<=state.year&&state.year<=ey;
-  });
-  // 독서목표
-  const yRgGoals=(state.goalData.readingGoals||[]).filter(function(g){
-    return (g.startYear||2025)<=state.year&&state.year<=(g.endYear||2040);
-  });
-  const allYGoals=[
-    ...yLtGoals.map(g=>({g,scope:"longterm"})),
-    ...yRgGoals.map(g=>({g,scope:"readingGoals"}))
-  ].sort((a,b)=>dreamSortKey(a.g.cat)-dreamSortKey(b.g.cat));
-
+  var yLtGoals=(state.goalData.longterm||[]).filter(function(g){var sy=g.startYear||cy;var ey=g.endYear||cy;return sy<=cy&&cy<=ey;});
+  var yRgGoals=(state.goalData.readingGoals||[]).filter(function(g){return (g.startYear||2025)<=cy&&cy<=(g.endYear||2040);});
+  var allYGoals=yLtGoals.map(function(g){return{g:g,scope:"longterm"};}).concat(yRgGoals.map(function(g){return{g:g,scope:"readingGoals"};}));
+  allYGoals.sort(function(a,b){return dreamSortKey(a.g.cat)-dreamSortKey(b.g.cat);});
   if(allYGoals.length===0){
     yGoalsBox.appendChild(h("div",{style:"text-align:center;padding:10px 0;color:#334155;font-size:12px"},"금년 목표가 없습니다"));
   }else{
-    const activeYG=allYGoals.filter(({g,scope})=>scope==="readingGoals"?calcReadingGoalProgress(g)<100:(g.progress||0)<100&&!g.done);
-    const doneYG=allYGoals.filter(({g,scope})=>scope==="readingGoals"?calcReadingGoalProgress(g)>=100:(g.progress||0)>=100||g.done);
-    function renderYGoalRow({g,scope},isDone){
-      const cat=catByCode(g.cat);
-      const pct=scope==="readingGoals"?calcReadingGoalProgress(g):(g.progress||0);
-      const row=h("div",{style:"display:flex;align-items:center;gap:7px;padding:5px 0;border-bottom:1px solid #0f172a;cursor:pointer",
-        onClick:function(){navigateToGoal(scope,g);}
-      });
+    var activeYG=allYGoals.filter(function(x){return x.scope==="readingGoals"?calcReadingGoalProgress(x.g)<100:(x.g.progress||0)<100&&!x.g.done;});
+    var doneYG=allYGoals.filter(function(x){return x.scope==="readingGoals"?calcReadingGoalProgress(x.g)>=100:(x.g.progress||0)>=100||x.g.done;});
+    function renderYGoalRow(item,isDone){
+      var g=item.g,scope=item.scope;var cat=catByCode(g.cat);
+      var pct=scope==="readingGoals"?calcReadingGoalProgress(g):(g.progress||0);
+      var row=h("div",{style:"display:flex;align-items:center;gap:7px;padding:5px 0;border-bottom:1px solid #0f172a;cursor:pointer",onClick:function(){navigateToGoal(scope,g);}});
       row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:"+(cat?cat.color:"#94a3b8")+";font-family:monospace;flex-shrink:0;background:"+(cat?cat.color+"22":"#1e293b")+";border-radius:3px;padding:1px 5px"},g.cat));
       row.appendChild(h("span",{style:"flex:1;font-size:12px;color:"+(isDone?"#475569":"#cbd5e1")+(isDone?";text-decoration:line-through":"")},g.name));
-      if(scope==="readingGoals"&&g.type==="cumulative"){
-        const cnt=calcReadingGoalCount(g);
-        row.appendChild(h("span",{style:"font-size:9px;color:#3b82f6;font-family:monospace;flex-shrink:0"},cnt+"/"+g.targetCount+"권"));
-      }else{
-        const track=h("div",{style:"width:40px;height:4px;background:#1e293b;border-radius:2px;overflow:hidden;flex-shrink:0"});
-        track.appendChild(h("div",{style:"height:100%;width:"+pct+"%;background:"+(isDone?"#10b981":"#f59e0b")}));
-        row.appendChild(track);
-        row.appendChild(h("span",{style:"font-size:9px;color:"+(isDone?"#10b981":"#f59e0b")+";font-family:monospace;width:26px;text-align:right;flex-shrink:0"},pct+"%"));
-      }
+      if(scope==="readingGoals"&&g.type==="cumulative"){var cnt=calcReadingGoalCount(g);row.appendChild(h("span",{style:"font-size:9px;color:#3b82f6;font-family:monospace;flex-shrink:0"},cnt+"/"+g.targetCount+"권"));}
+      else{var track=h("div",{style:"width:40px;height:4px;background:#1e293b;border-radius:2px;overflow:hidden;flex-shrink:0"});track.appendChild(h("div",{style:"height:100%;width:"+pct+"%;background:"+(isDone?"#10b981":"#f59e0b")}));row.appendChild(track);row.appendChild(h("span",{style:"font-size:9px;color:"+(isDone?"#10b981":"#f59e0b")+";font-family:monospace;width:26px;text-align:right;flex-shrink:0"},pct+"%"));}
       row.appendChild(h("span",{style:"font-size:9px;color:#0d9488;flex-shrink:0"},"↗"));
       return row;
     }
-    activeYG.forEach(item=>yGoalsBox.appendChild(renderYGoalRow(item,false)));
-    if(doneYG.length>0){
-      yGoalsBox.appendChild(h("div",{style:"font-size:9px;color:#064e3b;margin:8px 0 4px;font-weight:700"},"✅ 완료 ("+doneYG.length+")"));
-      doneYG.forEach(item=>yGoalsBox.appendChild(renderYGoalRow(item,true)));
-    }
+    activeYG.forEach(function(item){yGoalsBox.appendChild(renderYGoalRow(item,false));});
+    if(doneYG.length>0){yGoalsBox.appendChild(h("div",{style:"font-size:9px;color:#064e3b;margin:8px 0 4px;font-weight:700"},"✅ 완료 ("+doneYG.length+")"));doneYG.forEach(function(item){yGoalsBox.appendChild(renderYGoalRow(item,true));});}
   }
   wrap.appendChild(yGoalsBox);
 
-  // 독서 연간 현황
-  const stats=getBookStats();
-  let yearEn=0,yearKr=0,yearTotal=0;
-  for(let m=1;m<=12;m++){yearEn+=stats[m].en;yearKr+=stats[m].kr;yearTotal+=stats[m].total}
-  const bookSec=h("div",{className:"dash-section"});
-  bookSec.appendChild(h("h3",{className:"dash-title"},"📚 독서 연간 현황"));
-  const cards=h("div",{className:"book-summary-grid"});
-  const c1=h("div",{className:"book-summary-card"});
-  c1.appendChild(h("div",{className:"book-summary-value",style:"color:#f59e0b"},String(yearTotal)));
-  c1.appendChild(h("div",{className:"book-summary-label"},"전체"));
-  cards.appendChild(c1);
-  const c2=h("div",{className:"book-summary-card"});
-  c2.appendChild(h("div",{className:"book-summary-value",style:"color:#3b82f6"},String(yearEn)));
-  c2.appendChild(h("div",{className:"book-summary-label"},"영어책"));
-  cards.appendChild(c2);
-  const c3=h("div",{className:"book-summary-card"});
-  c3.appendChild(h("div",{className:"book-summary-value",style:"color:#10b981"},String(yearKr)));
-  c3.appendChild(h("div",{className:"book-summary-label"},"한글책"));
-  cards.appendChild(c3);
-  bookSec.appendChild(cards);
-
-  // 연간 목표별 투입시간 트리 (대시보드에서 이동)
-  const goalSec=h("div",{style:"margin-top:16px"});
-  goalSec.appendChild(h("h3",{className:"dash-title"},"🎯 목표별 투입시간"));
-  function renderGoalTree(goalId,scope,name,cat,depth,visited){
-    if(!visited)visited={};
-    if(visited[goalId])return null;
-    visited[goalId]=true;
-    if(depth===0&&scope!=="habits"){
-      const _gr=findGoalById(goalId);
-      if(_gr&&_gr.goal){
-        if(_gr.goal.done===true)return null;
-        if(scope!=="readingGoals"&&(_gr.goal.progress||0)>=100)return null;
-      }
-    }
-    const totalHrs=calcGoalTotalHours(goalId);
-    const directHrs=calcGoalDirectHours(goalId);
-    if(totalHrs===0)return null;
-    const catObj=catByCode(cat);
-    const indent=depth*14;
-    const node=h("div",{style:"border-bottom:1px solid #0f172a"});
-    const row=h("div",{style:"display:flex;align-items:center;gap:6px;padding:5px 8px;font-size:12px;padding-left:"+(8+indent)+"px;cursor:pointer;transition:background .15s",
-      onClick:function(){
-        var found=findGoalById(goalId);
-        if(found)navigateToGoal(found.scope,found.goal);
+  // ── 독서 3년 비교 (EN/KR 분리, 책제목 포함) ──
+  (function(){
+    var bookSec=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:16px;border:1px solid #1e293b"});
+    bookSec.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},"📚 독서 3년 비교"));
+    var bHdr=h("div",{style:"display:flex;align-items:center;margin-bottom:6px"});
+    bHdr.appendChild(h("span",{style:"flex:1"},""));
+    years3.forEach(function(y2,idx){
+      bHdr.appendChild(h("span",{style:"font-size:8px;color:"+(idx===0?"#6366f1":"#475569")+";font-family:monospace;width:40px;text-align:right;font-weight:"+(idx===0?"700":"400")},y2+"년"));
+    });
+    bHdr.appendChild(h("span",{style:"width:30px"},""));
+    bookSec.appendChild(bHdr);
+    [["en","영어","#3b82f6"],["kr","한국어","#10b981"]].forEach(function(typeInfo){
+      var type=typeInfo[0],label=typeInfo[1],color=typeInfo[2];
+      var yearBooks=years3.map(function(y2){
+        var all=[];for(var m=1;m<=12;m++)all=all.concat(getBooksForYearMonth(y2,m));
+        return all.filter(function(b){return b.type===type;});
+      });
+      var cnts=yearBooks.map(function(b){return b.length;});
+      if(cnts[0]===0&&cnts[1]===0&&cnts[2]===0)return;
+      var diff=fmtDiff(cnts[0],cnts[1]);
+      var row=h("div",{style:"display:flex;align-items:center;gap:4px;padding:4px 0;border-bottom:1px solid #0f172a"});
+      row.appendChild(h("span",{style:"font-size:10px;font-weight:700;color:"+color+";flex:1"},label));
+      cnts.forEach(function(cnt,idx){
+        row.appendChild(h("span",{style:"font-size:12px;color:"+(idx===0?(cnt>0?"#e2e8f0":"#334155"):"#475569")+";font-family:monospace;width:40px;text-align:right;font-weight:"+(idx===0?"700":"400")},cnt>0?cnt+"권":"–"));
+      });
+      row.appendChild(h("span",{style:"font-size:9px;color:"+diff.color+";font-family:monospace;width:30px;text-align:right;font-weight:700"},diff.txt));
+      bookSec.appendChild(row);
+      // 올해 책 제목
+      if(yearBooks[0].length>0){
+        bookSec.appendChild(h("div",{style:"font-size:9px;color:#334155;padding:2px 0 4px 4px;line-height:1.5"},yearBooks[0].map(function(b){return b.title;}).join(" · ")));
       }
     });
-    row.addEventListener("mouseenter",function(){row.style.background="#ffffff08"});
-    row.addEventListener("mouseleave",function(){row.style.background="transparent"});
+    wrap.appendChild(bookSec);
+  })();
+
+  // ── 습관 연간 달성률 (3년) ──
+  (function(){
+    var habitsY=state.goalData.habits||[];
+    if(habitsY.length===0)return;
+    var habSec=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:16px;border:1px solid #1e293b"});
+    var habHdr=h("div",{style:"display:flex;align-items:center;margin-bottom:8px"});
+    habHdr.appendChild(h("span",{style:"font-size:10px;color:#64748b;font-weight:700;letter-spacing:.5px;flex:1"},"🔁 습관 연간 달성률 (3년)"));
+    years3.forEach(function(y2,idx){
+      habHdr.appendChild(h("span",{style:"font-size:8px;color:"+(idx===0?"#6366f1":"#475569")+";font-family:monospace;width:40px;text-align:right;font-weight:"+(idx===0?"700":"400")},y2+"년"));
+    });
+    habHdr.appendChild(h("span",{style:"font-size:8px;color:#475569;font-family:monospace;width:30px;text-align:right"},"증감"));
+    habSec.appendChild(habHdr);
+    habitsY.forEach(function(hb){
+      var pcts=years3.map(function(y2){
+        var done=0,wd=0;
+        for(var m=1;m<=12;m++){var days=daysInMonth(y2,m);for(var d=1;d<=days;d++){if(isWeekday(y2,m,d)){wd++;if(isHabitDone(hb,y2,m,d))done++;}}}
+        return wd>0?Math.round(done/wd*100):0;
+      });
+      var diff=fmtDiff(pcts[0],pcts[1]);
+      var cat=catByCode(hb.cat);
+      var row=h("div",{style:"display:flex;align-items:center;gap:4px;padding:4px 0;border-bottom:1px solid #0f172a"});
+      row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:"+(cat?cat.color:"#94a3b8")+";font-family:monospace;width:22px;flex-shrink:0"},hb.cat));
+      row.appendChild(h("span",{style:"flex:1;font-size:11px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},hb.name));
+      var track=h("div",{style:"width:36px;height:4px;background:#1e293b;border-radius:2px;overflow:hidden;flex-shrink:0"});
+      track.appendChild(h("div",{style:"height:100%;width:"+pcts[0]+"%;background:"+(pcts[0]>=80?"#10b981":pcts[0]>=50?"#f59e0b":"#ef4444")}));
+      row.appendChild(track);
+      pcts.forEach(function(p,idx){
+        row.appendChild(h("span",{style:"font-size:10px;color:"+(idx===0?(p>=80?"#10b981":p>=50?"#f59e0b":"#ef4444"):"#475569")+";font-family:monospace;width:40px;text-align:right;font-weight:"+(idx===0?"700":"400")},p>0?p+"%":"–"));
+      });
+      row.appendChild(h("span",{style:"font-size:9px;color:"+diff.color+";font-family:monospace;width:30px;text-align:right;font-weight:700"},diff.txt));
+      habSec.appendChild(row);
+    });
+    wrap.appendChild(habSec);
+  })();
+
+  // ── 목표별 투입시간 트리 ──
+  const goalSec=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:16px;border:1px solid #1e293b"});
+  goalSec.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},"🎯 목표별 투입시간"));
+  function renderGoalTree(goalId,scope,name,cat,depth,visited){
+    if(!visited)visited={};if(visited[goalId])return null;visited[goalId]=true;
+    if(depth===0&&scope!=="habits"){var _gr=findGoalById(goalId);if(_gr&&_gr.goal){if(_gr.goal.done===true)return null;if(scope!=="readingGoals"&&(_gr.goal.progress||0)>=100)return null;}}
+    var totalHrs=calcGoalTotalHours(goalId);var directHrs=calcGoalDirectHours(goalId);
+    if(totalHrs===0)return null;
+    var catObj=catByCode(cat);var indent=depth*14;
+    var node=h("div",{style:"border-bottom:1px solid #0f172a"});
+    var row=h("div",{style:"display:flex;align-items:center;gap:6px;padding:5px 8px;font-size:12px;padding-left:"+(8+indent)+"px;cursor:pointer;transition:background .15s",onClick:function(){var found=findGoalById(goalId);if(found)navigateToGoal(found.scope,found.goal);}});
+    row.addEventListener("mouseenter",function(){row.style.background="#ffffff08";});
+    row.addEventListener("mouseleave",function(){row.style.background="transparent";});
     if(depth>0)row.appendChild(h("span",{style:"font-size:9px;color:#334155;flex-shrink:0"},"└"));
     row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:"+(catObj?catObj.color:"#94a3b8")+";font-family:monospace;flex-shrink:0"},cat));
     row.appendChild(h("span",{style:"flex:1;color:"+(depth===0?"#e2e8f0":"#94a3b8")+";overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:"+(depth===0?"600":"400")},name));
-    const maxH=200;
-    const barW=Math.max(2,Math.min(Math.round(totalHrs/maxH*60),60));
-    const track=h("div",{style:"width:60px;height:6px;background:#1e293b;border-radius:3px;overflow:hidden;flex-shrink:0"});
+    var maxH=200;var barW=Math.max(2,Math.min(Math.round(totalHrs/maxH*60),60));
+    var track=h("div",{style:"width:60px;height:6px;background:#1e293b;border-radius:3px;overflow:hidden;flex-shrink:0"});
     track.appendChild(h("div",{style:"height:100%;width:"+barW+"px;background:#f59e0b;border-radius:3px"}));
     row.appendChild(track);
-    if(totalHrs===directHrs){
-      row.appendChild(h("span",{style:"font-size:11px;color:#f59e0b;font-family:monospace;font-weight:700;width:52px;text-align:right;flex-shrink:0"},fmtHours(totalHrs)));
-    }else{
-      const txt=h("div",{style:"display:flex;flex-direction:column;align-items:flex-end;width:52px;flex-shrink:0"});
-      txt.appendChild(h("span",{style:"font-size:11px;color:#f59e0b;font-family:monospace;font-weight:700"},fmtHours(totalHrs)));
-      txt.appendChild(h("span",{style:"font-size:9px;color:#78350f;font-family:monospace"},"직"+fmtHours(directHrs)));
-      row.appendChild(txt);
-    }
+    if(totalHrs===directHrs){row.appendChild(h("span",{style:"font-size:11px;color:#f59e0b;font-family:monospace;font-weight:700;width:52px;text-align:right;flex-shrink:0"},fmtHours(totalHrs)));}
+    else{var txt=h("div",{style:"display:flex;flex-direction:column;align-items:flex-end;width:52px;flex-shrink:0"});txt.appendChild(h("span",{style:"font-size:11px;color:#f59e0b;font-family:monospace;font-weight:700"},fmtHours(totalHrs)));txt.appendChild(h("span",{style:"font-size:9px;color:#78350f;font-family:monospace"},"직"+fmtHours(directHrs)));row.appendChild(txt);}
     node.appendChild(row);
-    const children=getChildGoals(goalId);
-    children.forEach(function(ch){
-      const child=renderGoalTree(ch.goal.id,ch.scope,ch.goal.name,ch.goal.cat,depth+1,visited);
-      if(child)node.appendChild(child);
-    });
+    getChildGoals(goalId).forEach(function(ch){var child=renderGoalTree(ch.goal.id,ch.scope,ch.goal.name,ch.goal.cat,depth+1,visited);if(child)node.appendChild(child);});
     return node;
   }
-  let hasAny=false;
-  const allRoots=[];
+  var hasAny=false;var allRoots=[];
   ["longterm","monthly","weekly","habits","readingGoals"].forEach(function(sc){
-    let list=sc==="habits"?state.goalData.habits||[]:sc==="readingGoals"?state.goalData.readingGoals||[]:state.goalData[sc]||[];
-    list.forEach(function(g){
-      if(Object.keys(getParentIds(g)).length>0)return;
-      allRoots.push({g:g,sc:sc});
-    });
+    var list=sc==="habits"?state.goalData.habits||[]:sc==="readingGoals"?state.goalData.readingGoals||[]:state.goalData[sc]||[];
+    list.forEach(function(g){if(Object.keys(getParentIds(g)).length>0)return;allRoots.push({g:g,sc:sc});});
   });
-  allRoots.sort(function(a,b){return dreamSortKey(a.g.cat)-dreamSortKey(b.g.cat)});
-  allRoots.forEach(function(item){
-    const node=renderGoalTree(item.g.id,item.sc,item.g.name,item.g.cat,0,null);
-    if(node){hasAny=true;goalSec.appendChild(node);}
-  });
+  allRoots.sort(function(a,b){return dreamSortKey(a.g.cat)-dreamSortKey(b.g.cat);});
+  allRoots.forEach(function(item){var node=renderGoalTree(item.g.id,item.sc,item.g.name,item.g.cat,0,null);if(node){hasAny=true;goalSec.appendChild(node);}});
   if(!hasAny)goalSec.appendChild(h("div",{style:"text-align:center;padding:20px;color:#475569;font-size:12px"},"목표에 시간을 연결하면 여기에 트리가 표시됩니다"));
-  bookSec.appendChild(goalSec);
-  wrap.appendChild(bookSec);
+  wrap.appendChild(goalSec);
 
-  // ── 연간 성찰 (감사→잘한것→놓친것→내년→메모 통합) ──
-  wrap.appendChild(renderReflectionBox(
-    "yearly-review-"+state.year,
-    {title:"✍️ 연간 성찰",next:"🎯 내년 한 가지",nextPh:"내년에 반드시 할 것은?"}
-  ));
-
-  setTimeout(()=>renderCharts(ys),0);
+  // ── 연간 성찰 ──
+  wrap.appendChild(renderReflectionBox("yearly-review-"+cy,{title:"✍️ 연간 성찰",next:"🎯 내년 한 가지",nextPh:"내년에 반드시 할 것은?"}));
+  setTimeout(function(){renderCharts(ys);},0);
   return wrap;
 }
+
 
 function renderDashboard(){return renderReview();}  // 하위 호환용
 
@@ -4942,58 +5035,62 @@ function renderWeeklyReview(){
   totalRow2.appendChild(h("span",{style:"font-size:16px;color:#e2e8f0;font-family:'JetBrains Mono',monospace;font-weight:900"},weekTotal+"h"));
   summaryBox.appendChild(totalRow2);
 
-  // 주간 목표 달성률
-  const wkGoals=(state.goalData.weekly||[]).filter(function(g){return g.year===y&&g.month===m&&g.weekIdx===wIdx});
-  if(wkGoals.length>0){
-    summaryBox.appendChild(h("div",{style:"border-top:1px solid #1e293b;margin-top:8px;padding-top:8px;font-size:10px;color:#64748b;font-weight:700;margin-bottom:6px"},"📌 주간 목표"));
-    wkGoals.forEach(function(g){
-      const done=!!g.done;
-      const row=h("div",{style:"display:flex;align-items:center;gap:6px;padding:3px 0"});
-      const cat=catByCode(g.cat);
-      // 체크 아이콘
-      const chkDiv=h("div",{style:"width:12px;height:12px;border-radius:2px;border:1.5px solid "+(done?"#10b981":"#3b82f6")+";background:"+(done?"#10b981":"transparent")+";display:flex;align-items:center;justify-content:center;flex-shrink:0"});
-      if(done)chkDiv.appendChild(h("span",{style:"font-size:8px;color:#fff;line-height:1"},"✓"));
-      row.appendChild(chkDiv);
-      row.appendChild(h("span",{className:"goal-cat-tag",style:"background:"+(cat?cat.color:"#475569")+";font-size:8px;padding:1px 4px"},g.cat));
-      row.appendChild(h("span",{style:"flex:1;font-size:11px;color:"+(done?"#10b981":"#cbd5e1")+";overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"+(done?"text-decoration:line-through":"")},g.name));
-      if(done)row.appendChild(h("span",{style:"font-size:9px;color:#10b981;flex-shrink:0"},"완료"));
-      summaryBox.appendChild(row);
-    });
-  }
-
-  // 습관 달성
-  const activeHabits=(state.goalData.habits||[]);
-  if(activeHabits.length>0){
-    summaryBox.appendChild(h("div",{style:"border-top:1px solid #1e293b;margin-top:8px;padding-top:8px;font-size:10px;color:#64748b;font-weight:700;margin-bottom:6px"},"🔁 습관 달성"));
-    activeHabits.forEach(function(hb){
-      var checked=0,total=0;
-      const dotRow=h("div",{style:"display:flex;align-items:center;gap:5px;margin-bottom:4px"});
-      const cat=catByCode(hb.cat);
-      dotRow.appendChild(h("span",{className:"goal-cat-tag",style:"background:"+(cat?cat.color:"#475569")+";font-size:8px;padding:1px 4px;flex-shrink:0"},hb.cat));
-      dotRow.appendChild(h("span",{style:"font-size:11px;color:#94a3b8;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},hb.name));
-      // Mon-Fri dots
-      const dotsWrap=h("div",{style:"display:flex;gap:3px;flex-shrink:0"});
-      for(var i=0;i<5;i++){
-        const dd=new Date(monDate);dd.setDate(monDate.getDate()+i);
-        const yy=dd.getFullYear(),mm2=dd.getMonth()+1,day=dd.getDate();
-        const isWd=isWeekday(yy,mm2,day);
-        if(isWd){
-          total++;
-          const done=isHabitDone(hb,yy,mm2,day);
-          const auto=isHabitAutoChecked(hb,yy,mm2,day);
-          if(done)checked++;
-          const dot=h("div",{style:"width:12px;height:12px;border-radius:50%;background:"+(done?(auto?"#f59e0b":"#0d9488"):"#1e293b")+";border:1px solid "+(done?(auto?"#f59e0b":"#0d9488"):"#334155")+";flex-shrink:0;display:flex;align-items:center;justify-content:center"});
-          if(done)dot.appendChild(h("span",{style:"font-size:7px;color:#fff;line-height:1"},"✓"));
-          dotsWrap.appendChild(dot);
-        }
-      }
-      dotRow.appendChild(dotsWrap);
-      const pct=total>0?Math.round(checked/total*100):0;
-      dotRow.appendChild(h("span",{style:"font-size:9px;color:"+(pct===100?"#0d9488":pct>=60?"#f59e0b":"#64748b")+";font-family:monospace;width:26px;text-align:right;font-weight:700"},pct+"%"));
-      summaryBox.appendChild(dotRow);
-    });
-  }
   wrap.appendChild(summaryBox);
+
+  // ── 3주치 비교 (이번주/지난주/전전주), 증감은 전주 대비 ──
+  (function(){
+    function getWeekCats(weekOffset){
+      var mon=new Date(monDate);mon.setDate(monDate.getDate()+weekOffset*7);
+      var cats={};CATEGORIES.forEach(function(c){cats[c.code]=0;});
+      for(var di=0;di<7;di++){
+        var dd=new Date(mon);dd.setDate(mon.getDate()+di);
+        var dy=dd.getFullYear(),dm=dd.getMonth()+1,dd2=dd.getDate();
+        var ent=getEntriesForYear(dy);
+        var dk=dm+"-"+dd2;var slots=ent[dk]||{};
+        Object.keys(slots).forEach(function(t){if(t!=="_diary"&&slots[t]&&slots[t].actual)cats[slots[t].actual]=(cats[slots[t].actual]||0)+0.5;});
+      }
+      var total=CATEGORIES.reduce(function(s,c){return s+(cats[c.code]||0);},0);
+      return{cats:cats,total:total};
+    }
+    var weeks3=[getWeekCats(0),getWeekCats(-1),getWeekCats(-2)];
+    var labels3=["이번주","지난주","전전주"];
+    if(weeks3[0].total===0&&weeks3[1].total===0&&weeks3[2].total===0)return;
+
+    const cmpBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:14px;border:1px solid #1e293b"});
+    const hdr=h("div",{style:"display:flex;align-items:center;margin-bottom:6px"});
+    hdr.appendChild(h("span",{style:"font-size:10px;color:#64748b;font-weight:700;letter-spacing:.5px;flex:1"},"📊 3주 실적 비교"));
+    labels3.forEach(function(lb,idx){
+      hdr.appendChild(h("span",{style:"font-size:8px;color:"+(idx===0?"#3b82f6":"#475569")+";font-family:monospace;width:32px;text-align:right;font-weight:"+(idx===0?"700":"400")},lb));
+    });
+    hdr.appendChild(h("span",{style:"font-size:8px;color:#475569;font-family:monospace;width:30px;text-align:right"},"증감"));
+    cmpBox.appendChild(hdr);
+
+    CATEGORIES.forEach(function(c){
+      var vals=weeks3.map(function(w){return w.cats[c.code]||0;});
+      if(vals[0]===0&&vals[1]===0&&vals[2]===0)return;
+      var diff=fmtDiff(vals[0],vals[1]);
+      var row=h("div",{style:"display:flex;align-items:center;gap:2px;padding:2px 0;border-bottom:1px solid #0f172a"});
+      row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:"+c.color+";font-family:monospace;width:22px;flex-shrink:0"},c.code));
+      var track=h("div",{style:"flex:1;height:4px;background:#1e293b;border-radius:2px;overflow:hidden;margin:0 3px"});
+      var mx=Math.max.apply(null,vals.concat([0.5]));
+      track.appendChild(h("div",{style:"height:100%;width:"+Math.min(vals[0]/mx*100,100)+"%;background:"+c.color+";border-radius:2px"}));
+      row.appendChild(track);
+      vals.forEach(function(v,idx){
+        row.appendChild(h("span",{style:"font-size:10px;color:"+(v>0?(idx===0?"#e2e8f0":"#94a3b8"):"#334155")+";font-family:monospace;width:32px;text-align:right;font-weight:"+(v>0&&idx===0?"700":"400")},v>0?v+"h":"–"));
+      });
+      row.appendChild(h("span",{style:"font-size:9px;color:"+diff.color+";font-family:monospace;width:30px;text-align:right;font-weight:700"},diff.txt));
+      cmpBox.appendChild(row);
+    });
+    var totDiff=fmtDiff(weeks3[0].total,weeks3[1].total);
+    var tRow=h("div",{style:"display:flex;align-items:center;gap:2px;padding:4px 0;border-top:1px solid #334155;margin-top:2px"});
+    tRow.appendChild(h("span",{style:"font-size:10px;color:#64748b;font-weight:700;flex:1"},"합계"));
+    weeks3.forEach(function(w,idx){
+      tRow.appendChild(h("span",{style:"font-size:"+(idx===0?"12":"10")+"px;color:"+(idx===0?"#e2e8f0":"#94a3b8")+";font-family:monospace;width:32px;text-align:right;font-weight:"+(idx===0?"900":"400")},w.total>0?w.total+"h":"–"));
+    });
+    tRow.appendChild(h("span",{style:"font-size:10px;color:"+totDiff.color+";font-family:monospace;width:30px;text-align:right;font-weight:700"},totDiff.txt));
+    cmpBox.appendChild(tRow);
+    wrap.appendChild(cmpBox);
+  })();
 
   // ── 습관 주간 체크 (습관탭에서 이동) ──
   const habits=state.goalData.habits||[];
@@ -5712,7 +5809,53 @@ function renderGoals(){
   }
   wrap.appendChild(calBox);
 
-  // ── DREAM 카테고리별 목표 트리 ────────────────────────────
+  // ── 금일 목표 ─────────────────────────────────────────────
+  (function(){
+    const tdk=state.month+"-"+state.day;
+    const tWIdx=weekIdxOfDay(state.year,state.month,state.day);
+    const tDaily=(state.goalData.daily[tdk]||[]);
+    const tWeekly=(state.goalData.weekly||[]).filter(function(g){
+      return g.year===state.year&&g.month===state.month&&g.weekIdx===tWIdx;
+    });
+    if(tWeekly.length===0&&tDaily.length===0)return;
+
+    const box=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:10px;margin-bottom:12px;border:1px solid #1e293b"});
+    const hdr=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"});
+    hdr.appendChild(h("span",{style:"font-size:10px;color:#64748b;font-weight:700;letter-spacing:.5px"},
+      "📅 "+state.month+"/"+state.day+" 금일 목표"));
+    const summary=[];
+    if(tWeekly.length)summary.push(tWeekly.filter(g=>g.done).length+"/"+tWeekly.length+" 주간");
+    if(tDaily.length)summary.push(tDaily.filter(g=>g.done).length+"/"+tDaily.length+" 일간");
+    hdr.appendChild(h("span",{style:"font-size:9px;color:#475569;font-family:'JetBrains Mono',monospace"},summary.join(" · ")));
+    box.appendChild(hdr);
+
+    function makeRow(icon,iconColor,accentColor,label,catCode,done,onToggle){
+      const cat=catByCode(catCode);
+      const row=h("div",{style:"display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #0f172a"});
+      const chk=h("input",{type:"checkbox",style:"width:14px;height:14px;accent-color:"+accentColor+";flex-shrink:0;cursor:pointer"});
+      chk.checked=done;
+      chk.addEventListener("change",function(){onToggle();});
+      row.appendChild(chk);
+      row.appendChild(h("span",{style:"font-size:9px;color:"+iconColor+";flex-shrink:0"},icon));
+      row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:#fff;background:"+(cat?cat.color:"#475569")+";border-radius:3px;padding:1px 5px;flex-shrink:0;font-family:'JetBrains Mono',monospace"},catCode));
+      row.appendChild(h("span",{style:"flex:1;font-size:12px;color:"+(done?"#475569":"#e2e8f0")+(done?";text-decoration:line-through":"")+";overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},label));
+      return row;
+    }
+
+    tWeekly.forEach(function(g){
+      const row=makeRow("🗓","#3b82f6","#3b82f6",g.name,g.cat,!!g.done,function(){
+        g.done=!g.done;saveGoalData();_isAutoRender=true;render();
+      });
+      box.appendChild(row);
+    });
+    tDaily.forEach(function(g){
+      const row=makeRow("📌","#6366f1","#6366f1",g.name,g.cat,!!g.done,function(){
+        g.done=!g.done;saveGoalData();_isAutoRender=true;render();
+      });
+      box.appendChild(row);
+    });
+    wrap.appendChild(box);
+  })();
   // 빠른 추가 바
   const quickBar=h("div",{style:"display:flex;align-items:center;gap:6px;margin-bottom:10px;padding:8px 10px;background:#111827;border-radius:10px;border:1px solid #1e293b"});
   quickBar.appendChild(h("span",{style:"font-size:10px;color:#475569;flex-shrink:0"},"추가:"));
@@ -5833,15 +5976,15 @@ function renderGoals(){
       daily:    {color:"#6366f1",bg:"transparent",border:"#1e293b",label:"📌 일간",fs:"11px",fw:"400",lh:"2px"},
     };
 
-    function renderGoalPill(g,scope,depth,pillDk){
+    function renderGoalPill(g,scope,depth,pillDk,indentPx){
       const vis=SCOPE_VIS[scope]||{color:"#94a3b8",bg:"transparent",border:"#1e293b",label:scope,fs:"12px",fw:"400",lh:"2px"};
       const hrs=calcGoalTotalHours(g.id);
       const pct=scope==="readingGoals"?calcReadingGoalProgress(g):(g.progress||0);
       const done=(scope==="readingGoals"?(pct>=100):(scope==="daily"||scope==="weekly")?g.done:(pct>=100));
       const isExpanded=state._expandedGoal&&state._expandedGoal.id===g.id&&state._expandedGoal.scope===scope;
 
-      // 들여쓰기 계산 (depth에 관계없이 scope 기반)
-      const INDENT={longterm:0,readingGoals:0,habits:0,monthly:16,weekly:32,daily:32}[scope]||depth*14;
+      // 들여쓰기: 명시적 indentPx 우선, 없으면 depth 기반
+      const INDENT=indentPx!==undefined?indentPx:depth*14;
 
       const wrap=h("div",{style:"margin-left:"+INDENT+"px;margin-bottom:"+(scope==="longterm"||scope==="readingGoals"||scope==="habits"?"6px":"3px")});
 
@@ -5862,14 +6005,14 @@ function renderGoals(){
 
       const pill=h("div",{style:"display:flex;align-items:center;gap:6px;padding:"+(isRoot?"7px 10px":"5px 10px")});
 
-      // 연결선 (월간/주간/일간)
-      if(!isRoot&&depth>0){
+      // 연결선 (들여쓰기 있는 하위목표)
+      if(INDENT>0){
         pill.appendChild(h("span",{style:"font-size:9px;color:#334155;flex-shrink:0;font-family:monospace"},"└"));
       }
 
       // 스코프 레이블 뱃지
-      const badgeStyle="font-size:9px;font-weight:700;color:"+vis.color+";background:"+vis.color+"22;"+
-        "border:1px solid "+vis.color+"40;border-radius:4px;padding:1px 5px;flex-shrink:0;white-space:nowrap;font-family:'JetBrains Mono',monospace";
+      const badgeStyle="font-size:9px;font-weight:700;color:#fff;background:"+vis.color+";"+
+        "border-radius:4px;padding:1px 5px;flex-shrink:0;white-space:nowrap;font-family:'JetBrains Mono',monospace";
       pill.appendChild(h("span",{style:badgeStyle},vis.label));
 
       // 목표명
@@ -5981,7 +6124,7 @@ function renderGoals(){
 
     ltGoals.concat(rgGoals2).forEach(function(lt,idx){
       const ltScope=idx<ltGoals.length?"longterm":"readingGoals";
-      catSec.appendChild(renderGoalPill(lt,ltScope,0));
+      catSec.appendChild(renderGoalPill(lt,ltScope,0,undefined,0));
 
       // 하위 월간
       const childM=mGoals2.filter(g=>{
@@ -5991,7 +6134,7 @@ function renderGoals(){
       childM.forEach(function(mg){
         if(mg.year!==calY)return;
         renderedM.add(mg.id);
-        catSec.appendChild(renderGoalPill(mg,"monthly",1));
+        catSec.appendChild(renderGoalPill(mg,"monthly",1,undefined,14));
         // 하위 주간
         const childW=wGoals2.filter(g=>{
           const pids=getParentIds(g);
@@ -5999,39 +6142,39 @@ function renderGoals(){
         });
         childW.forEach(function(wg){
           renderedW.add(wg.id);
-          catSec.appendChild(renderGoalPill(wg,"weekly",2));
+          catSec.appendChild(renderGoalPill(wg,"weekly",2,undefined,28));
         });
       });
     });
 
     // 습관
     habits2.forEach(function(hb){
-      catSec.appendChild(renderGoalPill(hb,"habits",0,null));
+      catSec.appendChild(renderGoalPill(hb,"habits",0,null,0));
     });
 
-    // 부모 없는 월간 (orphan)
+    // 부모 없는 월간 (orphan) — 장기와 같은 위치
     mGoals2.forEach(function(mg){
       if(mg.year!==calY||renderedM.has(mg.id))return;
       const pids=getParentIds(mg);
       if(Object.keys(pids).length>0)return;
-      catSec.appendChild(renderGoalPill(mg,"monthly",0));
+      catSec.appendChild(renderGoalPill(mg,"monthly",0,undefined,0));
       // 하위 주간
       const childW=wGoals2.filter(g=>{
         const pids2=getParentIds(g);
         return Object.values(pids2).indexOf(mg.id)>=0;
       });
-      childW.forEach(function(wg){renderedW.add(wg.id);catSec.appendChild(renderGoalPill(wg,"weekly",1));});
+      childW.forEach(function(wg){renderedW.add(wg.id);catSec.appendChild(renderGoalPill(wg,"weekly",1,undefined,14));});
     });
 
-    // 부모 없는 주간 (orphan)
+    // 부모 없는 주간 (orphan) — 장기와 같은 위치
     wGoals2.forEach(function(wg){
       if(renderedW.has(wg.id))return;
       const pids=getParentIds(wg);
       if(Object.keys(pids).length>0)return;
-      catSec.appendChild(renderGoalPill(wg,"weekly",0));
+      catSec.appendChild(renderGoalPill(wg,"weekly",0,undefined,0));
     });
 
-    // 이번 달 일간목표
+    // 이번 달 일간목표 — orphan은 indent 0
     if(dGoals2.length>0){
       // 날짜별 그룹 + 각 날짜 헤더
       const byDay={};
@@ -6041,7 +6184,9 @@ function renderGoals(){
       });
       Object.keys(byDay).sort((a,b)=>parseInt(a)-parseInt(b)).forEach(function(d3){
         byDay[d3].forEach(function(item){
-          catSec.appendChild(renderGoalPill(item.g,"daily",1,item.dk));
+          const pids=getParentIds(item.g);
+          const hasParent=Object.keys(pids).length>0;
+          catSec.appendChild(renderGoalPill(item.g,"daily",hasParent?1:0,item.dk,hasParent?14:0));
         });
       });
     }

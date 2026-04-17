@@ -5422,6 +5422,65 @@ function renderGoalDetailPanel(g,scope,catDef,dk){
   memoInp.addEventListener("change",function(){saveGoalData();});
   panel.appendChild(memoInp);
 
+  // ── Scope 변경 (일간/주간/월간/장기 상호 변환) ──
+  if(scope==="daily"||scope==="weekly"||scope==="monthly"||scope==="longterm"){
+    const scRow=h("div",{style:"display:flex;gap:4px;align-items:center;margin-bottom:8px;padding:4px 8px;background:#0c0f1a;border-radius:6px;border:1px dashed #33415580"});
+    scRow.appendChild(h("span",{style:"font-size:10px;color:#64748b;flex-shrink:0"},"🔄 변경:"));
+    [["daily","📌 일간","#6366f1"],["weekly","🗓 주간","#3b82f6"],["monthly","📅 월간","#0d9488"],["longterm","🎯 장기","#f59e0b"]].forEach(function(sv){
+      const isCur=sv[0]===scope;
+      scRow.appendChild(h("button",{
+        style:"padding:3px 7px;border-radius:4px;border:1px solid "+(isCur?sv[2]:"#334155")+";background:"+(isCur?sv[2]+"22":"transparent")+";color:"+(isCur?sv[2]:"#64748b")+";font-size:10px;cursor:"+(isCur?"default":"pointer"),
+        disabled:isCur,
+        onClick:isCur?null:function(){
+          if(!confirm("\""+g.name+"\" 목표를 "+sv[1]+"(으)로 변경하시겠습니까?"))return;
+          const today=new Date();
+          const ty=today.getFullYear(),tm=today.getMonth()+1,td=today.getDate();
+          // 1) 원본에서 제거
+          if(scope==="daily"&&dk){
+            state.goalData.daily[dk]=(state.goalData.daily[dk]||[]).filter(x=>x.id!==g.id);
+            if(state.goalData.daily[dk].length===0)delete state.goalData.daily[dk];
+          }else if(state.goalData[scope]){
+            state.goalData[scope]=state.goalData[scope].filter(x=>x.id!==g.id);
+          }
+          // 2) 대상 scope로 복사 (id, cat, name, memo, parentIds, bookTarget 보존)
+          const base={id:g.id,cat:g.cat,name:g.name,memo:g.memo||""};
+          if(g.parentIds)base.parentIds=g.parentIds;
+          if(g.bookTarget&&sv[0]==="longterm")base.bookTarget=g.bookTarget;
+          if(sv[0]==="daily"){
+            base.done=false;
+            const nk=tm+"-"+td;
+            if(!state.goalData.daily[nk])state.goalData.daily[nk]=[];
+            state.goalData.daily[nk].push(base);
+            state._expandedGoal={id:g.id,scope:"daily",dk:nk};
+          }else if(sv[0]==="weekly"){
+            base.progress=0;base.subtasks=[];
+            base.year=ty;base.month=tm;
+            base.weekIdx=weekIdxOfDay(ty,tm,td);
+            base.startDay=td;base.endDay=Math.min(td+6,daysInMonth(ty,tm));
+            base.period=ty+"-"+String(tm).padStart(2,"0")+"-W"+base.weekIdx;
+            if(!state.goalData.weekly)state.goalData.weekly=[];
+            state.goalData.weekly.push(base);
+            state._expandedGoal={id:g.id,scope:"weekly",dk:null};
+          }else if(sv[0]==="monthly"){
+            base.progress=g.progress||0;base.subtasks=g.subtasks||[];
+            base.year=ty;base.month=tm;base.startMonth=tm;base.endMonth=tm;
+            if(!state.goalData.monthly)state.goalData.monthly=[];
+            state.goalData.monthly.push(base);
+            state._expandedGoal={id:g.id,scope:"monthly",dk:null};
+          }else if(sv[0]==="longterm"){
+            base.progress=g.progress||0;base.subtasks=g.subtasks||[];
+            base.startYear=g.startYear||ty;base.endYear=g.endYear||(ty+1);
+            if(!state.goalData.longterm)state.goalData.longterm=[];
+            state.goalData.longterm.push(base);
+            state._expandedGoal={id:g.id,scope:"longterm",dk:null};
+          }
+          saveGoalData();cloudSaveGoals();_isAutoRender=true;render();
+        }
+      },sv[1]));
+    });
+    panel.appendChild(scRow);
+  }
+
   // ── 기간 편집 ──
   if(scope==="weekly"){
     const pRow=h("div",{style:"display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap"});
@@ -7143,7 +7202,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-17-v26";
+  var SEED_VER="2026-04-17-v27";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

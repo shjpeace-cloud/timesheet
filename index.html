@@ -130,7 +130,7 @@ html,body{background:#0c0f1a;font-family:'Noto Sans KR',sans-serif;color:#e2e8f0
 .picker-btn{padding:12px 8px;border-radius:10px;border:1px solid;cursor:pointer;text-align:center;transition:all .15s;display:flex;flex-direction:column;align-items:center;gap:3px;background:none}
 .picker-btn:active{transform:scale(.95)}
 .picker-code{font-weight:800;font-size:14px;font-family:'JetBrains Mono',monospace}
-.picker-label{font-size:10px;color:#94a3b8}
+.picker-label{font-size:10px;color:#e2e8f0;font-weight:600}
 .chart-container{background:#111827;border-radius:14px;padding:16px;border:1px solid #1e293b;margin-bottom:16px}
 .chart-title{font-size:15px;font-weight:700;margin-bottom:14px}
 .chart-wrap{position:relative;width:100%;height:220px}
@@ -156,7 +156,7 @@ html,body{background:#0c0f1a;font-family:'Noto Sans KR',sans-serif;color:#e2e8f0
 .book-type-tag{padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;font-family:'JetBrains Mono',monospace;flex-shrink:0}
 .book-type-tag.en{background:#3b82f630;color:#60a5fa}
 .book-type-tag.kr{background:#10b98130;color:#34d399}
-.book-item-title{flex:1;font-size:13px;color:#cbd5e1}
+.book-item-title{flex:1;font-size:13px;color:#e2e8f0;font-weight:500}
 .book-del-btn{background:none;border:none;color:#64748b;font-size:16px;cursor:pointer;padding:2px 6px}
 .book-del-btn:hover{color:#f87171}
 .book-summary-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
@@ -227,7 +227,7 @@ const CATEGORIES=[
 {code:"D3",label:"봉사",group:"D",gn:"Devotion",color:"#93c5fd"},
 {code:"R1",label:"연구/연구관련",group:"R",gn:"Research & Teaching",color:"#f59e0b"},
 {code:"R2",label:"강의/상담/강연/학습",group:"R",gn:"Research & Teaching",color:"#fbbf24"},
-{code:"R3",label:"외국어",group:"R",gn:"Research & Teaching",color:"#fcd34d"},
+{code:"R3",label:"외국어/프로그래밍 언어",group:"R",gn:"Research & Teaching",color:"#fcd34d"},
 {code:"E1",label:"운동",group:"E",gn:"Enrichment",color:"#10b981"},
 {code:"E2",label:"독서(전공외)",group:"E",gn:"Enrichment",color:"#34d399"},
 {code:"E3",label:"음악/취미",group:"E",gn:"Enrichment",color:"#6ee7b7"},
@@ -2351,7 +2351,7 @@ function renderMonthlyReview(){
       row.appendChild(h("span",{style:"font-size:10px;color:#475569;font-family:monospace;width:30px;text-align:right"},lc.length+"권"));
       row.appendChild(h("span",{style:"font-size:9px;color:"+diff.color+";font-family:monospace;font-weight:700"},diff.txt));
       bookSec.appendChild(row);
-      if(tc.length>0)bookSec.appendChild(h("div",{style:"font-size:9px;color:#334155;padding:2px 0 4px 4px;line-height:1.5"},tc.map(function(b){return b.title;}).join(" · ")));
+      if(tc.length>0)bookSec.appendChild(h("div",{style:"font-size:9px;color:#cbd5e1;padding:2px 0 4px 4px;line-height:1.5"},tc.map(function(b){return b.title;}).join(" · ")));
     });
     wrap.appendChild(bookSec);
   })();
@@ -2509,7 +2509,7 @@ function renderYearlyReview(){
       });
       row.appendChild(h("span",{style:"font-size:9px;color:"+diff.color+";font-family:monospace;width:30px;text-align:right;font-weight:700"},diff.txt));
       bookSec.appendChild(row);
-      if(yearBooks[0].length>0)bookSec.appendChild(h("div",{style:"font-size:9px;color:#334155;padding:2px 0 4px 4px;line-height:1.5"},yearBooks[0].map(function(b){return b.title;}).join(" · ")));
+      if(yearBooks[0].length>0)bookSec.appendChild(h("div",{style:"font-size:9px;color:#cbd5e1;padding:2px 0 4px 4px;line-height:1.5"},yearBooks[0].map(function(b){return b.title;}).join(" · ")));
     });
     wrap.appendChild(bookSec);
   })();
@@ -6729,7 +6729,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-17-v9";
+  var SEED_VER="2026-04-17-v10";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

@@ -4989,8 +4989,15 @@ function renderGoals(){
     const tdk=tgtM+"-"+tgtD;
     const tWIdx=weekIdxOfDay(tgtY,tgtM,tgtD);
     const tDaily=(state.goalData.daily[tdk]||[]);
+    // 주간: 기준일을 startDate~endDate 범위에 포함하는 것
+    const _tRefKey=tgtY*10000+tgtM*100+tgtD;
     const tWeekly=(state.goalData.weekly||[]).filter(function(g){
-      return g.year===tgtY&&g.month===tgtM&&g.weekIdx===tWIdx;
+      if(g.year!==tgtY)return false;
+      const sm=g.startMonth||g.month||1, sd=g.startDay||1;
+      const em=g.endMonth||g.month||sm, ed=g.endDay||Math.min(sd+6,daysInMonth(tgtY,em));
+      const startKey=tgtY*10000+sm*100+sd;
+      const endKey=tgtY*10000+em*100+ed;
+      return startKey<=_tRefKey && _tRefKey<=endKey;
     });
 
     // 이연: 선택일 이전 30일 내 미완료 일간목표
@@ -5006,12 +5013,12 @@ function renderGoals(){
         });
       }
     })();
-    // 이연: 선택일 주차 이전의 미완료 주간목표
+    // 이연: 선택일 endDate가 이미 지난 미완료 주간목표
     const weeklyCarryover=(state.goalData.weekly||[]).filter(function(g){
       if(g.year!==tgtY||(g.progress||0)>=100||g.done)return false;
-      if(g.month<tgtM)return true;
-      if(g.month>tgtM)return false;
-      return g.weekIdx<tWIdx;
+      const em=g.endMonth||g.month||1, ed=g.endDay||daysInMonth(tgtY,em);
+      const endKey=tgtY*10000+em*100+ed;
+      return endKey<_tRefKey;
     });
     // 이연: endDate 지난 specific 독서목표
     const tgtDateStr=new Date(tgtY,tgtM-1,tgtD).toISOString().slice(0,10);
@@ -5268,19 +5275,32 @@ function renderGoals(){
 
   dreamCats.forEach(function(catDef){
     const catCode=catDef.code;
-    // 이 카테고리의 목표 수집 — 현재 기간 포함하는 것만
+    // 이 카테고리의 목표 수집 — 기준일을 "포함"하는 것만
+    // 기준일 키 (YYYYMMDD): 연+월+일 비교용
+    const _refKey=calY*10000+calM*100+_refD;
     const ltGoals=(state.goalData.longterm||[]).filter(function(g){
       if(g.cat!==catCode)return false;
-      const sy=g.startYear||calY,ey=g.endYear||calY;
-      return sy<=calY&&ey>=calY;
+      const sy=g.startYear||calY, sm=g.startMonth||1;
+      const ey=g.endYear||calY,   em=g.endMonth||12;
+      const startKey=sy*10000+sm*100+1;
+      const endKey=ey*10000+em*100+daysInMonth(ey,em);
+      return startKey<=_refKey && _refKey<=endKey;
     });
     const mGoals2=(state.goalData.monthly||[]).filter(function(g){
       if(g.cat!==catCode||g.year!==calY)return false;
-      const sm=g.startMonth||g.month||1,em=g.endMonth||g.month||12;
-      return sm<=calM&&em>=calM;
+      const sm=g.startMonth||g.month||1, sd=g.startDay||1;
+      const em=g.endMonth||g.month||12, ed=g.endDay||daysInMonth(calY,em);
+      const startKey=calY*10000+sm*100+sd;
+      const endKey=calY*10000+em*100+ed;
+      return startKey<=_refKey && _refKey<=endKey;
     });
     const wGoals2=(state.goalData.weekly||[]).filter(function(g){
-      return g.cat===catCode&&g.year===calY&&g.month===calM&&g.weekIdx===_refWIdx;
+      if(g.cat!==catCode||g.year!==calY)return false;
+      const sm=g.startMonth||g.month||1, sd=g.startDay||1;
+      const em=g.endMonth||g.month||sm, ed=g.endDay||Math.min(sd+6,daysInMonth(calY,em));
+      const startKey=calY*10000+sm*100+sd;
+      const endKey=calY*10000+em*100+ed;
+      return startKey<=_refKey && _refKey<=endKey;
     });
     // 기존 독서목표 (레거시): 카테고리 일치 + 현재 연도 포함
     const rgGoals2=(state.goalData.readingGoals||[]).filter(function(g){
@@ -6217,7 +6237,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-18-v42";
+  var SEED_VER="2026-04-18-v43";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

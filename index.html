@@ -676,6 +676,10 @@ function migrateReadingGoals(){
         startYear:rg.startYear||today.getFullYear(),
         endYear:rg.endYear||(today.getFullYear()+5)
       };
+      // 권수 자동 계산 메타데이터 보존
+      if(rg.bookType||rg.targetCount){
+        lg.bookTarget={bookType:rg.bookType||"all",targetCount:rg.targetCount||0};
+      }
       if(!state.goalData.longterm)state.goalData.longterm=[];
       state.goalData.longterm.push(lg);
       rgIdToScope[rg.id]="longterm";
@@ -5429,6 +5433,27 @@ function renderGoalDetailPanel(g,scope,catDef,dk){
     eySel.addEventListener("change",function(e){g.endYear=parseInt(e.target.value);if((g.startYear||state.year)>g.endYear)g.startYear=g.endYear;saveGoalData();});
     pRow.appendChild(sySel);pRow.appendChild(h("span",{style:"font-size:10px;color:#475569;flex-shrink:0"},"~"));pRow.appendChild(eySel);
     panel.appendChild(pRow);
+    // E2 독서 장기목표: bookTarget 편집
+    if(g.cat==="E2"){
+      if(!g.bookTarget)g.bookTarget={bookType:"en",targetCount:100};
+      const btRow=h("div",{style:"display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px;padding:6px 8px;background:#0c0f1a;border-radius:6px;border:1px dashed #3b82f640"});
+      btRow.appendChild(h("span",{style:"font-size:10px;color:#64748b;flex-shrink:0"},"📚 권수:"));
+      [["en","🇺🇸 영어","#3b82f6"],["kr","🇰🇷 한글","#10b981"],["all","전체","#a78bfa"]].forEach(function(bt){
+        const active=g.bookTarget.bookType===bt[0];
+        btRow.appendChild(h("button",{style:"padding:3px 8px;border-radius:4px;border:1px solid "+(active?bt[2]:"#334155")+";background:"+(active?bt[2]+"22":"transparent")+";color:"+(active?bt[2]:"#64748b")+";font-size:11px;cursor:pointer",onClick:function(){g.bookTarget.bookType=bt[0];saveGoalData();cloudSaveGoals();_isAutoRender=true;render();}},bt[1]));
+      });
+      btRow.appendChild(h("span",{style:"font-size:10px;color:#64748b;margin-left:4px;flex-shrink:0"},"목표:"));
+      const tcInpE=h("input",{type:"number",min:"1",max:"9999",style:"width:60px;padding:3px 6px;border-radius:4px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px;text-align:center",value:String(g.bookTarget.targetCount||0)});
+      tcInpE.addEventListener("focus",function(){_isEditing=true;});
+      tcInpE.addEventListener("blur",function(){_isEditing=false;});
+      tcInpE.addEventListener("input",function(e){g.bookTarget.targetCount=parseInt(e.target.value)||0;});
+      tcInpE.addEventListener("change",function(){saveGoalData();cloudSaveGoals();});
+      btRow.appendChild(tcInpE);
+      btRow.appendChild(h("span",{style:"font-size:10px;color:#64748b;flex-shrink:0"},"권"));
+      // 권수 해제 버튼
+      btRow.appendChild(h("button",{style:"padding:2px 6px;border-radius:4px;border:1px solid #475569;background:transparent;color:#64748b;font-size:10px;cursor:pointer;margin-left:auto",title:"권수 계산 해제",onClick:function(){delete g.bookTarget;saveGoalData();cloudSaveGoals();_isAutoRender=true;render();}},"✕ 해제"));
+      panel.appendChild(btRow);
+    }
   }else if(scope==="daily"&&dk){
     const pRow=h("div",{style:"display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap"});
     pRow.appendChild(h("span",{style:"font-size:10px;color:#64748b;flex-shrink:0"},"📌 날짜:"));
@@ -5587,6 +5612,10 @@ function doAddInlineGoal(af){
     var lg={id:id,cat:cat,name:name,memo:memo,progress:0,subtasks:[],
       startYear:af.startYear||state.year,endYear:af.endYear||state.year+1};
     if(pids)lg.parentIds=pids;
+    // E2 독서 장기목표: 권수 자동 계산 메타데이터
+    if(cat==="E2"&&af.bookType){
+      lg.bookTarget={bookType:af.bookType,targetCount:parseInt(af.targetCount)||0};
+    }
     state.goalData.longterm.push(lg);
     state.goalData.longterm=sortByDream(state.goalData.longterm);
 
@@ -5681,6 +5710,26 @@ function renderInlineAddForm(af,catDef,indentPx){
       periodRow.appendChild(h("span",{style:"font-size:10px;color:#64748b"},HABIT_START_DATE+" ~ "+HABIT_END_DATE));
     }
     formBox.appendChild(periodRow);
+
+    // E2(독서) 장기목표 전용: 책 타입 + 권수 목표
+    if(af.scope==="longterm"&&af.cat==="E2"){
+      if(!af.bookType)af.bookType="en";
+      if(!af.targetCount)af.targetCount=100;
+      var btRow=h("div",{style:"display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px;padding:6px 8px;background:#0c0f1a;border-radius:6px;border:1px dashed #3b82f640"});
+      btRow.appendChild(h("span",{style:"font-size:10px;color:#64748b;flex-shrink:0"},"📚 권수:"));
+      var enBtnF=h("button",{style:"padding:3px 8px;border-radius:4px;border:1px solid "+(af.bookType==="en"?"#3b82f6":"#334155")+";background:"+(af.bookType==="en"?"#3b82f622":"transparent")+";color:"+(af.bookType==="en"?"#60a5fa":"#64748b")+";font-size:11px;cursor:pointer",onClick:function(){af.bookType="en";render();}},"🇺🇸 영어");
+      var krBtnF=h("button",{style:"padding:3px 8px;border-radius:4px;border:1px solid "+(af.bookType==="kr"?"#10b981":"#334155")+";background:"+(af.bookType==="kr"?"#10b98122":"transparent")+";color:"+(af.bookType==="kr"?"#34d399":"#64748b")+";font-size:11px;cursor:pointer",onClick:function(){af.bookType="kr";render();}},"🇰🇷 한글");
+      var allBtnF=h("button",{style:"padding:3px 8px;border-radius:4px;border:1px solid "+(af.bookType==="all"?"#a78bfa":"#334155")+";background:"+(af.bookType==="all"?"#a78bfa22":"transparent")+";color:"+(af.bookType==="all"?"#c4b5fd":"#64748b")+";font-size:11px;cursor:pointer",onClick:function(){af.bookType="all";render();}},"전체");
+      btRow.appendChild(enBtnF);btRow.appendChild(krBtnF);btRow.appendChild(allBtnF);
+      btRow.appendChild(h("span",{style:"font-size:10px;color:#64748b;margin-left:4px;flex-shrink:0"},"목표:"));
+      var tcInpF=h("input",{type:"number",min:"1",max:"9999",style:"width:60px;padding:3px 6px;border-radius:4px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px;text-align:center",value:String(af.targetCount)});
+      tcInpF.addEventListener("focus",function(){_isEditing=true;});
+      tcInpF.addEventListener("blur",function(){_isEditing=false;});
+      tcInpF.addEventListener("input",function(e){af.targetCount=parseInt(e.target.value)||100;});
+      btRow.appendChild(tcInpF);
+      btRow.appendChild(h("span",{style:"font-size:10px;color:#64748b;flex-shrink:0"},"권"));
+      formBox.appendChild(btRow);
+    }
 
     // 상위 목표 연결 (장기 제외, _parentGoalId 있으면 자동 연결이므로 숨김)
     if(af.scope!=="longterm"&&!af._parentGoalId){
@@ -6280,6 +6329,16 @@ function renderGoals(){
       }else if(scope==="readingGoals"&&g.type==="cumulative"){
         const cnt=calcReadingGoalCount(g);
         pill.appendChild(h("span",{style:"font-size:9px;color:#3b82f6;font-family:monospace;flex-shrink:0"},cnt+"/"+g.targetCount+"권"));
+      }else if(g.bookTarget){
+        // E2 독서 목표: 권수 자동 계산
+        const bt=g.bookTarget;
+        const bcnt=calcReadingGoalCount({type:"cumulative",bookType:bt.bookType});
+        const btPct=bt.targetCount>0?Math.min(100,Math.round(bcnt/bt.targetCount*100)):0;
+        const btColor=bt.bookType==="kr"?"#10b981":bt.bookType==="all"?"#a78bfa":"#3b82f6";
+        const btrack=h("div",{style:"width:36px;height:"+vis.lh+";background:#1e293b;border-radius:2px;overflow:hidden;flex-shrink:0"});
+        btrack.appendChild(h("div",{style:"height:100%;width:"+btPct+"%;background:"+btColor+";transition:width .3s"}));
+        pill.appendChild(btrack);
+        pill.appendChild(h("span",{style:"font-size:9px;color:"+btColor+";font-family:monospace;flex-shrink:0"},bcnt+"/"+bt.targetCount+"권"));
       }else if(scope!=="habits"){
         const track=h("div",{style:"width:36px;height:"+vis.lh+";background:#1e293b;border-radius:2px;overflow:hidden;flex-shrink:0"});
         track.appendChild(h("div",{style:"height:100%;width:"+pct+"%;background:"+(done?"#10b981":vis.color)+";transition:width .3s"}));
@@ -7061,7 +7120,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-17-v24";
+  var SEED_VER="2026-04-17-v25";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

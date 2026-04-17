@@ -661,6 +661,67 @@ function saveGoalData(){
     syncTimer=setTimeout(()=>cloudSaveGoals(),2000);
   }
 }
+
+// 기존 독서목표 → longterm/weekly로 이관 (1회성, 이후 no-op)
+function migrateReadingGoals(){
+  if(!state.goalData||!state.goalData.readingGoals||state.goalData.readingGoals.length===0)return false;
+  var rgList=state.goalData.readingGoals.slice();
+  var today=new Date();
+  var rgIdToScope={};
+  rgList.forEach(function(rg){
+    if(!rg.type||rg.type==="cumulative"){
+      var lg={
+        id:rg.id,cat:rg.cat,name:rg.name,memo:rg.memo||"",
+        progress:0,subtasks:[],
+        startYear:rg.startYear||today.getFullYear(),
+        endYear:rg.endYear||(today.getFullYear()+5)
+      };
+      if(!state.goalData.longterm)state.goalData.longterm=[];
+      state.goalData.longterm.push(lg);
+      rgIdToScope[rg.id]="longterm";
+    }else{
+      var refDate=rg.endDate?new Date(rg.endDate):today;
+      var ry=refDate.getFullYear(),rm=refDate.getMonth()+1;
+      var startD=1,endD=Math.min(7,daysInMonth(ry,rm));
+      if(rg.startDate){
+        var sd=new Date(rg.startDate);
+        if(sd.getFullYear()===ry&&sd.getMonth()+1===rm)startD=sd.getDate();
+      }
+      if(rg.endDate){
+        var ed=new Date(rg.endDate);
+        if(ed.getFullYear()===ry&&ed.getMonth()+1===rm)endD=ed.getDate();
+      }
+      var wi=weekIdxOfDay(ry,rm,startD);
+      var wg={
+        id:rg.id,cat:rg.cat,name:rg.name,memo:rg.memo||"",
+        progress:rg.progress||0,subtasks:[],
+        year:ry,month:rm,weekIdx:wi,startDay:startD,endDay:endD,
+        period:ry+"-"+String(rm).padStart(2,"0")+"-W"+wi
+      };
+      if(!state.goalData.weekly)state.goalData.weekly=[];
+      state.goalData.weekly.push(wg);
+      rgIdToScope[rg.id]="weekly";
+    }
+  });
+  // parentIds.readingGoals → parentIds.longterm/weekly로 재연결
+  function fixParents(g){
+    if(!g.parentIds||!g.parentIds.readingGoals)return;
+    var rgId=g.parentIds.readingGoals;
+    var newScope=rgIdToScope[rgId];
+    if(newScope)g.parentIds[newScope]=rgId;
+    delete g.parentIds.readingGoals;
+  }
+  (state.goalData.longterm||[]).forEach(fixParents);
+  (state.goalData.monthly||[]).forEach(fixParents);
+  (state.goalData.weekly||[]).forEach(fixParents);
+  Object.keys(state.goalData.daily||{}).forEach(function(dk){
+    (state.goalData.daily[dk]||[]).forEach(fixParents);
+  });
+  state.goalData.readingGoals=[];
+  try{localStorage.setItem(goalStorageKey(),JSON.stringify(state.goalData))}catch(e){}
+  console.log("[migrateReadingGoals] migrated "+rgList.length+" reading goals → longterm/weekly");
+  return true;
+}
 function cloudSaveGoals(){
   if(!CLOUD_URL)return;
   // debounce: 연속 호출 방지
@@ -699,6 +760,8 @@ function cloudLoadGoals(){
           cloudLongterm=cloudLongterm.filter(function(g){return hIds.indexOf(g.id)===-1});
         }
         state.goalData={daily:cloud.daily||{},weekly:sortByDream(cloud.weekly||[]),monthly:sortByDream(cloud.monthly||[]),longterm:sortByDream(cloudLongterm),habits:cloudHabits,readingGoals:cloud.readingGoals||[]};
+        // 클라우드에서 독서목표 내려받은 경우에도 이관
+        if(migrateReadingGoals()&&typeof cloudSaveGoals==="function"&&CLOUD_URL){cloudSaveGoals();}
         localStorage.setItem(goalStorageKey(),JSON.stringify(state.goalData));
         _isAutoRender=true;render();
       }
@@ -6998,7 +7061,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-17-v23";
+  var SEED_VER="2026-04-17-v24";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){
@@ -7069,6 +7132,8 @@ if((state.goalData.habits||[]).length===0&&(state.goalData.longterm||[]).length=
   state.goalData.habits=migrateHabits(state.goalData.longterm||[]);
   try{localStorage.setItem(goalStorageKey(),JSON.stringify(state.goalData))}catch(e){}
 }
+// 기존 독서목표 → longterm/weekly 이관 (cumulative→장기, specific→주간)
+if(migrateReadingGoals()&&typeof cloudSaveGoals==="function"&&CLOUD_URL){cloudSaveGoals();}
 render();
 if(CLOUD_URL)setTimeout(()=>cloudLoad(),500);
 </script>

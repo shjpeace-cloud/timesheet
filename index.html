@@ -2237,7 +2237,7 @@ function renderMonthlyReview(){
       var diff=fmtDiff(cv/cmDays,av/cmDays);
       var row=h("div",{style:"display:flex;align-items:center;padding:2px 0 2px 8px;border-bottom:1px solid #0f172a"});
       row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:"+c.color+";font-family:monospace;width:22px;flex-shrink:0"},c.code));
-      row.appendChild(h("span",{style:"flex:1;font-size:9px;color:#475569;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},c.label));
+      row.appendChild(h("span",{style:"flex:1;font-size:9px;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},c.label));
       [cv,lv,av].forEach(function(v,idx){
         row.appendChild(h("span",{style:"font-size:10px;color:"+(v>0?(idx===0?"#e2e8f0":idx===2?"#0d9488":"#94a3b8"):"#334155")+";font-family:monospace;width:38px;text-align:right;font-weight:"+(v>0&&idx!==1?"700":"400")},v>=0.05?v.toFixed(v===Math.floor(v)?0:1)+"h":"–"));
       });
@@ -2437,7 +2437,7 @@ function renderYearlyReview(){
       var diff=fmtDiff(v0,av);
       var row=h("div",{style:"display:flex;align-items:center;padding:2px 0 2px 8px;border-bottom:1px solid #0f172a"});
       row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:"+c.color+";font-family:monospace;width:22px;flex-shrink:0"},c.code));
-      row.appendChild(h("span",{style:"flex:1;font-size:9px;color:#475569;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},c.label));
+      row.appendChild(h("span",{style:"flex:1;font-size:9px;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},c.label));
       [v0,v1,av].forEach(function(v,idx){
         row.appendChild(h("span",{style:"font-size:10px;color:"+(v>0?(idx===0?"#e2e8f0":idx===2?"#0d9488":"#94a3b8"):"#334155")+";font-family:monospace;width:40px;text-align:right;font-weight:"+(v>0&&idx!==1?"700":"400")},v>=0.05?v.toFixed(v===Math.floor(v)?0:1)+"h":"–"));
       });
@@ -6729,7 +6729,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-17-v10";
+  var SEED_VER="2026-04-17-v11";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

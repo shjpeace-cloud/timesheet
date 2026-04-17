@@ -2532,16 +2532,39 @@ function renderYearlyReview(){
   allYGoals.sort(function(a,b){return dreamSortKey(a.g.cat)-dreamSortKey(b.g.cat);});
   if(allYGoals.length===0){yGoalsBox.appendChild(h("div",{style:"text-align:center;padding:10px 0;color:#334155;font-size:12px"},"금년 목표가 없습니다"));}
   else{
-    var activeYG=allYGoals.filter(function(x){return x.scope==="readingGoals"?calcReadingGoalProgress(x.g)<100:(x.g.progress||0)<100&&!x.g.done;});
-    var doneYG=allYGoals.filter(function(x){return x.scope==="readingGoals"?calcReadingGoalProgress(x.g)>=100:(x.g.progress||0)>=100||x.g.done;});
+    function yPct(x){
+      if(x.g.bookTarget){
+        var bt=x.g.bookTarget;
+        var cnt=calcReadingGoalCount({type:"cumulative",bookType:bt.bookType});
+        return bt.targetCount>0?Math.min(100,Math.round(cnt/bt.targetCount*100)):0;
+      }
+      return x.scope==="readingGoals"?calcReadingGoalProgress(x.g):(x.g.progress||0);
+    }
+    var activeYG=allYGoals.filter(function(x){return x.g.bookTarget?yPct(x)<100:(x.scope==="readingGoals"?calcReadingGoalProgress(x.g)<100:(x.g.progress||0)<100&&!x.g.done);});
+    var doneYG=allYGoals.filter(function(x){return x.g.bookTarget?yPct(x)>=100:(x.scope==="readingGoals"?calcReadingGoalProgress(x.g)>=100:(x.g.progress||0)>=100||x.g.done);});
     function renderYGoalRow(item,isDone){
       var g=item.g,scope=item.scope;var cat=catByCode(g.cat);
-      var pct=scope==="readingGoals"?calcReadingGoalProgress(g):(g.progress||0);
       var row=h("div",{style:"display:flex;align-items:center;gap:7px;padding:5px 0;border-bottom:1px solid #0f172a;cursor:pointer",onClick:function(){navigateToGoal(scope,g);}});
       row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:"+(cat?cat.color:"#94a3b8")+";font-family:monospace;flex-shrink:0;background:"+(cat?cat.color+"22":"#1e293b")+";border-radius:3px;padding:1px 5px"},g.cat));
       row.appendChild(h("span",{style:"flex:1;font-size:12px;color:"+(isDone?"#475569":"#cbd5e1")+(isDone?";text-decoration:line-through":"")},g.name));
-      if(scope==="readingGoals"&&g.type==="cumulative"){var cnt=calcReadingGoalCount(g);row.appendChild(h("span",{style:"font-size:9px;color:#3b82f6;font-family:monospace;flex-shrink:0"},cnt+"/"+g.targetCount+"권"));}
-      else{var track=h("div",{style:"width:40px;height:4px;background:#1e293b;border-radius:2px;overflow:hidden;flex-shrink:0"});track.appendChild(h("div",{style:"height:100%;width:"+pct+"%;background:"+(isDone?"#10b981":"#f59e0b")}));row.appendChild(track);row.appendChild(h("span",{style:"font-size:9px;color:"+(isDone?"#10b981":"#f59e0b")+";font-family:monospace;width:26px;text-align:right;flex-shrink:0"},pct+"%"));}
+      if(g.bookTarget){
+        var bt=g.bookTarget;var cntB=calcReadingGoalCount({type:"cumulative",bookType:bt.bookType});
+        var btColor=bt.bookType==="kr"?"#10b981":bt.bookType==="all"?"#a78bfa":"#3b82f6";
+        var btPct=bt.targetCount>0?Math.min(100,Math.round(cntB/bt.targetCount*100)):0;
+        var btrack=h("div",{style:"width:40px;height:4px;background:#1e293b;border-radius:2px;overflow:hidden;flex-shrink:0"});
+        btrack.appendChild(h("div",{style:"height:100%;width:"+btPct+"%;background:"+(isDone?"#10b981":btColor)}));
+        row.appendChild(btrack);
+        row.appendChild(h("span",{style:"font-size:9px;color:"+(isDone?"#10b981":btColor)+";font-family:monospace;flex-shrink:0"},cntB+"/"+bt.targetCount+"권"));
+      }else if(scope==="readingGoals"&&g.type==="cumulative"){
+        var cnt=calcReadingGoalCount(g);
+        row.appendChild(h("span",{style:"font-size:9px;color:#3b82f6;font-family:monospace;flex-shrink:0"},cnt+"/"+g.targetCount+"권"));
+      }else{
+        var pct=scope==="readingGoals"?calcReadingGoalProgress(g):(g.progress||0);
+        var track=h("div",{style:"width:40px;height:4px;background:#1e293b;border-radius:2px;overflow:hidden;flex-shrink:0"});
+        track.appendChild(h("div",{style:"height:100%;width:"+pct+"%;background:"+(isDone?"#10b981":"#f59e0b")}));
+        row.appendChild(track);
+        row.appendChild(h("span",{style:"font-size:9px;color:"+(isDone?"#10b981":"#f59e0b")+";font-family:monospace;width:26px;text-align:right;flex-shrink:0"},pct+"%"));
+      }
       row.appendChild(h("span",{style:"font-size:9px;color:#0d9488;flex-shrink:0"},"↗"));
       return row;
     }
@@ -7120,7 +7143,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-17-v25";
+  var SEED_VER="2026-04-17-v26";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

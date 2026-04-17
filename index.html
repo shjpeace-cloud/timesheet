@@ -5689,17 +5689,18 @@ function renderGoals(){
   }},"▶"));
   calBox.appendChild(calNav);
 
-  // 요일 헤더
+  // 요일 헤더 (일요일 시작)
   const dowHdr=h("div",{style:"display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px"});
-  ["월","화","수","목","금","토","일"].forEach(function(d,i){
-    dowHdr.appendChild(h("div",{style:"text-align:center;font-size:9px;font-weight:700;color:"+(i>=5?"#ef4444":"#475569")+";padding:2px 0"},d));
+  ["일","월","화","수","목","금","토"].forEach(function(d,i){
+    var hc=i===0?"#ef4444":(i===6?"#3b82f6":"#475569");
+    dowHdr.appendChild(h("div",{style:"text-align:center;font-size:9px;font-weight:700;color:"+hc+";padding:2px 0"},d));
   });
   calBox.appendChild(dowHdr);
 
-  // 날짜 그리드
+  // 날짜 그리드 (일요일 시작)
   const firstDay=new Date(calY,calM-1,1);
   const firstDow=firstDay.getDay(); // 0=Sun
-  const startOffset=firstDow===0?6:firstDow-1; // Mon=0
+  const startOffset=firstDow; // Sun=0
   const totalDays=daysInMonth(calY,calM);
   // 일간목표 있는 날짜 수집
   const daysWithGoals=new Set();
@@ -5719,10 +5720,11 @@ function renderGoals(){
     const isToday3=calY===today2.getFullYear()&&calM===today2.getMonth()+1&&d===today2.getDate();
     const isSelected=state.goalCalDay===d&&calY===state.goalCalYear&&calM===state.goalCalMonth;
     const hasDGoals=daysWithGoals.has(d);
-    const dow2=(startOffset+d-1)%7; // 0=Mon
-    const isWknd=dow2>=5;
+    const dow2=(startOffset+d-1)%7; // 0=Sun, 6=Sat
+    const isSun=dow2===0;
+    const isSat=dow2===6;
     const isHol2=!!isHoliday(calY,calM,d);
-    const dayColor=isToday3?"#fff":(isHol2||isWknd)?"#ef4444":"#cbd5e1";
+    const dayColor=isToday3?"#fff":isSat?"#3b82f6":(isHol2||isSun)?"#ef4444":"#cbd5e1";
     const dayBg=isToday3?"#6366f1":(isSelected?"#1e3a8a":"transparent");
 
     const dayBtn=h("button",{
@@ -6729,7 +6731,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-17-v11";
+  var SEED_VER="2026-04-17-v12";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

@@ -229,7 +229,7 @@ const CATEGORIES=[
 {code:"R2",label:"강의/상담/강연/학습",group:"R",gn:"Research & Teaching",color:"#fbbf24"},
 {code:"R3",label:"외국어/프로그래밍 언어",group:"R",gn:"Research & Teaching",color:"#fcd34d"},
 {code:"E1",label:"운동",group:"E",gn:"Enrichment",color:"#10b981"},
-{code:"E2",label:"독서(전공외)",group:"E",gn:"Enrichment",color:"#34d399"},
+{code:"E2",label:"독서",group:"E",gn:"Enrichment",color:"#34d399"},
 {code:"E3",label:"음악/취미",group:"E",gn:"Enrichment",color:"#6ee7b7"},
 {code:"A1",label:"가족",group:"A",gn:"Attachment",color:"#ef4444"},
 {code:"A2",label:"친구/교회",group:"A",gn:"Attachment",color:"#f87171"},
@@ -4549,37 +4549,46 @@ function renderPeriodGoals(scope){
         // Expanded: subtasks + parent edit + period edit
         if(isExpanded){
           const subWrap=h("div",{style:"margin-top:6px;padding:8px;background:#111827;border-radius:8px;border:1px dashed #7f1d1d"});
-          // Period edit
+          // Period edit: startMonth+startDay ~ endMonth+endDay
           const periodRow=h("div",{style:"display:flex;gap:6px;align-items:center;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #1e293b;font-size:11px;flex-wrap:wrap"});
           periodRow.appendChild(h("span",{style:"color:#64748b;font-size:10px;flex-shrink:0"},"📆 기간:"));
-          const mSel=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px"});
-          for(let m=1;m<=12;m++){const o=h("option",{value:String(m)},m+"월");if(m===g.month)o.selected=true;mSel.appendChild(o)}
-          mSel.addEventListener("change",e=>{
-            const nm=parseInt(e.target.value);
-            updatePeriodGoalField(scope,g.id,"month",nm);
-            const wm3=weeksInMonth(state.year,nm);
-            if(g.weekIdx>wm3)updatePeriodGoalField(scope,g.id,"weekIdx",wm3);
+          const smSel2=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px"});
+          const sdSel2=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px"});
+          const emSel2=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px"});
+          const edSel2=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px"});
+          for(let m=1;m<=12;m++){const osm=h("option",{value:String(m)},m+"월");if(m===(g.startMonth||g.month))osm.selected=true;smSel2.appendChild(osm);const oem=h("option",{value:String(m)},m+"월");if(m===(g.endMonth||g.month))oem.selected=true;emSel2.appendChild(oem);}
+          const smMax2=daysInMonth(state.year,g.startMonth||g.month);
+          const emMax2=daysInMonth(state.year,g.endMonth||g.month);
+          for(let d=1;d<=smMax2;d++){const o=h("option",{value:String(d)},d+"일");if(d===(g.startDay||1))o.selected=true;sdSel2.appendChild(o)}
+          for(let d=1;d<=emMax2;d++){const o=h("option",{value:String(d)},d+"일");if(d===(g.endDay||emMax2))o.selected=true;edSel2.appendChild(o)}
+          smSel2.addEventListener("change",e=>{
+            const v=parseInt(e.target.value);
+            updatePeriodGoalField(scope,g.id,"startMonth",v);
+            updatePeriodGoalField(scope,g.id,"month",v);
+            if((g.endMonth||g.month)<v)updatePeriodGoalField(scope,g.id,"endMonth",v);
+            updatePeriodGoalField(scope,g.id,"weekIdx",weekIdxOfDay(state.year,v,g.startDay||1));
             render();
           });
-          periodRow.appendChild(mSel);
-          // 시작일
-          const sdSel2=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px"});
-          const epMaxD=daysInMonth(state.year,g.month);
-          for(let d=1;d<=epMaxD;d++){const o=h("option",{value:String(d)},d+"일");if(d===(g.startDay||1))o.selected=true;sdSel2.appendChild(o)}
+          emSel2.addEventListener("change",e=>{
+            const v=parseInt(e.target.value);
+            updatePeriodGoalField(scope,g.id,"endMonth",v);
+            if((g.startMonth||g.month)>v){updatePeriodGoalField(scope,g.id,"startMonth",v);updatePeriodGoalField(scope,g.id,"month",v);}
+            render();
+          });
           sdSel2.addEventListener("change",e=>{
-            updatePeriodGoalField(scope,g.id,"startDay",parseInt(e.target.value));
-            if(g.endDay<g.startDay)updatePeriodGoalField(scope,g.id,"endDay",g.startDay);
+            const v=parseInt(e.target.value);
+            updatePeriodGoalField(scope,g.id,"startDay",v);
+            updatePeriodGoalField(scope,g.id,"weekIdx",weekIdxOfDay(state.year,g.startMonth||g.month,v));
+            if((g.startMonth||g.month)===(g.endMonth||g.month)&&(g.endDay||1)<v)updatePeriodGoalField(scope,g.id,"endDay",v);
           });
-          periodRow.appendChild(sdSel2);
-          periodRow.appendChild(h("span",{style:"color:#64748b;font-size:10px"},"~"));
-          // 종료일
-          const edSel2=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px"});
-          for(let d=1;d<=epMaxD;d++){const o=h("option",{value:String(d)},d+"일");if(d===(g.endDay||epMaxD))o.selected=true;edSel2.appendChild(o)}
           edSel2.addEventListener("change",e=>{
-            updatePeriodGoalField(scope,g.id,"endDay",parseInt(e.target.value));
-            if(g.startDay>g.endDay)updatePeriodGoalField(scope,g.id,"startDay",g.endDay);
+            const v=parseInt(e.target.value);
+            updatePeriodGoalField(scope,g.id,"endDay",v);
+            if((g.startMonth||g.month)===(g.endMonth||g.month)&&(g.startDay||1)>v)updatePeriodGoalField(scope,g.id,"startDay",v);
           });
-          periodRow.appendChild(edSel2);
+          periodRow.appendChild(smSel2);periodRow.appendChild(sdSel2);
+          periodRow.appendChild(h("span",{style:"color:#64748b;font-size:10px"},"~"));
+          periodRow.appendChild(emSel2);periodRow.appendChild(edSel2);
           subWrap.appendChild(periodRow);
           // Parent edit
           const parentEditEl=renderParentEditSelectors(scope,g);
@@ -4703,7 +4712,9 @@ function renderPeriodGoals(scope){
         const meta=h("div",{className:"goal-meta",style:"cursor:pointer",onClick:()=>toggleGoalExpand(scope,g.id)});
         var wkRange;
         if(g.startDay&&g.endDay){
-          wkRange=g.month+"월 "+g.startDay+"일~"+g.endDay+"일";
+          var wkSm=g.startMonth||g.month;
+          var wkEm=g.endMonth||g.month;
+          wkRange=wkSm+"/"+g.startDay+" ~ "+wkEm+"/"+g.endDay;
         }else{
           wkRange=g.month+"월 "+g.weekIdx+"주 ("+weekDateRange(state.year,g.month,g.weekIdx)+")";
         }
@@ -4723,7 +4734,15 @@ function renderPeriodGoals(scope){
       if(scope==="monthly"&&(g.startMonth||g.endMonth)){
         const sm=g.startMonth||g.month;
         const em=g.endMonth||g.month;
-        const rangeTxt=sm===em?(sm+"월"):(sm+"~"+em+"월");
+        const hasMD=g.startDay||g.endDay;
+        let rangeTxt;
+        if(hasMD){
+          const sd=g.startDay||1;
+          const ed=g.endDay||daysInMonth(state.year,em);
+          rangeTxt=sm+"/"+sd+" ~ "+em+"/"+ed;
+        }else{
+          rangeTxt=sm===em?(sm+"월"):(sm+"~"+em+"월");
+        }
         const meta=h("div",{className:"goal-meta"});
         meta.appendChild(h("span",{className:"goal-meta-item"},"🗓 "+rangeTxt));
         item.appendChild(meta);
@@ -4732,7 +4751,15 @@ function renderPeriodGoals(scope){
         const meta=h("div",{className:"goal-meta"});
         const sy=g.startYear||g.targetYear;
         const ey=g.endYear||g.targetYear;
-        const rangeTxt=sy===ey?(sy+"년"):(sy+"~"+ey);
+        const hasLtM=g.startMonth||g.endMonth;
+        const smLt=g.startMonth||1;
+        const emLt=g.endMonth||12;
+        let rangeTxt;
+        if(hasLtM){
+          rangeTxt=sy+"."+smLt+"월 ~ "+ey+"."+emLt+"월";
+        }else{
+          rangeTxt=sy===ey?(sy+"년"):(sy+"~"+ey);
+        }
         meta.appendChild(h("span",{className:"goal-meta-item"},"🎯 "+rangeTxt));
         item.appendChild(meta);
       }
@@ -4760,23 +4787,47 @@ function renderPeriodGoals(scope){
 
         // Period edit controls
         if(scope==="weekly"){
-          const periodRow=h("div",{style:"display:flex;gap:6px;align-items:center;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #1e293b;font-size:11px"});
+          const periodRow=h("div",{style:"display:flex;gap:6px;align-items:center;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #1e293b;font-size:11px;flex-wrap:wrap"});
           periodRow.appendChild(h("span",{style:"color:#64748b;font-size:10px;flex-shrink:0"},"📆 기간:"));
-          const mSel=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px"});
-          for(let m=1;m<=12;m++){const o=h("option",{value:String(m)},m+"월");if(m===g.month)o.selected=true;mSel.appendChild(o)}
-          mSel.addEventListener("change",e=>{
-            const nm=parseInt(e.target.value);
-            updatePeriodGoalField(scope,g.id,"month",nm);
-            const wm=weeksInMonth(state.year,nm);
-            if(g.weekIdx>wm)updatePeriodGoalField(scope,g.id,"weekIdx",wm);
+          const smSelW2=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px"});
+          const sdSelW2=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px"});
+          const emSelW2=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px"});
+          const edSelW2=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px"});
+          for(let m=1;m<=12;m++){const osm=h("option",{value:String(m)},m+"월");if(m===(g.startMonth||g.month))osm.selected=true;smSelW2.appendChild(osm);const oem=h("option",{value:String(m)},m+"월");if(m===(g.endMonth||g.month))oem.selected=true;emSelW2.appendChild(oem);}
+          const smMaxW2=daysInMonth(state.year,g.startMonth||g.month);
+          const emMaxW2=daysInMonth(state.year,g.endMonth||g.month);
+          for(let d=1;d<=smMaxW2;d++){const o=h("option",{value:String(d)},d+"일");if(d===(g.startDay||1))o.selected=true;sdSelW2.appendChild(o)}
+          for(let d=1;d<=emMaxW2;d++){const o=h("option",{value:String(d)},d+"일");if(d===(g.endDay||emMaxW2))o.selected=true;edSelW2.appendChild(o)}
+          smSelW2.addEventListener("change",e=>{
+            const v=parseInt(e.target.value);
+            updatePeriodGoalField(scope,g.id,"startMonth",v);
+            updatePeriodGoalField(scope,g.id,"month",v);
+            if((g.endMonth||g.month)<v)updatePeriodGoalField(scope,g.id,"endMonth",v);
+            updatePeriodGoalField(scope,g.id,"weekIdx",weekIdxOfDay(state.year,v,g.startDay||1));
             render();
           });
-          periodRow.appendChild(mSel);
-          const wSel=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px"});
-          const wm=weeksInMonth(state.year,g.month);
-          for(let w=1;w<=wm;w++){const o=h("option",{value:String(w)},w+"주");if(w===g.weekIdx)o.selected=true;wSel.appendChild(o)}
-          wSel.addEventListener("change",e=>{updatePeriodGoalField(scope,g.id,"weekIdx",parseInt(e.target.value));render()});
-          periodRow.appendChild(wSel);
+          emSelW2.addEventListener("change",e=>{
+            const v=parseInt(e.target.value);
+            updatePeriodGoalField(scope,g.id,"endMonth",v);
+            if((g.startMonth||g.month)>v){updatePeriodGoalField(scope,g.id,"startMonth",v);updatePeriodGoalField(scope,g.id,"month",v);}
+            render();
+          });
+          sdSelW2.addEventListener("change",e=>{
+            const v=parseInt(e.target.value);
+            updatePeriodGoalField(scope,g.id,"startDay",v);
+            updatePeriodGoalField(scope,g.id,"weekIdx",weekIdxOfDay(state.year,g.startMonth||g.month,v));
+            if((g.startMonth||g.month)===(g.endMonth||g.month)&&(g.endDay||1)<v)updatePeriodGoalField(scope,g.id,"endDay",v);
+            render();
+          });
+          edSelW2.addEventListener("change",e=>{
+            const v=parseInt(e.target.value);
+            updatePeriodGoalField(scope,g.id,"endDay",v);
+            if((g.startMonth||g.month)===(g.endMonth||g.month)&&(g.startDay||1)>v)updatePeriodGoalField(scope,g.id,"startDay",v);
+            render();
+          });
+          periodRow.appendChild(smSelW2);periodRow.appendChild(sdSelW2);
+          periodRow.appendChild(h("span",{style:"color:#64748b;font-size:10px"},"~"));
+          periodRow.appendChild(emSelW2);periodRow.appendChild(edSelW2);
           subWrap.appendChild(periodRow);
 
           // ── 날짜 지정 (이 주 중 작업할 날) ──────────────────
@@ -4849,7 +4900,7 @@ function renderPeriodGoals(scope){
           })(g);
         }  // end if(scope==="weekly")
         if(scope==="monthly"){
-          const periodRow=h("div",{style:"display:flex;gap:6px;align-items:center;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #1e293b;font-size:11px"});
+          const periodRow=h("div",{style:"display:flex;gap:6px;align-items:center;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #1e293b;font-size:11px;flex-wrap:wrap"});
           periodRow.appendChild(h("span",{style:"color:#64748b;font-size:10px;flex-shrink:0"},"🗓 기간:"));
           const smSel=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px"});
           for(let m=1;m<=12;m++){const o=h("option",{value:String(m)},m+"월");if(m===(g.startMonth||g.month))o.selected=true;smSel.appendChild(o)}
@@ -4858,9 +4909,21 @@ function renderPeriodGoals(scope){
             updatePeriodGoalField(scope,g.id,"startMonth",v);
             updatePeriodGoalField(scope,g.id,"month",v);
             if((g.endMonth||g.month)<v)updatePeriodGoalField(scope,g.id,"endMonth",v);
+            var maxSd=daysInMonth(state.year,v);
+            if(g.startDay&&g.startDay>maxSd)updatePeriodGoalField(scope,g.id,"startDay",maxSd);
             render();
           });
           periodRow.appendChild(smSel);
+          const sdSelM=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px"});
+          const smMax=daysInMonth(state.year,g.startMonth||g.month||1);
+          for(let d=1;d<=smMax;d++){const o=h("option",{value:String(d)},d+"일");if(d===(g.startDay||1))o.selected=true;sdSelM.appendChild(o)}
+          sdSelM.addEventListener("change",e=>{
+            const v=parseInt(e.target.value);
+            updatePeriodGoalField(scope,g.id,"startDay",v);
+            if((g.startMonth||g.month)===(g.endMonth||g.month)&&(g.endDay||1)<v)updatePeriodGoalField(scope,g.id,"endDay",v);
+            render();
+          });
+          periodRow.appendChild(sdSelM);
           periodRow.appendChild(h("span",{style:"color:#64748b"},"~"));
           const emSel=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px"});
           for(let m=1;m<=12;m++){const o=h("option",{value:String(m)},m+"월");if(m===(g.endMonth||g.month))o.selected=true;emSel.appendChild(o)}
@@ -4868,13 +4931,24 @@ function renderPeriodGoals(scope){
             const v=parseInt(e.target.value);
             updatePeriodGoalField(scope,g.id,"endMonth",v);
             if((g.startMonth||g.month)>v){updatePeriodGoalField(scope,g.id,"startMonth",v);updatePeriodGoalField(scope,g.id,"month",v)}
+            updatePeriodGoalField(scope,g.id,"endDay",daysInMonth(state.year,v));
             render();
           });
           periodRow.appendChild(emSel);
+          const edSelM=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px"});
+          const emMax=daysInMonth(state.year,g.endMonth||g.month||1);
+          for(let d=1;d<=emMax;d++){const o=h("option",{value:String(d)},d+"일");if(d===(g.endDay||emMax))o.selected=true;edSelM.appendChild(o)}
+          edSelM.addEventListener("change",e=>{
+            const v=parseInt(e.target.value);
+            updatePeriodGoalField(scope,g.id,"endDay",v);
+            if((g.startMonth||g.month)===(g.endMonth||g.month)&&(g.startDay||1)>v)updatePeriodGoalField(scope,g.id,"startDay",v);
+            render();
+          });
+          periodRow.appendChild(edSelM);
           subWrap.appendChild(periodRow);
         }
         if(scope==="longterm"){
-          const periodRow=h("div",{style:"display:flex;gap:6px;align-items:center;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #1e293b;font-size:11px"});
+          const periodRow=h("div",{style:"display:flex;gap:6px;align-items:center;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #1e293b;font-size:11px;flex-wrap:wrap"});
           periodRow.appendChild(h("span",{style:"color:#64748b;font-size:10px;flex-shrink:0"},"🎯 기간:"));
           const sySel=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px"});
           for(let y=2026;y<=2040;y++){const o=h("option",{value:String(y)},y+"");if(y===(g.startYear||g.targetYear))o.selected=true;sySel.appendChild(o)}
@@ -4885,6 +4959,13 @@ function renderPeriodGoals(scope){
             render();
           });
           periodRow.appendChild(sySel);
+          const smSelLt=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px"});
+          for(let m=1;m<=12;m++){const o=h("option",{value:String(m)},m+"월");if(m===(g.startMonth||1))o.selected=true;smSelLt.appendChild(o)}
+          smSelLt.addEventListener("change",e=>{
+            updatePeriodGoalField(scope,g.id,"startMonth",parseInt(e.target.value));
+            render();
+          });
+          periodRow.appendChild(smSelLt);
           periodRow.appendChild(h("span",{style:"color:#64748b"},"~"));
           const eySel=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px"});
           for(let y=2026;y<=2040;y++){const o=h("option",{value:String(y)},y+"");if(y===(g.endYear||g.targetYear))o.selected=true;eySel.appendChild(o)}
@@ -4895,6 +4976,13 @@ function renderPeriodGoals(scope){
             render();
           });
           periodRow.appendChild(eySel);
+          const emSelLt=h("select",{className:"goal-cat-select",style:"padding:4px 6px;font-size:11px"});
+          for(let m=1;m<=12;m++){const o=h("option",{value:String(m)},m+"월");if(m===(g.endMonth||12))o.selected=true;emSelLt.appendChild(o)}
+          emSelLt.addEventListener("change",e=>{
+            updatePeriodGoalField(scope,g.id,"endMonth",parseInt(e.target.value));
+            render();
+          });
+          periodRow.appendChild(emSelLt);
           subWrap.appendChild(periodRow);
         }
         // Editable memo field (always shown in expanded)
@@ -5730,35 +5818,51 @@ function renderGoalDetailPanel(g,scope,catDef,dk){
   if(scope==="weekly"){
     const pRow=h("div",{style:"display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap"});
     pRow.appendChild(h("span",{style:"font-size:10px;color:#64748b;flex-shrink:0"},"📆 기간:"));
-    const mSel=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
-    for(let m=1;m<=12;m++){const o=h("option",{value:String(m)},m+"월");if(m===(g.month||1))o.selected=true;mSel.appendChild(o);}
-    const sdSel=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
-    const edSel=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
-    function refreshDaySels2(){var maxD=daysInMonth(state.year,g.month||1);sdSel.innerHTML="";edSel.innerHTML="";for(let d=1;d<=maxD;d++){const os=document.createElement("option");os.value=String(d);os.textContent=d+"일";if(d===(g.startDay||1))os.selected=true;sdSel.appendChild(os);const oe=document.createElement("option");oe.value=String(d);oe.textContent=d+"일";if(d===(g.endDay||maxD))oe.selected=true;edSel.appendChild(oe);}}
-    mSel.addEventListener("change",function(e){g.month=parseInt(e.target.value);g.startDay=1;g.endDay=daysInMonth(state.year,g.month);g.weekIdx=weekIdxOfDay(state.year,g.month,g.startDay);refreshDaySels2();saveGoalData();});
-    sdSel.addEventListener("change",function(e){g.startDay=parseInt(e.target.value);g.weekIdx=weekIdxOfDay(state.year,g.month||1,g.startDay);saveGoalData();});
-    edSel.addEventListener("change",function(e){g.endDay=parseInt(e.target.value);saveGoalData();});
-    pRow.appendChild(mSel);refreshDaySels2();pRow.appendChild(sdSel);pRow.appendChild(h("span",{style:"font-size:10px;color:#475569;flex-shrink:0"},"~"));pRow.appendChild(edSel);
+    const smSelW=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
+    const sdSelW=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
+    const emSelW=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
+    const edSelW=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
+    for(let m=1;m<=12;m++){const osm=h("option",{value:String(m)},m+"월");if(m===(g.startMonth||g.month||1))osm.selected=true;smSelW.appendChild(osm);const oem=h("option",{value:String(m)},m+"월");if(m===(g.endMonth||g.month||1))oem.selected=true;emSelW.appendChild(oem);}
+    function refreshWkSd(){sdSelW.innerHTML="";var maxSd=daysInMonth(state.year,g.startMonth||g.month||1);for(let d=1;d<=maxSd;d++){var o=document.createElement("option");o.value=String(d);o.textContent=d+"일";if(d===(g.startDay||1))o.selected=true;sdSelW.appendChild(o);}}
+    function refreshWkEd(){edSelW.innerHTML="";var maxEd=daysInMonth(state.year,g.endMonth||g.month||1);for(let d=1;d<=maxEd;d++){var o=document.createElement("option");o.value=String(d);o.textContent=d+"일";if(d===(g.endDay||maxEd))o.selected=true;edSelW.appendChild(o);}}
+    smSelW.addEventListener("change",function(e){g.startMonth=parseInt(e.target.value);g.month=g.startMonth;if((g.endMonth||g.startMonth)<g.startMonth)g.endMonth=g.startMonth;var maxSd=daysInMonth(state.year,g.startMonth);if(g.startDay&&g.startDay>maxSd)g.startDay=maxSd;g.weekIdx=weekIdxOfDay(state.year,g.startMonth,g.startDay||1);refreshWkSd();refreshWkEd();saveGoalData();});
+    emSelW.addEventListener("change",function(e){g.endMonth=parseInt(e.target.value);if((g.startMonth||g.endMonth)>g.endMonth){g.startMonth=g.endMonth;g.month=g.startMonth;}var maxEd=daysInMonth(state.year,g.endMonth);if(g.endDay&&g.endDay>maxEd)g.endDay=maxEd;refreshWkEd();refreshWkSd();saveGoalData();});
+    sdSelW.addEventListener("change",function(e){g.startDay=parseInt(e.target.value);g.weekIdx=weekIdxOfDay(state.year,g.startMonth||g.month||1,g.startDay);if((g.startMonth||g.month)===(g.endMonth||g.month)&&(g.endDay||1)<g.startDay){g.endDay=g.startDay;refreshWkEd();}saveGoalData();});
+    edSelW.addEventListener("change",function(e){g.endDay=parseInt(e.target.value);if((g.startMonth||g.month)===(g.endMonth||g.month)&&(g.startDay||1)>g.endDay){g.startDay=g.endDay;refreshWkSd();}saveGoalData();});
+    refreshWkSd();refreshWkEd();
+    pRow.appendChild(smSelW);pRow.appendChild(sdSelW);pRow.appendChild(h("span",{style:"font-size:10px;color:#475569;flex-shrink:0"},"~"));pRow.appendChild(emSelW);pRow.appendChild(edSelW);
     panel.appendChild(pRow);
   }else if(scope==="monthly"){
     const pRow=h("div",{style:"display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap"});
     pRow.appendChild(h("span",{style:"font-size:10px;color:#64748b;flex-shrink:0"},"🗓 기간:"));
     const smSel=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
+    const sdSelM=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
     const emSel=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
+    const edSelM=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
     for(let m=1;m<=12;m++){const os=h("option",{value:String(m)},m+"월");if(m===(g.startMonth||g.month||1))os.selected=true;smSel.appendChild(os);const oe=h("option",{value:String(m)},m+"월");if(m===(g.endMonth||g.month||1))oe.selected=true;emSel.appendChild(oe);}
-    smSel.addEventListener("change",function(e){g.startMonth=parseInt(e.target.value);g.month=g.startMonth;if((g.endMonth||1)<g.startMonth)g.endMonth=g.startMonth;saveGoalData();});
-    emSel.addEventListener("change",function(e){g.endMonth=parseInt(e.target.value);if((g.startMonth||1)>g.endMonth)g.startMonth=g.endMonth;saveGoalData();});
-    pRow.appendChild(smSel);pRow.appendChild(h("span",{style:"font-size:10px;color:#475569;flex-shrink:0"},"~"));pRow.appendChild(emSel);
+    function refreshMSd(){sdSelM.innerHTML="";var maxSd=daysInMonth(state.year,g.startMonth||g.month||1);for(let d=1;d<=maxSd;d++){var o=document.createElement("option");o.value=String(d);o.textContent=d+"일";if(d===(g.startDay||1))o.selected=true;sdSelM.appendChild(o);}}
+    function refreshMEd(){edSelM.innerHTML="";var maxEd=daysInMonth(state.year,g.endMonth||g.month||1);for(let d=1;d<=maxEd;d++){var o=document.createElement("option");o.value=String(d);o.textContent=d+"일";if(d===(g.endDay||maxEd))o.selected=true;edSelM.appendChild(o);}}
+    smSel.addEventListener("change",function(e){g.startMonth=parseInt(e.target.value);g.month=g.startMonth;if((g.endMonth||1)<g.startMonth)g.endMonth=g.startMonth;var maxSd=daysInMonth(state.year,g.startMonth);if(g.startDay&&g.startDay>maxSd)g.startDay=maxSd;refreshMSd();refreshMEd();saveGoalData();});
+    emSel.addEventListener("change",function(e){g.endMonth=parseInt(e.target.value);if((g.startMonth||1)>g.endMonth)g.startMonth=g.endMonth;g.endDay=daysInMonth(state.year,g.endMonth);refreshMEd();refreshMSd();saveGoalData();});
+    sdSelM.addEventListener("change",function(e){g.startDay=parseInt(e.target.value);if((g.startMonth||g.month)===(g.endMonth||g.month)&&(g.endDay||1)<g.startDay){g.endDay=g.startDay;refreshMEd();}saveGoalData();});
+    edSelM.addEventListener("change",function(e){g.endDay=parseInt(e.target.value);if((g.startMonth||g.month)===(g.endMonth||g.month)&&(g.startDay||1)>g.endDay){g.startDay=g.endDay;refreshMSd();}saveGoalData();});
+    refreshMSd();refreshMEd();
+    pRow.appendChild(smSel);pRow.appendChild(sdSelM);pRow.appendChild(h("span",{style:"font-size:10px;color:#475569;flex-shrink:0"},"~"));pRow.appendChild(emSel);pRow.appendChild(edSelM);
     panel.appendChild(pRow);
   }else if(scope==="longterm"){
     const pRow=h("div",{style:"display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap"});
     pRow.appendChild(h("span",{style:"font-size:10px;color:#64748b;flex-shrink:0"},"🎯 기간:"));
     const sySel=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
+    const smSelLt=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
     const eySel=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
+    const emSelLt=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
     for(let y=2025;y<=2040;y++){const os=h("option",{value:String(y)},y+"년");if(y===(g.startYear||state.year))os.selected=true;sySel.appendChild(os);const oe=h("option",{value:String(y)},y+"년");if(y===(g.endYear||state.year))oe.selected=true;eySel.appendChild(oe);}
+    for(let m=1;m<=12;m++){const osm=h("option",{value:String(m)},m+"월");if(m===(g.startMonth||1))osm.selected=true;smSelLt.appendChild(osm);const oem=h("option",{value:String(m)},m+"월");if(m===(g.endMonth||12))oem.selected=true;emSelLt.appendChild(oem);}
     sySel.addEventListener("change",function(e){g.startYear=parseInt(e.target.value);if((g.endYear||state.year)<g.startYear)g.endYear=g.startYear;saveGoalData();});
     eySel.addEventListener("change",function(e){g.endYear=parseInt(e.target.value);if((g.startYear||state.year)>g.endYear)g.startYear=g.endYear;saveGoalData();});
-    pRow.appendChild(sySel);pRow.appendChild(h("span",{style:"font-size:10px;color:#475569;flex-shrink:0"},"~"));pRow.appendChild(eySel);
+    smSelLt.addEventListener("change",function(e){g.startMonth=parseInt(e.target.value);saveGoalData();});
+    emSelLt.addEventListener("change",function(e){g.endMonth=parseInt(e.target.value);saveGoalData();});
+    pRow.appendChild(sySel);pRow.appendChild(smSelLt);pRow.appendChild(h("span",{style:"font-size:10px;color:#475569;flex-shrink:0"},"~"));pRow.appendChild(eySel);pRow.appendChild(emSelLt);
     panel.appendChild(pRow);
   }else if(scope==="daily"&&dk){
     const pRow=h("div",{style:"display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap"});
@@ -5966,13 +6070,14 @@ function doAddInlineGoal(af){
     state.goalCalMonth=m;state.goalCalDay=d;
 
   }else if(af.scope==="weekly"){
-    var wm2=af.month||new Date().getMonth()+1;
+    var wsm=af.startMonth||af.month||new Date().getMonth()+1;
+    var wem=af.endMonth||wsm;
     var sd=af.startDay||1;
-    var ed=af.endDay||Math.min(7,daysInMonth(state.year,wm2));
-    var wi=weekIdxOfDay(state.year,wm2,sd);
+    var ed=af.endDay||Math.min(sd+6,daysInMonth(state.year,wem));
+    var wi=weekIdxOfDay(state.year,wsm,sd);
     var wg={id:id,cat:cat,name:name,memo:memo,progress:0,subtasks:[],
-      year:state.year,month:wm2,weekIdx:wi,startDay:sd,endDay:ed,
-      period:state.year+"-"+String(wm2).padStart(2,"0")+"-W"+wi};
+      year:state.year,month:wsm,startMonth:wsm,endMonth:wem,weekIdx:wi,startDay:sd,endDay:ed,
+      period:state.year+"-"+String(wsm).padStart(2,"0")+"-W"+wi};
     if(pids)wg.parentIds=pids;
     if(lang)wg.language=lang;
     state.goalData.weekly.push(wg);
@@ -5981,16 +6086,20 @@ function doAddInlineGoal(af){
   }else if(af.scope==="monthly"){
     var sm=af.startMonth||new Date().getMonth()+1;
     var em=af.endMonth||sm;
+    var smSd=af.startDay||1;
+    var emEd=af.endDay||daysInMonth(state.year,em);
     var mg={id:id,cat:cat,name:name,memo:memo,progress:0,subtasks:[],
-      year:state.year,month:sm,startMonth:sm,endMonth:em};
+      year:state.year,month:sm,startMonth:sm,endMonth:em,startDay:smSd,endDay:emEd};
     if(pids)mg.parentIds=pids;
     if(lang)mg.language=lang;
     state.goalData.monthly.push(mg);
     state.goalData.monthly=sortByDream(state.goalData.monthly);
 
   }else if(af.scope==="longterm"){
+    var ltCurM=new Date().getMonth()+1;
     var lg={id:id,cat:cat,name:name,memo:memo,progress:0,subtasks:[],
-      startYear:af.startYear||state.year,endYear:af.endYear||state.year+1};
+      startYear:af.startYear||state.year,endYear:af.endYear||state.year+1,
+      startMonth:af.startMonth||ltCurM,endMonth:af.endMonth||ltCurM};
     if(pids)lg.parentIds=pids;
     if(lang)lg.language=lang;
     state.goalData.longterm.push(lg);
@@ -6046,32 +6155,50 @@ function renderInlineAddForm(af,catDef,indentPx){
 
     if(af.scope==="longterm"){
       var sySel=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
+      var smSelLt=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
       var eySel=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
+      var emSelLt=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
+      var curMLt=new Date().getMonth()+1;
       for(let y=2025;y<=2040;y++){var os=document.createElement("option");os.value=String(y);os.textContent=y+"년";if(y===(af.startYear||new Date().getFullYear()))os.selected=true;sySel.appendChild(os);var oe=document.createElement("option");oe.value=String(y);oe.textContent=y+"년";if(y===(af.endYear||new Date().getFullYear()+1))oe.selected=true;eySel.appendChild(oe);}
+      for(let m=1;m<=12;m++){var osm=document.createElement("option");osm.value=String(m);osm.textContent=m+"월";if(m===(af.startMonth||curMLt))osm.selected=true;smSelLt.appendChild(osm);var oem=document.createElement("option");oem.value=String(m);oem.textContent=m+"월";if(m===(af.endMonth||curMLt))oem.selected=true;emSelLt.appendChild(oem);}
       sySel.addEventListener("change",function(e){af.startYear=parseInt(e.target.value);if(af.endYear<af.startYear)af.endYear=af.startYear;});
       eySel.addEventListener("change",function(e){af.endYear=parseInt(e.target.value);if(af.startYear>af.endYear)af.startYear=af.endYear;});
-      periodRow.appendChild(sySel);periodRow.appendChild(h("span",{style:"color:#475569;font-size:11px"},"~"));periodRow.appendChild(eySel);
+      smSelLt.addEventListener("change",function(e){af.startMonth=parseInt(e.target.value);});
+      emSelLt.addEventListener("change",function(e){af.endMonth=parseInt(e.target.value);});
+      periodRow.appendChild(sySel);periodRow.appendChild(smSelLt);periodRow.appendChild(h("span",{style:"color:#475569;font-size:11px"},"~"));periodRow.appendChild(eySel);periodRow.appendChild(emSelLt);
 
     }else if(af.scope==="monthly"){
       var smSel=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
+      var sdSelM=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
       var emSel=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
+      var edSelM=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
       var calM2=new Date().getMonth()+1;
       for(let m=1;m<=12;m++){var osm=document.createElement("option");osm.value=String(m);osm.textContent=m+"월";if(m===(af.startMonth||calM2))osm.selected=true;smSel.appendChild(osm);var oem=document.createElement("option");oem.value=String(m);oem.textContent=m+"월";if(m===(af.endMonth||calM2))oem.selected=true;emSel.appendChild(oem);}
-      smSel.addEventListener("change",function(e){af.startMonth=parseInt(e.target.value);if(af.endMonth<af.startMonth)af.endMonth=af.startMonth;});
-      emSel.addEventListener("change",function(e){af.endMonth=parseInt(e.target.value);if(af.startMonth>af.endMonth)af.startMonth=af.endMonth;});
-      periodRow.appendChild(smSel);periodRow.appendChild(h("span",{style:"color:#475569;font-size:11px"},"~"));periodRow.appendChild(emSel);
+      function refreshMonthlySd(){sdSelM.innerHTML="";var maxSd=daysInMonth(state.year,af.startMonth||calM2);for(let d=1;d<=maxSd;d++){var o=document.createElement("option");o.value=String(d);o.textContent=d+"일";if(d===(af.startDay||1))o.selected=true;sdSelM.appendChild(o);}}
+      function refreshMonthlyEd(){edSelM.innerHTML="";var maxEd=daysInMonth(state.year,af.endMonth||calM2);for(let d=1;d<=maxEd;d++){var o=document.createElement("option");o.value=String(d);o.textContent=d+"일";if(d===(af.endDay||maxEd))o.selected=true;edSelM.appendChild(o);}}
+      smSel.addEventListener("change",function(e){af.startMonth=parseInt(e.target.value);if(af.endMonth<af.startMonth)af.endMonth=af.startMonth;var maxSd=daysInMonth(state.year,af.startMonth);if(af.startDay&&af.startDay>maxSd)af.startDay=maxSd;refreshMonthlySd();refreshMonthlyEd();});
+      emSel.addEventListener("change",function(e){af.endMonth=parseInt(e.target.value);if(af.startMonth>af.endMonth)af.startMonth=af.endMonth;var maxEd=daysInMonth(state.year,af.endMonth);af.endDay=maxEd;refreshMonthlyEd();refreshMonthlySd();});
+      sdSelM.addEventListener("change",function(e){af.startDay=parseInt(e.target.value);if(af.startMonth===af.endMonth&&af.endDay<af.startDay){af.endDay=af.startDay;refreshMonthlyEd();}});
+      edSelM.addEventListener("change",function(e){af.endDay=parseInt(e.target.value);if(af.startMonth===af.endMonth&&af.startDay>af.endDay){af.startDay=af.endDay;refreshMonthlySd();}});
+      refreshMonthlySd();refreshMonthlyEd();
+      periodRow.appendChild(smSel);periodRow.appendChild(sdSelM);periodRow.appendChild(h("span",{style:"color:#475569;font-size:11px"},"~"));periodRow.appendChild(emSel);periodRow.appendChild(edSelM);
 
     }else if(af.scope==="weekly"){
       var calM3=new Date().getMonth()+1;
-      var mSelW=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
+      var calD3=new Date().getDate();
+      var smSelW=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
       var sdSelW=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
+      var emSelW=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
       var edSelW=h("select",{style:"padding:4px 6px;border-radius:6px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px"});
-      for(let m=1;m<=12;m++){var omw=document.createElement("option");omw.value=String(m);omw.textContent=m+"월";if(m===(af.month||calM3))omw.selected=true;mSelW.appendChild(omw);}
-      function refreshWk(){var maxD=daysInMonth(new Date().getFullYear(),af.month||calM3);sdSelW.innerHTML="";edSelW.innerHTML="";for(let d=1;d<=maxD;d++){var os2=document.createElement("option");os2.value=String(d);os2.textContent=d+"일";if(d===(af.startDay||1))os2.selected=true;sdSelW.appendChild(os2);var oe2=document.createElement("option");oe2.value=String(d);oe2.textContent=d+"일";if(d===(af.endDay||Math.min(7,maxD)))oe2.selected=true;edSelW.appendChild(oe2);}}
-      mSelW.addEventListener("change",function(e){af.month=parseInt(e.target.value);af.startDay=1;af.endDay=Math.min(7,daysInMonth(new Date().getFullYear(),af.month));refreshWk();});
-      sdSelW.addEventListener("change",function(e){af.startDay=parseInt(e.target.value);if(af.endDay<af.startDay)af.endDay=af.startDay;});
-      edSelW.addEventListener("change",function(e){af.endDay=parseInt(e.target.value);if(af.startDay>af.endDay)af.startDay=af.endDay;});
-      periodRow.appendChild(mSelW);refreshWk();periodRow.appendChild(sdSelW);periodRow.appendChild(h("span",{style:"color:#475569;font-size:10px;flex-shrink:0"},"~"));periodRow.appendChild(edSelW);
+      for(let m=1;m<=12;m++){var osmw=document.createElement("option");osmw.value=String(m);osmw.textContent=m+"월";if(m===(af.startMonth||af.month||calM3))osmw.selected=true;smSelW.appendChild(osmw);var oemw=document.createElement("option");oemw.value=String(m);oemw.textContent=m+"월";if(m===(af.endMonth||af.month||calM3))oemw.selected=true;emSelW.appendChild(oemw);}
+      function refreshWkSd(){sdSelW.innerHTML="";var maxSd=daysInMonth(state.year,af.startMonth||af.month||calM3);for(let d=1;d<=maxSd;d++){var o=document.createElement("option");o.value=String(d);o.textContent=d+"일";if(d===(af.startDay||calD3))o.selected=true;sdSelW.appendChild(o);}}
+      function refreshWkEd(){edSelW.innerHTML="";var maxEd=daysInMonth(state.year,af.endMonth||af.month||calM3);for(let d=1;d<=maxEd;d++){var o=document.createElement("option");o.value=String(d);o.textContent=d+"일";if(d===(af.endDay||Math.min((af.startDay||calD3)+6,maxEd)))o.selected=true;edSelW.appendChild(o);}}
+      smSelW.addEventListener("change",function(e){af.startMonth=parseInt(e.target.value);af.month=af.startMonth;if((af.endMonth||af.startMonth)<af.startMonth)af.endMonth=af.startMonth;var maxSd=daysInMonth(state.year,af.startMonth);if(af.startDay&&af.startDay>maxSd)af.startDay=maxSd;refreshWkSd();refreshWkEd();});
+      emSelW.addEventListener("change",function(e){af.endMonth=parseInt(e.target.value);if((af.startMonth||af.endMonth)>af.endMonth){af.startMonth=af.endMonth;af.month=af.startMonth;}var maxEd=daysInMonth(state.year,af.endMonth);if(af.endDay&&af.endDay>maxEd)af.endDay=maxEd;refreshWkEd();refreshWkSd();});
+      sdSelW.addEventListener("change",function(e){af.startDay=parseInt(e.target.value);if((af.startMonth||calM3)===(af.endMonth||calM3)&&(af.endDay||1)<af.startDay){af.endDay=af.startDay;refreshWkEd();}});
+      edSelW.addEventListener("change",function(e){af.endDay=parseInt(e.target.value);if((af.startMonth||calM3)===(af.endMonth||calM3)&&(af.startDay||1)>af.endDay){af.startDay=af.endDay;refreshWkSd();}});
+      refreshWkSd();refreshWkEd();
+      periodRow.appendChild(smSelW);periodRow.appendChild(sdSelW);periodRow.appendChild(h("span",{style:"color:#475569;font-size:10px;flex-shrink:0"},"~"));periodRow.appendChild(emSelW);periodRow.appendChild(edSelW);
 
     }else if(af.scope==="daily"){
       var calM4=new Date().getMonth()+1;
@@ -7490,7 +7617,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-17-v39";
+  var SEED_VER="2026-04-18-v40";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

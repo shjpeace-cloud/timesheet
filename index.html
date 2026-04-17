@@ -662,6 +662,31 @@ function saveGoalData(){
   }
 }
 
+// 누적권수 목표 (bookTarget.targetCount >= 1) 일괄 삭제 — 1회성 정리
+function cleanupLegacyBookTargets(){
+  var removed=0;
+  ["longterm","monthly","weekly"].forEach(function(sc){
+    var arr=state.goalData[sc]||[];
+    var before=arr.length;
+    state.goalData[sc]=arr.filter(function(g){
+      if(g.bookTarget&&(g.bookTarget.targetCount||0)>=1)return false;
+      // bookTarget만 있고 count 없으면 → language 필드로 변환 후 유지
+      if(g.bookTarget&&g.bookTarget.bookType){
+        g.language=g.bookTarget.bookType;
+        delete g.bookTarget;
+      }
+      return true;
+    });
+    removed+=before-state.goalData[sc].length;
+  });
+  if(removed>0){
+    try{localStorage.setItem(goalStorageKey(),JSON.stringify(state.goalData))}catch(e){}
+    console.log("[cleanupLegacyBookTargets] removed "+removed+" count-based reading goals");
+  }
+  return removed;
+}
+window.cleanupLegacyBookTargets=cleanupLegacyBookTargets;
+
 // 모든 scope에서 특정 id의 목표를 제거 (parentIds 참조까지 청소)
 function forceDeleteGoalById(gid){
   if(!gid)return 0;
@@ -722,19 +747,8 @@ function migrateReadingGoals(){
   var rgIdToScope={};
   rgList.forEach(function(rg){
     if(!rg.type||rg.type==="cumulative"){
-      var lg={
-        id:rg.id,cat:rg.cat,name:rg.name,memo:rg.memo||"",
-        progress:0,subtasks:[],
-        startYear:rg.startYear||today.getFullYear(),
-        endYear:rg.endYear||(today.getFullYear()+5)
-      };
-      // 권수 자동 계산 메타데이터 보존
-      if(rg.bookType||rg.targetCount){
-        lg.bookTarget={bookType:rg.bookType||"all",targetCount:rg.targetCount||0};
-      }
-      if(!state.goalData.longterm)state.goalData.longterm=[];
-      state.goalData.longterm.push(lg);
-      rgIdToScope[rg.id]="longterm";
+      // 누적권수 목표(영어책 100권 등)는 새 모델에서 제외 — 삭제
+      return;
     }else{
       var refDate=rg.endDate?new Date(rg.endDate):today;
       var ry=refDate.getFullYear(),rm=refDate.getMonth()+1;
@@ -816,8 +830,10 @@ function cloudLoadGoals(){
           cloudLongterm=cloudLongterm.filter(function(g){return hIds.indexOf(g.id)===-1});
         }
         state.goalData={daily:cloud.daily||{},weekly:sortByDream(cloud.weekly||[]),monthly:sortByDream(cloud.monthly||[]),longterm:sortByDream(cloudLongterm),habits:cloudHabits,readingGoals:cloud.readingGoals||[]};
-        // 클라우드에서 독서목표 내려받은 경우에도 이관
-        if(migrateReadingGoals()&&typeof cloudSaveGoals==="function"&&CLOUD_URL){cloudSaveGoals();}
+        // 클라우드에서 독서목표 내려받은 경우에도 이관 + 누적권수 정리
+        var _m2=migrateReadingGoals();
+        var _c2=cleanupLegacyBookTargets();
+        if((_m2||_c2>0)&&typeof cloudSaveGoals==="function"&&CLOUD_URL){cloudSaveGoals();}
         localStorage.setItem(goalStorageKey(),JSON.stringify(state.goalData));
         _isAutoRender=true;render();
       }
@@ -2584,30 +2600,18 @@ function renderYearlyReview(){
   allYGoals.sort(function(a,b){return dreamSortKey(a.g.cat)-dreamSortKey(b.g.cat);});
   if(allYGoals.length===0){yGoalsBox.appendChild(h("div",{style:"text-align:center;padding:10px 0;color:#334155;font-size:12px"},"금년 목표가 없습니다"));}
   else{
-    function yPct(x){
-      if(x.g.bookTarget){
-        var bt=x.g.bookTarget;
-        var cnt=calcReadingGoalCount({type:"cumulative",bookType:bt.bookType});
-        return bt.targetCount>0?Math.min(100,Math.round(cnt/bt.targetCount*100)):0;
-      }
-      return x.scope==="readingGoals"?calcReadingGoalProgress(x.g):(x.g.progress||0);
-    }
-    var activeYG=allYGoals.filter(function(x){return x.g.bookTarget?yPct(x)<100:(x.scope==="readingGoals"?calcReadingGoalProgress(x.g)<100:(x.g.progress||0)<100&&!x.g.done);});
-    var doneYG=allYGoals.filter(function(x){return x.g.bookTarget?yPct(x)>=100:(x.scope==="readingGoals"?calcReadingGoalProgress(x.g)>=100:(x.g.progress||0)>=100||x.g.done);});
+    var activeYG=allYGoals.filter(function(x){return x.scope==="readingGoals"?calcReadingGoalProgress(x.g)<100:(x.g.progress||0)<100&&!x.g.done;});
+    var doneYG=allYGoals.filter(function(x){return x.scope==="readingGoals"?calcReadingGoalProgress(x.g)>=100:(x.g.progress||0)>=100||x.g.done;});
     function renderYGoalRow(item,isDone){
       var g=item.g,scope=item.scope;var cat=catByCode(g.cat);
       var row=h("div",{style:"display:flex;align-items:center;gap:7px;padding:5px 0;border-bottom:1px solid #0f172a;cursor:pointer",onClick:function(){navigateToGoal(scope,g);}});
       row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:"+(cat?cat.color:"#94a3b8")+";font-family:monospace;flex-shrink:0;background:"+(cat?cat.color+"22":"#1e293b")+";border-radius:3px;padding:1px 5px"},g.cat));
+      // E2 언어 태그
+      if(g.language==="en"||g.language==="kr"){
+        row.appendChild(h("span",{style:"font-size:10px;flex-shrink:0"},g.language==="en"?"🇺🇸":"🇰🇷"));
+      }
       row.appendChild(h("span",{style:"flex:1;font-size:12px;color:"+(isDone?"#475569":"#cbd5e1")+(isDone?";text-decoration:line-through":"")},g.name));
-      if(g.bookTarget){
-        var bt=g.bookTarget;var cntB=calcReadingGoalCount({type:"cumulative",bookType:bt.bookType});
-        var btColor=bt.bookType==="kr"?"#10b981":bt.bookType==="all"?"#a78bfa":"#3b82f6";
-        var btPct=bt.targetCount>0?Math.min(100,Math.round(cntB/bt.targetCount*100)):0;
-        var btrack=h("div",{style:"width:40px;height:4px;background:#1e293b;border-radius:2px;overflow:hidden;flex-shrink:0"});
-        btrack.appendChild(h("div",{style:"height:100%;width:"+btPct+"%;background:"+(isDone?"#10b981":btColor)}));
-        row.appendChild(btrack);
-        row.appendChild(h("span",{style:"font-size:9px;color:"+(isDone?"#10b981":btColor)+";font-family:monospace;flex-shrink:0"},cntB+"/"+bt.targetCount+"권"));
-      }else if(scope==="readingGoals"&&g.type==="cumulative"){
+      if(scope==="readingGoals"&&g.type==="cumulative"){
         var cnt=calcReadingGoalCount(g);
         row.appendChild(h("span",{style:"font-size:9px;color:#3b82f6;font-family:monospace;flex-shrink:0"},cnt+"/"+g.targetCount+"권"));
       }else{
@@ -5580,24 +5584,17 @@ function renderGoalDetailPanel(g,scope,catDef,dk){
     panel.appendChild(pRow);
   }
 
-  // ── E2 독서 권수 목표 (장기/월간/주간) ──
-  if(g.cat==="E2"&&(scope==="longterm"||scope==="monthly"||scope==="weekly")){
-    if(!g.bookTarget)g.bookTarget={bookType:"en",targetCount:100};
+  // ── E2 독서 언어 태그 (모든 scope) ──
+  if(g.cat==="E2"){
     const btRow=h("div",{style:"display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px;padding:6px 8px;background:#0c0f1a;border-radius:6px;border:1px dashed #3b82f640"});
-    btRow.appendChild(h("span",{style:"font-size:10px;color:#64748b;flex-shrink:0"},"📚 권수:"));
-    [["en","🇺🇸 영어","#3b82f6"],["kr","🇰🇷 한글","#10b981"],["all","전체","#a78bfa"]].forEach(function(bt){
-      const active=g.bookTarget.bookType===bt[0];
-      btRow.appendChild(h("button",{style:"padding:3px 8px;border-radius:4px;border:1px solid "+(active?bt[2]:"#334155")+";background:"+(active?bt[2]+"22":"transparent")+";color:"+(active?bt[2]:"#64748b")+";font-size:11px;cursor:pointer",onClick:function(){g.bookTarget.bookType=bt[0];saveGoalData();cloudSaveGoals();_isAutoRender=true;render();}},bt[1]));
+    btRow.appendChild(h("span",{style:"font-size:10px;color:#64748b;flex-shrink:0"},"📚 언어:"));
+    [["en","🇺🇸 영어","#3b82f6"],["kr","🇰🇷 한글","#10b981"]].forEach(function(bt){
+      const active=g.language===bt[0];
+      btRow.appendChild(h("button",{style:"padding:3px 10px;border-radius:4px;border:1px solid "+(active?bt[2]:"#334155")+";background:"+(active?bt[2]+"22":"transparent")+";color:"+(active?bt[2]:"#64748b")+";font-size:11px;cursor:pointer",onClick:function(){g.language=bt[0];saveGoalData();cloudSaveGoals();_isAutoRender=true;render();}},bt[1]));
     });
-    btRow.appendChild(h("span",{style:"font-size:10px;color:#64748b;margin-left:4px;flex-shrink:0"},"목표:"));
-    const tcInpE=h("input",{type:"number",min:"1",max:"9999",style:"width:60px;padding:3px 6px;border-radius:4px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px;text-align:center",value:String(g.bookTarget.targetCount||0)});
-    tcInpE.addEventListener("focus",function(){_isEditing=true;});
-    tcInpE.addEventListener("blur",function(){_isEditing=false;});
-    tcInpE.addEventListener("input",function(e){g.bookTarget.targetCount=parseInt(e.target.value)||0;});
-    tcInpE.addEventListener("change",function(){saveGoalData();cloudSaveGoals();});
-    btRow.appendChild(tcInpE);
-    btRow.appendChild(h("span",{style:"font-size:10px;color:#64748b;flex-shrink:0"},"권"));
-    btRow.appendChild(h("button",{style:"padding:2px 6px;border-radius:4px;border:1px solid #475569;background:transparent;color:#64748b;font-size:10px;cursor:pointer;margin-left:auto",title:"권수 계산 해제",onClick:function(){delete g.bookTarget;saveGoalData();cloudSaveGoals();_isAutoRender=true;render();}},"✕ 해제"));
+    if(g.language){
+      btRow.appendChild(h("button",{style:"padding:2px 6px;border-radius:4px;border:1px solid #475569;background:transparent;color:#64748b;font-size:10px;cursor:pointer;margin-left:auto",title:"언어 태그 해제",onClick:function(){delete g.language;saveGoalData();cloudSaveGoals();_isAutoRender=true;render();}},"✕ 해제"));
+    }
     panel.appendChild(btRow);
   }
 
@@ -5710,6 +5707,9 @@ function doAddInlineGoal(af){
   var cat=af.cat;
   var pids=(af.parentIds&&Object.keys(af.parentIds).length>0)?af.parentIds:undefined;
 
+  // E2 목표는 언어 태그 부착
+  var lang=(cat==="E2"&&af.language)?af.language:null;
+
   if(af.scope==="daily"){
     var m=af.month||new Date().getMonth()+1;
     var d=af.day||new Date().getDate();
@@ -5717,6 +5717,7 @@ function doAddInlineGoal(af){
     if(!state.goalData.daily[dk])state.goalData.daily[dk]=[];
     var dg={id:id,cat:cat,name:name,done:false,memo:memo};
     if(pids)dg.parentIds=pids;
+    if(lang)dg.language=lang;
     state.goalData.daily[dk].push(dg);
     state.goalCalMonth=m;state.goalCalDay=d;
 
@@ -5729,9 +5730,7 @@ function doAddInlineGoal(af){
       year:state.year,month:wm2,weekIdx:wi,startDay:sd,endDay:ed,
       period:state.year+"-"+String(wm2).padStart(2,"0")+"-W"+wi};
     if(pids)wg.parentIds=pids;
-    if(cat==="E2"&&af.bookType){
-      wg.bookTarget={bookType:af.bookType,targetCount:parseInt(af.targetCount)||0};
-    }
+    if(lang)wg.language=lang;
     state.goalData.weekly.push(wg);
     state.goalData.weekly=sortByDream(state.goalData.weekly);
 
@@ -5741,9 +5740,7 @@ function doAddInlineGoal(af){
     var mg={id:id,cat:cat,name:name,memo:memo,progress:0,subtasks:[],
       year:state.year,month:sm,startMonth:sm,endMonth:em};
     if(pids)mg.parentIds=pids;
-    if(cat==="E2"&&af.bookType){
-      mg.bookTarget={bookType:af.bookType,targetCount:parseInt(af.targetCount)||0};
-    }
+    if(lang)mg.language=lang;
     state.goalData.monthly.push(mg);
     state.goalData.monthly=sortByDream(state.goalData.monthly);
 
@@ -5751,10 +5748,7 @@ function doAddInlineGoal(af){
     var lg={id:id,cat:cat,name:name,memo:memo,progress:0,subtasks:[],
       startYear:af.startYear||state.year,endYear:af.endYear||state.year+1};
     if(pids)lg.parentIds=pids;
-    // E2 독서 장기목표: 권수 자동 계산 메타데이터
-    if(cat==="E2"&&af.bookType){
-      lg.bookTarget={bookType:af.bookType,targetCount:parseInt(af.targetCount)||0};
-    }
+    if(lang)lg.language=lang;
     state.goalData.longterm.push(lg);
     state.goalData.longterm=sortByDream(state.goalData.longterm);
 
@@ -5850,23 +5844,14 @@ function renderInlineAddForm(af,catDef,indentPx){
     }
     formBox.appendChild(periodRow);
 
-    // E2(독서) 장기/월간/주간: 책 타입 + 권수 목표 (일간은 제외)
-    if(af.cat==="E2"&&(af.scope==="longterm"||af.scope==="monthly"||af.scope==="weekly")){
-      if(!af.bookType)af.bookType="en";
-      if(!af.targetCount)af.targetCount=100;
+    // E2(독서) 목표: 언어 태그 (모든 scope)
+    if(af.cat==="E2"){
+      if(!af.language)af.language="en";
       var btRow=h("div",{style:"display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px;padding:6px 8px;background:#0c0f1a;border-radius:6px;border:1px dashed #3b82f640"});
-      btRow.appendChild(h("span",{style:"font-size:10px;color:#64748b;flex-shrink:0"},"📚 권수:"));
-      var enBtnF=h("button",{style:"padding:3px 8px;border-radius:4px;border:1px solid "+(af.bookType==="en"?"#3b82f6":"#334155")+";background:"+(af.bookType==="en"?"#3b82f622":"transparent")+";color:"+(af.bookType==="en"?"#60a5fa":"#64748b")+";font-size:11px;cursor:pointer",onClick:function(){af.bookType="en";render();}},"🇺🇸 영어");
-      var krBtnF=h("button",{style:"padding:3px 8px;border-radius:4px;border:1px solid "+(af.bookType==="kr"?"#10b981":"#334155")+";background:"+(af.bookType==="kr"?"#10b98122":"transparent")+";color:"+(af.bookType==="kr"?"#34d399":"#64748b")+";font-size:11px;cursor:pointer",onClick:function(){af.bookType="kr";render();}},"🇰🇷 한글");
-      var allBtnF=h("button",{style:"padding:3px 8px;border-radius:4px;border:1px solid "+(af.bookType==="all"?"#a78bfa":"#334155")+";background:"+(af.bookType==="all"?"#a78bfa22":"transparent")+";color:"+(af.bookType==="all"?"#c4b5fd":"#64748b")+";font-size:11px;cursor:pointer",onClick:function(){af.bookType="all";render();}},"전체");
-      btRow.appendChild(enBtnF);btRow.appendChild(krBtnF);btRow.appendChild(allBtnF);
-      btRow.appendChild(h("span",{style:"font-size:10px;color:#64748b;margin-left:4px;flex-shrink:0"},"목표:"));
-      var tcInpF=h("input",{type:"number",min:"1",max:"9999",style:"width:60px;padding:3px 6px;border-radius:4px;border:1px solid #334155;background:#111827;color:#cbd5e1;font-size:11px;text-align:center",value:String(af.targetCount)});
-      tcInpF.addEventListener("focus",function(){_isEditing=true;});
-      tcInpF.addEventListener("blur",function(){_isEditing=false;});
-      tcInpF.addEventListener("input",function(e){af.targetCount=parseInt(e.target.value)||100;});
-      btRow.appendChild(tcInpF);
-      btRow.appendChild(h("span",{style:"font-size:10px;color:#64748b;flex-shrink:0"},"권"));
+      btRow.appendChild(h("span",{style:"font-size:10px;color:#64748b;flex-shrink:0"},"📚 언어:"));
+      var enBtnF=h("button",{style:"padding:3px 10px;border-radius:4px;border:1px solid "+(af.language==="en"?"#3b82f6":"#334155")+";background:"+(af.language==="en"?"#3b82f622":"transparent")+";color:"+(af.language==="en"?"#60a5fa":"#64748b")+";font-size:11px;cursor:pointer",onClick:function(){af.language="en";render();}},"🇺🇸 영어");
+      var krBtnF=h("button",{style:"padding:3px 10px;border-radius:4px;border:1px solid "+(af.language==="kr"?"#10b981":"#334155")+";background:"+(af.language==="kr"?"#10b98122":"transparent")+";color:"+(af.language==="kr"?"#34d399":"#64748b")+";font-size:11px;cursor:pointer",onClick:function(){af.language="kr";render();}},"🇰🇷 한글");
+      btRow.appendChild(enBtnF);btRow.appendChild(krBtnF);
       formBox.appendChild(btRow);
     }
 
@@ -6436,6 +6421,12 @@ function renderGoals(){
         "border-radius:4px;padding:1px 5px;flex-shrink:0;white-space:nowrap;font-family:'JetBrains Mono',monospace";
       pill.appendChild(h("span",{style:badgeStyle},vis.label));
 
+      // E2 독서 언어 태그
+      if(g.language==="en"||g.language==="kr"){
+        const langColor=g.language==="en"?"#3b82f6":"#10b981";
+        pill.appendChild(h("span",{style:"font-size:9px;color:"+langColor+";flex-shrink:0"},g.language==="en"?"🇺🇸":"🇰🇷"));
+      }
+
       // 목표명
       pill.appendChild(h("span",{
         style:"flex:1;font-size:"+vis.fs+";font-weight:"+vis.fw+";"+
@@ -6479,16 +6470,6 @@ function renderGoals(){
       }else if(scope==="readingGoals"&&g.type==="cumulative"){
         const cnt=calcReadingGoalCount(g);
         pill.appendChild(h("span",{style:"font-size:9px;color:#3b82f6;font-family:monospace;flex-shrink:0"},cnt+"/"+g.targetCount+"권"));
-      }else if(g.bookTarget){
-        // E2 독서 목표: 권수 자동 계산
-        const bt=g.bookTarget;
-        const bcnt=calcReadingGoalCount({type:"cumulative",bookType:bt.bookType});
-        const btPct=bt.targetCount>0?Math.min(100,Math.round(bcnt/bt.targetCount*100)):0;
-        const btColor=bt.bookType==="kr"?"#10b981":bt.bookType==="all"?"#a78bfa":"#3b82f6";
-        const btrack=h("div",{style:"width:36px;height:"+vis.lh+";background:#1e293b;border-radius:2px;overflow:hidden;flex-shrink:0"});
-        btrack.appendChild(h("div",{style:"height:100%;width:"+btPct+"%;background:"+btColor+";transition:width .3s"}));
-        pill.appendChild(btrack);
-        pill.appendChild(h("span",{style:"font-size:9px;color:"+btColor+";font-family:monospace;flex-shrink:0"},bcnt+"/"+bt.targetCount+"권"));
       }else if(scope!=="habits"){
         const track=h("div",{style:"width:36px;height:"+vis.lh+";background:#1e293b;border-radius:2px;overflow:hidden;flex-shrink:0"});
         track.appendChild(h("div",{style:"height:100%;width:"+pct+"%;background:"+(done?"#10b981":vis.color)+";transition:width .3s"}));
@@ -7263,7 +7244,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-17-v29";
+  var SEED_VER="2026-04-17-v30";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){
@@ -7335,7 +7316,9 @@ if((state.goalData.habits||[]).length===0&&(state.goalData.longterm||[]).length=
   try{localStorage.setItem(goalStorageKey(),JSON.stringify(state.goalData))}catch(e){}
 }
 // 기존 독서목표 → longterm/weekly 이관 (cumulative→장기, specific→주간)
-if(migrateReadingGoals()&&typeof cloudSaveGoals==="function"&&CLOUD_URL){cloudSaveGoals();}
+var _mig=migrateReadingGoals();
+var _cleanup=cleanupLegacyBookTargets();
+if((_mig||_cleanup>0)&&typeof cloudSaveGoals==="function"&&CLOUD_URL){cloudSaveGoals();}
 render();
 if(CLOUD_URL)setTimeout(()=>cloudLoad(),500);
 </script>

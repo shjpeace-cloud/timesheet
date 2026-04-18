@@ -27,9 +27,6 @@ html,body{background:#0c0f1a;font-family:'Noto Sans KR',sans-serif;color:#e2e8f0
 .year-picker{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;padding:10px 0 4px}
 .year-opt{padding:7px 14px;border-radius:8px;border:1px solid #334155;background:#111827;color:#94a3b8;font-size:13px;cursor:pointer;font-family:'JetBrains Mono',monospace;font-weight:600}
 .year-opt.active{background:#6366f1;color:#fff;border-color:#6366f1}
-.year-opt.archive-opt{opacity:.85}
-.year-btn.archive{background:#3f2a1a;border-color:#92400e;color:#fbbf24}
-.archive-banner{background:linear-gradient(90deg,#78350f,#451a03);color:#fcd34d;padding:8px 12px;border-radius:10px;margin:6px 0 0;font-size:12px;font-weight:600;text-align:center;border:1px solid #92400e}
 .header-actions{display:flex;align-items:center;gap:8px}
 .saved-badge{font-size:11px;background:#064e3b;color:#6ee7b7;padding:3px 10px;border-radius:20px;font-weight:500}
 .saved-badge.error{background:#7f1d1d;color:#fca5a5}
@@ -1515,11 +1512,10 @@ function renderHeader(){
   const top=h("div",{className:"header-top"});
   const trow=h("div",{className:"title-row"});
   trow.appendChild(h("h1",{className:"title"},"⏱ 시간통계"));
-  const archive=isArchiveMode();
   const yb=h("button",{
-    className:"year-btn"+(archive?" archive":""),
+    className:"year-btn",
     onClick:()=>{state.showYearPicker=!state.showYearPicker;state.showMenu=false;render()}
-  },(archive?"📖 ":"")+state.year+"년 ▾");
+  },state.year+"년 ▾");
   trow.appendChild(yb);
   top.appendChild(trow);
 
@@ -1537,21 +1533,20 @@ function renderHeader(){
   if(state.showYearPicker){
     const yp=h("div",{className:"year-picker"});
     const curY=(new Date()).getFullYear();
-    const years=[];
-    for(let y=2019;y<=2040;y++)years.push(y);
-    years.forEach(y=>{
-      const isArch=y!==curY;
-      yp.appendChild(h("button",{
-        className:"year-opt"+(y===state.year?" active":"")+(isArch?" archive-opt":""),
-        onClick:()=>{
-          state.year=y;state.showYearPicker=false;
-          state.data=load();state.bookData=loadBooks();state.goalData=loadGoals();
-          // 아카이브로 이동 시 클라우드 pull은 건너뛴다 (현재 연도 데이터를 덮지 않도록)
-          if(CLOUD_URL&&y===curY)cloudLoad();
-          render();
-        }
-      },String(y)+(isArch?" 📖":"")));
-    });
+    for(let y=2019;y<=2040;y++){
+      (function(yy){
+        yp.appendChild(h("button",{
+          className:"year-opt"+(yy===state.year?" active":""),
+          onClick:()=>{
+            state.year=yy;state.showYearPicker=false;
+            state.data=load();state.bookData=loadBooks();state.goalData=loadGoals();
+            // 현재 연도일 때만 클라우드 pull (과거 연도를 현재 데이터로 덮지 않도록)
+            if(CLOUD_URL&&yy===curY)cloudLoad();
+            render();
+          }
+        },String(yy)));
+      })(y);
+    }
     hdr.appendChild(yp);
   }
   if(state.showMenu){
@@ -2834,11 +2829,10 @@ function renderYearlyReview(){
     wrap.appendChild(doneBox);
   })();
 
-  // ── 연간 DREAM 추이 (2019 ~ min(cy, 현재), 일평균) ──
+  // ── 연간 DREAM 추이 (2019 ~ cy, 일평균) ──
   (function(){
-    var yChartEnd=Math.min(cy,(new Date()).getFullYear());
     var sec=h("div",{className:"chart-container"});
-    sec.appendChild(h("h3",{className:"chart-title"},"📈 DREAM 연간 일평균 추이 (h/일, 2019~"+yChartEnd+")"));
+    sec.appendChild(h("h3",{className:"chart-title"},"📈 DREAM 연간 일평균 추이 (h/일, 2019~"+cy+")"));
     var wr=h("div",{className:"chart-wrap"});wr.appendChild(h("canvas",{id:"yearlyDreamChart"}));sec.appendChild(wr);
     wrap.appendChild(sec);
   })();
@@ -2888,11 +2882,10 @@ function renderYearlyReview(){
     wrap.appendChild(bookSec);
   })();
 
-  // ── 독서 연간 추이 (2019 ~ min(cy, 현재), EN/KR 라인) ──
+  // ── 독서 연간 추이 (2019 ~ cy, EN/KR 라인) ──
   (function(){
-    var yBookEnd=Math.min(cy,(new Date()).getFullYear());
     var sec=h("div",{className:"chart-container"});
-    sec.appendChild(h("h3",{className:"chart-title"},"📈 독서 연간 추이 (권, 2019~"+yBookEnd+")"));
+    sec.appendChild(h("h3",{className:"chart-title"},"📈 독서 연간 추이 (권, 2019~"+cy+")"));
     var wr=h("div",{className:"chart-wrap"});wr.appendChild(h("canvas",{id:"yearlyBookChart"}));sec.appendChild(wr);
     wrap.appendChild(sec);
   })();
@@ -3000,13 +2993,10 @@ function renderYearlyCharts(){
     [yearlyDreamChartInst,yearlyDChartInst,yearlyRChartInst,yearlyBookChartInst].forEach(function(ci){try{if(ci)ci.destroy()}catch(e){}});
     yearlyDreamChartInst=yearlyDChartInst=yearlyRChartInst=yearlyBookChartInst=null;
     var cy=state.year;
-    // 시간통계를 시작한 2019년부터 "데이터가 존재하는 마지막 연도"(현재 연도)까지.
-    // cy가 현재보다 미래(계획용)면 끝점은 현재 연도로 고정 — 빈 미래 연도 배제.
+    // 2019(시간통계 시작)부터 선택 연도까지. 미래 연도라도 전 구간 표시.
     var startY=2019;
-    var curY=(new Date()).getFullYear();
-    var endY=Math.max(startY,Math.min(cy,curY));
+    var endY=Math.max(startY,cy);
     var years=[];for(var yy=startY;yy<=endY;yy++)years.push(yy);
-    if(years.length===0)years=[endY];
     var labels=years.map(function(y){return y+"년"});
     function yearTotals(y){
       var ent=getEntriesForYear(y);
@@ -6456,7 +6446,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-18-v47";
+  var SEED_VER="2026-04-18-v48";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

@@ -27,6 +27,9 @@ html,body{background:#0c0f1a;font-family:'Noto Sans KR',sans-serif;color:#e2e8f0
 .year-picker{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;padding:10px 0 4px}
 .year-opt{padding:7px 14px;border-radius:8px;border:1px solid #334155;background:#111827;color:#94a3b8;font-size:13px;cursor:pointer;font-family:'JetBrains Mono',monospace;font-weight:600}
 .year-opt.active{background:#6366f1;color:#fff;border-color:#6366f1}
+.year-opt.archive-opt{opacity:.85}
+.year-btn.archive{background:#3f2a1a;border-color:#92400e;color:#fbbf24}
+.archive-banner{background:linear-gradient(90deg,#78350f,#451a03);color:#fcd34d;padding:8px 12px;border-radius:10px;margin:6px 0 0;font-size:12px;font-weight:600;text-align:center;border:1px solid #92400e}
 .header-actions{display:flex;align-items:center;gap:8px}
 .saved-badge{font-size:11px;background:#064e3b;color:#6ee7b7;padding:3px 10px;border-radius:20px;font-weight:500}
 .saved-badge.error{background:#7f1d1d;color:#fca5a5}
@@ -478,6 +481,8 @@ var syncTimer=null;
 function storageKey(){return "timesheet-data-"+state.year}
 function bookStorageKey(){return "books-data-"+state.year}
 function goalStorageKey(){return "goals-data-"+state.year}
+// 아카이브 모드: 현재 연도가 아닌 과거/미래 연도를 보는 상태. 쓰기는 차단.
+function isArchiveMode(){return state.year!==(new Date()).getFullYear()}
 function weeklyReviewKey(y,m,w){return "weekly-review-"+y+"-"+m+"-"+w}
 function loadWeeklyReview(y,m,w){
   try{var r=localStorage.getItem(weeklyReviewKey(y,m,w));return r?JSON.parse(r):{best:"",missed:"",next:"",note:""}}catch(e){return{best:"",missed:"",next:"",note:""}}
@@ -634,6 +639,7 @@ function migrateHabits(longtermList){
   return result;
 }
 function save(){
+  if(isArchiveMode())return; // 아카이브 모드: 과거/미래 연도 데이터는 편집 금지
   try{localStorage.setItem(storageKey(),JSON.stringify(state.data));showSave("saved")}catch(e){
     console.error("localStorage save failed:",e);
     showSave("error");
@@ -644,6 +650,7 @@ function save(){
   }
 }
 function saveBookData(){
+  if(isArchiveMode())return;
   try{localStorage.setItem(bookStorageKey(),JSON.stringify(state.bookData))}catch(e){
     console.error("localStorage book save failed:",e);
   }
@@ -653,6 +660,7 @@ function saveBookData(){
   }
 }
 function saveGoalData(){
+  if(isArchiveMode())return;
   try{localStorage.setItem(goalStorageKey(),JSON.stringify(state.goalData))}catch(e){
     console.error("localStorage goal save failed:",e);
   }
@@ -813,6 +821,7 @@ function migrateReadingGoals(){
 }
 function cloudSaveGoals(){
   if(!CLOUD_URL)return;
+  if(isArchiveMode())return; // 아카이브 모드: 클라우드 쓰기 금지
   // debounce: 연속 호출 방지
   clearTimeout(cloudSaveGoals._timer);
   cloudSaveGoals._timer=setTimeout(function(){
@@ -866,6 +875,7 @@ function groupCats(g){return CATEGORIES.filter(c=>c.group===g)}
 
 function cloudSave(){
   if(!CLOUD_URL)return;
+  if(isArchiveMode())return; // 아카이브 모드: 과거 연도 데이터 클라우드 쓰기 금지
   state.syncStatus='syncing';_isAutoRender=true;render();
   var body='action=save&year='+state.year+'&data='+encodeURIComponent(JSON.stringify(state.data));
   fetch(CLOUD_URL,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body,redirect:'follow'})
@@ -880,6 +890,7 @@ function cloudSave(){
 }
 
 function cloudSaveBooks(){
+  if(isArchiveMode())return;
   if(!CLOUD_URL)return;
   state.syncStatus='syncing';_isAutoRender=true;render();
   var body='action=saveBooks&year='+state.year+'&data='+encodeURIComponent(JSON.stringify(state.bookData));
@@ -953,6 +964,7 @@ function cloudPing(){
 }
 
 function setSlot(time,field,val){
+  if(isArchiveMode()){_isEditing=false;return}
   const k=dateKey();
   if(!state.data.entries[k])state.data.entries[k]={};
   if(!state.data.entries[k][time])state.data.entries[k][time]={};
@@ -962,6 +974,7 @@ function setSlot(time,field,val){
 }
 // Silent version: set slot data without triggering save/render (for batch operations)
 function setSlotSilent(time,field,val){
+  if(isArchiveMode())return;
   const k=dateKey();
   if(!state.data.entries[k])state.data.entries[k]={};
   if(!state.data.entries[k][time])state.data.entries[k][time]={};
@@ -1501,7 +1514,11 @@ function renderHeader(){
   const top=h("div",{className:"header-top"});
   const trow=h("div",{className:"title-row"});
   trow.appendChild(h("h1",{className:"title"},"⏱ 시간통계"));
-  const yb=h("button",{className:"year-btn",onClick:()=>{state.showYearPicker=!state.showYearPicker;state.showMenu=false;render()}},state.year+"년 ▾");
+  const archive=isArchiveMode();
+  const yb=h("button",{
+    className:"year-btn"+(archive?" archive":""),
+    onClick:()=>{state.showYearPicker=!state.showYearPicker;state.showMenu=false;render()}
+  },(archive?"📖 ":"")+state.year+"년 ▾");
   trow.appendChild(yb);
   top.appendChild(trow);
 
@@ -1518,14 +1535,28 @@ function renderHeader(){
 
   if(state.showYearPicker){
     const yp=h("div",{className:"year-picker"});
-    [2026,2027,2028,2029,2030,2031,2032,2033,2034,2035,2036,2037,2038,2039,2040].forEach(y=>{
-      yp.appendChild(h("button",{className:"year-opt"+(y===state.year?" active":""),onClick:()=>{
-        state.year=y;state.showYearPicker=false;state.data=load();state.bookData=loadBooks();state.goalData=loadGoals();
-        if(CLOUD_URL)cloudLoad();
-        render();
-      }},String(y)));
+    const curY=(new Date()).getFullYear();
+    const years=[];
+    for(let y=2019;y<=2040;y++)years.push(y);
+    years.forEach(y=>{
+      const isArch=y!==curY;
+      yp.appendChild(h("button",{
+        className:"year-opt"+(y===state.year?" active":"")+(isArch?" archive-opt":""),
+        onClick:()=>{
+          state.year=y;state.showYearPicker=false;
+          state.data=load();state.bookData=loadBooks();state.goalData=loadGoals();
+          // 아카이브로 이동 시 클라우드 pull은 건너뛴다 (현재 연도 데이터를 덮지 않도록)
+          if(CLOUD_URL&&y===curY)cloudLoad();
+          render();
+        }
+      },String(y)+(isArch?" 📖":"")));
     });
     hdr.appendChild(yp);
+  }
+  // 아카이브 모드 배너: 헤더 하단에 표시
+  if(archive){
+    hdr.appendChild(h("div",{className:"archive-banner"},
+      "📖 아카이브 모드 — "+state.year+"년 데이터 (읽기 전용, 편집은 저장되지 않습니다)"));
   }
   if(state.showMenu){
     const dd=h("div",{className:"dropdown"});
@@ -1746,6 +1777,7 @@ function showDiaryModal(text,month,day,year){
     editArea.addEventListener("input",function(e){
       var val=e.target.value;
       text=val;
+      if(isArchiveMode())return;
       clearTimeout(saveT);
       saveT=setTimeout(function(){
         var dk2=state.month+"-"+state.day;
@@ -1919,6 +1951,7 @@ function renderInput(){
     const val=e.target.value.slice(0,2000);
     e.target.value=val;
     charCount.textContent=val.length+"/2000";
+    if(isArchiveMode())return; // 아카이브 모드: 일기 편집 저장 금지
     clearTimeout(diaryTimer);
     diaryTimer=setTimeout(()=>{
       if(!state.data.entries[dk])state.data.entries[dk]={};
@@ -6237,7 +6270,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-18-v43";
+  var SEED_VER="2026-04-18-v44";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

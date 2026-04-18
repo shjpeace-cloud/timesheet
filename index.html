@@ -481,8 +481,9 @@ var syncTimer=null;
 function storageKey(){return "timesheet-data-"+state.year}
 function bookStorageKey(){return "books-data-"+state.year}
 function goalStorageKey(){return "goals-data-"+state.year}
-// 아카이브 모드: 현재 연도가 아닌 과거/미래 연도를 보는 상태. 쓰기는 차단.
-function isArchiveMode(){return state.year!==(new Date()).getFullYear()}
+// 아카이브 모드: 현재 연도보다 과거 연도를 보는 상태만 쓰기 차단.
+// 미래 연도(예: 계획용)는 정상 편집 허용.
+function isArchiveMode(){return state.year<(new Date()).getFullYear()}
 function weeklyReviewKey(y,m,w){return "weekly-review-"+y+"-"+m+"-"+w}
 function loadWeeklyReview(y,m,w){
   try{var r=localStorage.getItem(weeklyReviewKey(y,m,w));return r?JSON.parse(r):{best:"",missed:"",next:"",note:""}}catch(e){return{best:"",missed:"",next:"",note:""}}
@@ -1552,11 +1553,6 @@ function renderHeader(){
       },String(y)+(isArch?" 📖":"")));
     });
     hdr.appendChild(yp);
-  }
-  // 아카이브 모드 배너: 헤더 하단에 표시
-  if(archive){
-    hdr.appendChild(h("div",{className:"archive-banner"},
-      "📖 아카이브 모드 — "+state.year+"년 데이터 (읽기 전용, 편집은 저장되지 않습니다)"));
   }
   if(state.showMenu){
     const dd=h("div",{className:"dropdown"});
@@ -2841,7 +2837,7 @@ function renderYearlyReview(){
   // ── 연간 DREAM 추이 (최근 7년, 일평균) ──
   (function(){
     var sec=h("div",{className:"chart-container"});
-    sec.appendChild(h("h3",{className:"chart-title"},"📈 DREAM 연간 일평균 추이 (h/일, 최근 7년)"));
+    sec.appendChild(h("h3",{className:"chart-title"},"📈 DREAM 연간 일평균 추이 (h/일, 2019~"+cy+")"));
     var wr=h("div",{className:"chart-wrap"});wr.appendChild(h("canvas",{id:"yearlyDreamChart"}));sec.appendChild(wr);
     wrap.appendChild(sec);
   })();
@@ -2894,7 +2890,7 @@ function renderYearlyReview(){
   // ── 독서 연간 추이 (최근 7년, EN/KR 라인) ──
   (function(){
     var sec=h("div",{className:"chart-container"});
-    sec.appendChild(h("h3",{className:"chart-title"},"📈 독서 연간 추이 (권, 최근 7년)"));
+    sec.appendChild(h("h3",{className:"chart-title"},"📈 독서 연간 추이 (권, 2019~"+cy+")"));
     var wr=h("div",{className:"chart-wrap"});wr.appendChild(h("canvas",{id:"yearlyBookChart"}));sec.appendChild(wr);
     wrap.appendChild(sec);
   })();
@@ -3002,7 +2998,10 @@ function renderYearlyCharts(){
     [yearlyDreamChartInst,yearlyDChartInst,yearlyRChartInst,yearlyBookChartInst].forEach(function(ci){try{if(ci)ci.destroy()}catch(e){}});
     yearlyDreamChartInst=yearlyDChartInst=yearlyRChartInst=yearlyBookChartInst=null;
     var cy=state.year;
-    var years=[];for(var yy=cy-6;yy<=cy;yy++)years.push(yy);
+    // 시간통계를 시작한 2019년부터 현재 선택된 연도까지. cy<2019면 단일 연도.
+    var startY=2019;
+    var years=[];for(var yy=startY;yy<=cy;yy++)years.push(yy);
+    if(years.length===0)years=[cy];
     var labels=years.map(function(y){return y+"년"});
     function yearTotals(y){
       var ent=getEntriesForYear(y);
@@ -6452,7 +6451,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-18-v45";
+  var SEED_VER="2026-04-18-v46";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

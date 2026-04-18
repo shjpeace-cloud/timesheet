@@ -2834,10 +2834,11 @@ function renderYearlyReview(){
     wrap.appendChild(doneBox);
   })();
 
-  // ── 연간 DREAM 추이 (최근 7년, 일평균) ──
+  // ── 연간 DREAM 추이 (2019 ~ min(cy, 현재), 일평균) ──
   (function(){
+    var yChartEnd=Math.min(cy,(new Date()).getFullYear());
     var sec=h("div",{className:"chart-container"});
-    sec.appendChild(h("h3",{className:"chart-title"},"📈 DREAM 연간 일평균 추이 (h/일, 2019~"+cy+")"));
+    sec.appendChild(h("h3",{className:"chart-title"},"📈 DREAM 연간 일평균 추이 (h/일, 2019~"+yChartEnd+")"));
     var wr=h("div",{className:"chart-wrap"});wr.appendChild(h("canvas",{id:"yearlyDreamChart"}));sec.appendChild(wr);
     wrap.appendChild(sec);
   })();
@@ -2887,10 +2888,11 @@ function renderYearlyReview(){
     wrap.appendChild(bookSec);
   })();
 
-  // ── 독서 연간 추이 (최근 7년, EN/KR 라인) ──
+  // ── 독서 연간 추이 (2019 ~ min(cy, 현재), EN/KR 라인) ──
   (function(){
+    var yBookEnd=Math.min(cy,(new Date()).getFullYear());
     var sec=h("div",{className:"chart-container"});
-    sec.appendChild(h("h3",{className:"chart-title"},"📈 독서 연간 추이 (권, 2019~"+cy+")"));
+    sec.appendChild(h("h3",{className:"chart-title"},"📈 독서 연간 추이 (권, 2019~"+yBookEnd+")"));
     var wr=h("div",{className:"chart-wrap"});wr.appendChild(h("canvas",{id:"yearlyBookChart"}));sec.appendChild(wr);
     wrap.appendChild(sec);
   })();
@@ -2998,10 +3000,13 @@ function renderYearlyCharts(){
     [yearlyDreamChartInst,yearlyDChartInst,yearlyRChartInst,yearlyBookChartInst].forEach(function(ci){try{if(ci)ci.destroy()}catch(e){}});
     yearlyDreamChartInst=yearlyDChartInst=yearlyRChartInst=yearlyBookChartInst=null;
     var cy=state.year;
-    // 시간통계를 시작한 2019년부터 현재 선택된 연도까지. cy<2019면 단일 연도.
+    // 시간통계를 시작한 2019년부터 "데이터가 존재하는 마지막 연도"(현재 연도)까지.
+    // cy가 현재보다 미래(계획용)면 끝점은 현재 연도로 고정 — 빈 미래 연도 배제.
     var startY=2019;
-    var years=[];for(var yy=startY;yy<=cy;yy++)years.push(yy);
-    if(years.length===0)years=[cy];
+    var curY=(new Date()).getFullYear();
+    var endY=Math.max(startY,Math.min(cy,curY));
+    var years=[];for(var yy=startY;yy<=endY;yy++)years.push(yy);
+    if(years.length===0)years=[endY];
     var labels=years.map(function(y){return y+"년"});
     function yearTotals(y){
       var ent=getEntriesForYear(y);
@@ -6451,7 +6456,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-18-v46";
+  var SEED_VER="2026-04-18-v47";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

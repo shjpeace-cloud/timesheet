@@ -2528,6 +2528,14 @@ function renderMonthlyReview(){
     wrap.appendChild(habSec);
   }
 
+  // ── 독서 월별 추이 (EN/KR 라인) ──
+  (function(){
+    var sec=h("div",{className:"chart-container"});
+    sec.appendChild(h("h3",{className:"chart-title"},"📈 월별 독서 추이 (권, "+cy+"년)"));
+    var wr=h("div",{className:"chart-wrap"});wr.appendChild(h("canvas",{id:"monthlyBookChart"}));sec.appendChild(wr);
+    wrap.appendChild(sec);
+  })();
+
   // ── 독서 비교 (이번달/지난달, EN/KR 분리) ──
   (function(){
     var thisBooks=getBooksForYearMonth(cy,cm);
@@ -2580,7 +2588,7 @@ function renderMonthlyReview(){
 
   // ── 월간 성찰 ──
   wrap.appendChild(renderReflectionBox("monthly-review-"+cy+"-"+cm,{title:"✍️ 월간 성찰",next:"🎯 다음 달 한 가지",nextPh:"다음 달에 반드시 할 것은?"}));
-  setTimeout(function(){renderCharts(ys2);},0);
+  setTimeout(function(){renderCharts(ys2);renderMonthlyBookChart();},0);
   return wrap;
 }
 
@@ -2830,6 +2838,28 @@ function renderYearlyReview(){
     wrap.appendChild(doneBox);
   })();
 
+  // ── 연간 DREAM 추이 (최근 7년, 일평균) ──
+  (function(){
+    var sec=h("div",{className:"chart-container"});
+    sec.appendChild(h("h3",{className:"chart-title"},"📈 DREAM 연간 일평균 추이 (h/일, 최근 7년)"));
+    var wr=h("div",{className:"chart-wrap"});wr.appendChild(h("canvas",{id:"yearlyDreamChart"}));sec.appendChild(wr);
+    wrap.appendChild(sec);
+  })();
+  // ── D1/D2/D3 연간 추이 ──
+  (function(){
+    var sec=h("div",{className:"chart-container"});
+    sec.appendChild(h("h3",{className:"chart-title"},"📈 D (신앙) 세부 추이"));
+    var wr=h("div",{className:"chart-wrap"});wr.appendChild(h("canvas",{id:"yearlyDChart"}));sec.appendChild(wr);
+    wrap.appendChild(sec);
+  })();
+  // ── R1/R2/R3 연간 추이 ──
+  (function(){
+    var sec=h("div",{className:"chart-container"});
+    sec.appendChild(h("h3",{className:"chart-title"},"📈 R (연구·강의) 세부 추이"));
+    var wr=h("div",{className:"chart-wrap"});wr.appendChild(h("canvas",{id:"yearlyRChart"}));sec.appendChild(wr);
+    wrap.appendChild(sec);
+  })();
+
   // ── 독서 3년 비교 (EN/KR + 책제목) ──
   (function(){
     var years3=[cy,cy-1,cy-2];
@@ -2859,6 +2889,14 @@ function renderYearlyReview(){
       if(yearBooks[0].length>0)bookSec.appendChild(h("div",{style:"font-size:9px;color:#cbd5e1;padding:2px 0 4px 4px;line-height:1.5"},yearBooks[0].map(function(b){return b.title;}).join(" · ")));
     });
     wrap.appendChild(bookSec);
+  })();
+
+  // ── 독서 연간 추이 (최근 7년, EN/KR 라인) ──
+  (function(){
+    var sec=h("div",{className:"chart-container"});
+    sec.appendChild(h("h3",{className:"chart-title"},"📈 독서 연간 추이 (권, 최근 7년)"));
+    var wr=h("div",{className:"chart-wrap"});wr.appendChild(h("canvas",{id:"yearlyBookChart"}));sec.appendChild(wr);
+    wrap.appendChild(sec);
   })();
 
   // ── 습관 연간 달성률 (금년/작년/3년평균) ──
@@ -2944,6 +2982,7 @@ function renderYearlyReview(){
 
   // ── 연간 성찰 ──
   wrap.appendChild(renderReflectionBox("yearly-review-"+cy,{title:"✍️ 연간 성찰",next:"🎯 내년 한 가지",nextPh:"내년에 반드시 할 것은?"}));
+  setTimeout(renderYearlyCharts,0);
   return wrap;
 }
 
@@ -2952,6 +2991,149 @@ function renderYearlyReview(){
 function renderDashboard(){return renderReview();}  // 하위 호환용
 
 let lineChartInst=null,barChartInst=null,dashDailyChartInst=null;
+let yearlyDreamChartInst=null,yearlyDChartInst=null,yearlyRChartInst=null,yearlyBookChartInst=null;
+let monthlyBookChartInst=null;
+
+// ── 연간 추이 차트 (연간 리뷰 탭) ─────────────────────────
+// Window: cy-6..cy (7 years). Shows daily-avg hours per DREAM group.
+function renderYearlyCharts(){
+  if(typeof Chart==='undefined')return;
+  try{
+    [yearlyDreamChartInst,yearlyDChartInst,yearlyRChartInst,yearlyBookChartInst].forEach(function(ci){try{if(ci)ci.destroy()}catch(e){}});
+    yearlyDreamChartInst=yearlyDChartInst=yearlyRChartInst=yearlyBookChartInst=null;
+    var cy=state.year;
+    var years=[];for(var yy=cy-6;yy<=cy;yy++)years.push(yy);
+    var labels=years.map(function(y){return y+"년"});
+    function yearTotals(y){
+      var ent=getEntriesForYear(y);
+      var r={};CATEGORIES.forEach(function(c){r[c.code]=0});
+      for(var m=1;m<=12;m++){var mo=getCatHoursByMonth(ent,m);CATEGORIES.forEach(function(c){r[c.code]+=(mo[c.code]||0)});}
+      return r;
+    }
+    function daysIn(y){return((y%4===0&&y%100!==0)||y%400===0)?366:365}
+    // 연도별 카테고리별 총시간 테이블
+    var tots=years.map(yearTotals);
+
+    // 공통 데이터 라벨 플러그인 (line chart)
+    var dlPlugin={id:'yearlyDataLabels',afterDatasetsDraw:function(chart){
+      var ctx=chart.ctx;
+      chart.data.datasets.forEach(function(ds,i){
+        var meta=chart.getDatasetMeta(i);
+        if(meta.hidden)return;
+        meta.data.forEach(function(el,idx){
+          var val=ds.data[idx];
+          if(val>0){
+            ctx.fillStyle=ds.borderColor||'#94a3b8';
+            ctx.font='bold 10px JetBrains Mono,monospace';
+            ctx.textAlign='center';
+            ctx.fillText(val,el.x,el.y-8);
+          }
+        });
+      });
+    }};
+
+    // 1) DREAM 그룹 일평균 (D/R/E/A/M)
+    (function(){
+      var cv=document.getElementById("yearlyDreamChart");
+      if(!cv)return;
+      var datasets=GROUPS.map(function(g){
+        var data=tots.map(function(t,i){
+          var sum=groupCats(g).reduce(function(s,c){return s+(t[c.code]||0)},0);
+          return sum>0?+(sum/daysIn(years[i])).toFixed(2):0;
+        });
+        return{label:g,data:data,borderColor:GC[g],backgroundColor:GC[g]+"30",borderWidth:2.5,pointRadius:4,pointBackgroundColor:GC[g],tension:0.3,fill:false};
+      });
+      yearlyDreamChartInst=new Chart(cv,{type:"line",plugins:[dlPlugin],
+        data:{labels:labels,datasets:datasets},
+        options:{responsive:true,maintainAspectRatio:false,
+          plugins:{legend:{labels:{color:"#94a3b8",font:{size:11,family:"'JetBrains Mono',monospace"},boxWidth:12,padding:10}},
+            tooltip:{backgroundColor:"#1e293b",titleColor:"#e2e8f0",bodyColor:"#cbd5e1",borderColor:"#334155",borderWidth:1,
+              callbacks:{label:function(ctx){return ctx.dataset.label+": "+ctx.parsed.y+"h/일"}}}},
+          scales:{x:{ticks:{color:"#64748b",font:{size:10}},grid:{color:"#1e293b"}},
+                  y:{beginAtZero:true,ticks:{color:"#64748b",font:{size:10},callback:function(v){return v+"h"}},grid:{color:"#1e293b"}}}}});
+    })();
+
+    // 2) D1/D2/D3 일평균 — 세부 카테고리 비교
+    function renderSubChart(canvasId,groupCode,instSetter){
+      var cv=document.getElementById(canvasId);if(!cv)return null;
+      var cats=groupCats(groupCode);
+      var datasets=cats.map(function(c){
+        var data=tots.map(function(t,i){return t[c.code]>0?+(t[c.code]/daysIn(years[i])).toFixed(2):0});
+        return{label:c.code+" "+c.label,data:data,borderColor:c.color,backgroundColor:c.color+"30",borderWidth:2.5,pointRadius:4,pointBackgroundColor:c.color,tension:0.3,fill:false};
+      });
+      return new Chart(cv,{type:"line",plugins:[dlPlugin],
+        data:{labels:labels,datasets:datasets},
+        options:{responsive:true,maintainAspectRatio:false,
+          plugins:{legend:{labels:{color:"#94a3b8",font:{size:10,family:"'Noto Sans KR',sans-serif"},boxWidth:12,padding:10}},
+            tooltip:{backgroundColor:"#1e293b",titleColor:"#e2e8f0",bodyColor:"#cbd5e1",borderColor:"#334155",borderWidth:1,
+              callbacks:{label:function(ctx){return ctx.dataset.label+": "+ctx.parsed.y+"h/일"}}}},
+          scales:{x:{ticks:{color:"#64748b",font:{size:10}},grid:{color:"#1e293b"}},
+                  y:{beginAtZero:true,ticks:{color:"#64748b",font:{size:10},callback:function(v){return v+"h"}},grid:{color:"#1e293b"}}}}});
+    }
+    yearlyDChartInst=renderSubChart("yearlyDChart","D");
+    yearlyRChartInst=renderSubChart("yearlyRChart","R");
+
+    // 3) 독서 연간 추이 (EN/KR 권수)
+    (function(){
+      var cv=document.getElementById("yearlyBookChart");if(!cv)return;
+      function bookCounts(y,type){var all=[];for(var m=1;m<=12;m++)all=all.concat(getBooksForYearMonth(y,m));return all.filter(function(b){return b.type===type}).length}
+      var enData=years.map(function(y){return bookCounts(y,"en")});
+      var krData=years.map(function(y){return bookCounts(y,"kr")});
+      yearlyBookChartInst=new Chart(cv,{type:"line",plugins:[dlPlugin],
+        data:{labels:labels,datasets:[
+          {label:"🇺🇸 영어",data:enData,borderColor:"#3b82f6",backgroundColor:"#3b82f630",borderWidth:2.5,pointRadius:4,pointBackgroundColor:"#3b82f6",tension:0.3,fill:false},
+          {label:"🇰🇷 국문",data:krData,borderColor:"#10b981",backgroundColor:"#10b98130",borderWidth:2.5,pointRadius:4,pointBackgroundColor:"#10b981",tension:0.3,fill:false}
+        ]},
+        options:{responsive:true,maintainAspectRatio:false,
+          plugins:{legend:{labels:{color:"#94a3b8",font:{size:11,family:"'Noto Sans KR',sans-serif"},boxWidth:12,padding:10}},
+            tooltip:{backgroundColor:"#1e293b",titleColor:"#e2e8f0",bodyColor:"#cbd5e1",borderColor:"#334155",borderWidth:1,
+              callbacks:{label:function(ctx){return ctx.dataset.label+": "+ctx.parsed.y+"권"}}}},
+          scales:{x:{ticks:{color:"#64748b",font:{size:10}},grid:{color:"#1e293b"}},
+                  y:{beginAtZero:true,ticks:{color:"#64748b",font:{size:10},callback:function(v){return v+"권"}},grid:{color:"#1e293b"}}}}});
+    })();
+  }catch(e){console.error("renderYearlyCharts error:",e)}
+}
+
+// ── 월간 리뷰 — 월별 독서 추이 (EN/KR) ─────────────────────
+function renderMonthlyBookChart(){
+  if(typeof Chart==='undefined')return;
+  try{
+    if(monthlyBookChartInst){monthlyBookChartInst.destroy();monthlyBookChartInst=null}
+    var cv=document.getElementById("monthlyBookChart");if(!cv)return;
+    var cy=state.year;
+    var labels=["1월","2월","3월","4월","5월","6월","7월","8월","9월","10월","11월","12월"];
+    var enData=[],krData=[];
+    for(var m=1;m<=12;m++){
+      var bs=getBooksForYearMonth(cy,m);
+      enData.push(bs.filter(function(b){return b.type==="en"}).length);
+      krData.push(bs.filter(function(b){return b.type==="kr"}).length);
+    }
+    var hasData=enData.some(function(v){return v>0})||krData.some(function(v){return v>0});
+    if(!hasData)return;
+    var dlPlugin={id:'mbookDL',afterDatasetsDraw:function(chart){
+      var ctx=chart.ctx;
+      chart.data.datasets.forEach(function(ds,i){
+        var meta=chart.getDatasetMeta(i);if(meta.hidden)return;
+        meta.data.forEach(function(el,idx){
+          var val=ds.data[idx];
+          if(val>0){ctx.fillStyle=ds.borderColor;ctx.font='bold 10px JetBrains Mono,monospace';ctx.textAlign='center';ctx.fillText(val,el.x,el.y-8);}
+        });
+      });
+    }};
+    monthlyBookChartInst=new Chart(cv,{type:"line",plugins:[dlPlugin],
+      data:{labels:labels,datasets:[
+        {label:"🇺🇸 영어",data:enData,borderColor:"#3b82f6",backgroundColor:"#3b82f630",borderWidth:2.5,pointRadius:4,pointBackgroundColor:"#3b82f6",tension:0.3,fill:false},
+        {label:"🇰🇷 국문",data:krData,borderColor:"#10b981",backgroundColor:"#10b98130",borderWidth:2.5,pointRadius:4,pointBackgroundColor:"#10b981",tension:0.3,fill:false}
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{labels:{color:"#94a3b8",font:{size:11,family:"'Noto Sans KR',sans-serif"},boxWidth:12,padding:10}},
+          tooltip:{backgroundColor:"#1e293b",titleColor:"#e2e8f0",bodyColor:"#cbd5e1",borderColor:"#334155",borderWidth:1,
+            callbacks:{label:function(ctx){return ctx.dataset.label+": "+ctx.parsed.y+"권"}}}},
+        scales:{x:{ticks:{color:"#64748b",font:{size:10}},grid:{color:"#1e293b"}},
+                y:{beginAtZero:true,ticks:{color:"#64748b",font:{size:10},callback:function(v){return v+"권"}},grid:{color:"#1e293b"}}}}});
+  }catch(e){console.error("renderMonthlyBookChart error:",e)}
+}
+
 function renderDailyBarChart(){
   if(typeof Chart==='undefined')return;
   try{
@@ -6270,7 +6452,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-18-v44";
+  var SEED_VER="2026-04-18-v45";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

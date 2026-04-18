@@ -24,7 +24,7 @@ html,body{background:#0c0f1a;font-family:'Noto Sans KR',sans-serif;color:#e2e8f0
 .title-row{display:flex;align-items:center;gap:10px}
 .title{font-size:22px;font-weight:900;letter-spacing:-0.5px}
 .year-btn{background:#1e293b;border:1px solid #334155;color:#94a3b8;padding:4px 12px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:'JetBrains Mono',monospace}
-.year-picker{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;padding:10px 0 4px}
+.year-picker{display:grid;grid-template-columns:repeat(auto-fill,minmax(56px,1fr));gap:6px;padding:10px 0 4px}
 .year-opt{padding:7px 14px;border-radius:8px;border:1px solid #334155;background:#111827;color:#94a3b8;font-size:13px;cursor:pointer;font-family:'JetBrains Mono',monospace;font-weight:600}
 .year-opt.active{background:#6366f1;color:#fff;border-color:#6366f1}
 .header-actions{display:flex;align-items:center;gap:8px}
@@ -6446,7 +6446,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-18-v48";
+  var SEED_VER="2026-04-18-v49";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

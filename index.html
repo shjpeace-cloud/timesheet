@@ -5451,11 +5451,12 @@ function renderGoals(){
     // 주간: 기준일을 startDate~endDate 범위에 포함하는 것
     const _tRefKey=tgtY*10000+tgtM*100+tgtD;
     const tWeekly=(state.goalData.weekly||[]).filter(function(g){
-      if(g.year!==tgtY)return false;
+      const gy=g.year||tgtY;
+      if(gy!==tgtY)return false;
       const sm=g.startMonth||g.month||1, sd=g.startDay||1;
-      const em=g.endMonth||g.month||sm, ed=g.endDay||Math.min(sd+6,daysInMonth(tgtY,em));
-      const startKey=tgtY*10000+sm*100+sd;
-      const endKey=tgtY*10000+em*100+ed;
+      const em=g.endMonth||g.month||sm, ed=g.endDay||Math.min(sd+6,daysInMonth(gy,em));
+      const startKey=gy*10000+sm*100+sd;
+      const endKey=gy*10000+em*100+ed;
       return startKey<=_tRefKey && _tRefKey<=endKey;
     });
 
@@ -5473,10 +5474,13 @@ function renderGoals(){
       }
     })();
     // 이연: 선택일 endDate가 이미 지난 미완료 주간목표
+    // year 필드 누락된 구데이터 허용 — state.year 기반으로 날짜 범위 판정
     const weeklyCarryover=(state.goalData.weekly||[]).filter(function(g){
-      if(g.year!==tgtY||(g.progress||0)>=100||g.done)return false;
-      const em=g.endMonth||g.month||1, ed=g.endDay||daysInMonth(tgtY,em);
-      const endKey=tgtY*10000+em*100+ed;
+      if((g.progress||0)>=100||g.done)return false;
+      const gy=g.year||tgtY;
+      if(gy!==tgtY)return false;
+      const em=g.endMonth||g.month||1, ed=g.endDay||daysInMonth(gy,em);
+      const endKey=gy*10000+em*100+ed;
       return endKey<_tRefKey;
     });
     // 이연: endDate 지난 specific 독서목표
@@ -5532,10 +5536,17 @@ function renderGoals(){
       weeklyCarryover.forEach(function(g){
         const cat=catByCode(g.cat);
         const row=h("div",{style:"display:flex;align-items:center;gap:6px;padding:4px 6px;border-bottom:1px solid #0f172a;border-left:2px solid #ef4444;background:#1a0505;margin-bottom:2px;border-radius:3px"});
+        // 완료 체크박스 (일간 이연과 동일 방식)
+        const chk=h("input",{type:"checkbox",style:"width:14px;height:14px;accent-color:#ef4444;flex-shrink:0;cursor:pointer"});
+        chk.checked=!!g.done;
+        chk.addEventListener("change",function(){
+          markGoalDone(g,!g.done);saveGoalData();_isAutoRender=true;render();
+        });
+        row.appendChild(chk);
         row.appendChild(h("span",{style:"font-size:9px;color:#3b82f6;flex-shrink:0"},"🗓"));
         row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:#fff;background:"+(cat?cat.color:"#475569")+";border-radius:3px;padding:1px 5px;flex-shrink:0;font-family:'JetBrains Mono',monospace"},g.cat));
-        row.appendChild(h("span",{style:"flex:1;font-size:12px;color:#fca5a5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},g.name));
-        row.appendChild(h("span",{style:"font-size:9px;color:#ef4444;font-family:monospace;flex-shrink:0"},g.month+"월"+g.weekIdx+"주 "+(g.progress||0)+"%"));
+        row.appendChild(h("span",{style:"flex:1;font-size:12px;color:#fca5a5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"+(g.done?";text-decoration:line-through;color:#475569":"")},g.name));
+        row.appendChild(h("span",{style:"font-size:9px;color:#ef4444;font-family:monospace;flex-shrink:0"},(g.month||"?")+"월"+(g.weekIdx||"?")+"주 "+(g.progress||0)+"%"));
         box.appendChild(row);
       });
       dailyCarryover.forEach(function(co){
@@ -6698,7 +6709,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-20-v54";
+  var SEED_VER="2026-04-20-v55";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

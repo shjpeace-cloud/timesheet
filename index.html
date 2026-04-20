@@ -6658,14 +6658,16 @@ function render(force){
     style:"flex:1;background:#111827;border:1px solid #1e293b;border-radius:8px;padding:6px 10px;font-size:12px;color:#e2e8f0;outline:none"
   });
   searchInp.className="goal-search-inp";
-  let _srComposing=false;
   function _srUpdate(val){
     state.goalSearch=val;
     _refreshGlobalSearch();
   }
-  searchInp.addEventListener("compositionstart",function(){_srComposing=true;});
-  searchInp.addEventListener("compositionend",function(e){_srComposing=false;_srUpdate(e.target.value);});
-  searchInp.addEventListener("input",function(e){if(!_srComposing)_srUpdate(e.target.value);});
+  // 한글·영어 혼용 호환: composition 가드 제거 (Windows 한글 IME에서 영어 입력 시
+  // compositionstart만 발동하고 compositionend가 누락되는 버그 때문에 영어 입력이
+  // 차단되던 문제 해결). 모든 input 이벤트에서 value 반영 — 한글 composition 중간
+  // 상태(ㄱ → 가)도 검색에 반영되지만 일반 검색창 UX와 일치.
+  searchInp.addEventListener("input",function(e){_srUpdate(e.target.value);});
+  searchInp.addEventListener("compositionend",function(e){_srUpdate(e.target.value);});
   searchInp.addEventListener("keydown",function(e){if(e.key==="Escape"){state.goalSearch="";searchInp.value="";_refreshGlobalSearch();}});
   const clrBtn=h("button",{
     id:"__gsClr",
@@ -6696,7 +6698,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-20-v53";
+  var SEED_VER="2026-04-20-v54";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

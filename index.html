@@ -4326,6 +4326,25 @@ function navigateToGoal(scope,goal){
     var cObj=catByCode(goal.cat);
     if(cObj)state.goalTreeCat=cObj.group||"all";
   }
+  // 캘린더를 목표의 시작일로 이동 (금일 목표 섹션에 바로 노출시키기 위함)
+  try{
+    var ny=null,nm=null,nd=null;
+    if(scope==="daily"&&dk){
+      var parts=dk.split("-");
+      if(parts.length===2){nm=parseInt(parts[0]);nd=parseInt(parts[1]);ny=state.year;}
+    }else if(scope==="weekly"){
+      ny=goal.year||state.year;
+      nm=goal.startMonth||goal.month||null;
+      nd=goal.startDay||null;
+    }else if(scope==="monthly"){
+      ny=goal.year||state.year;
+      nm=goal.startMonth||goal.month||null;
+      nd=1;
+    }
+    if(ny&&nm&&nd){
+      state.goalCalYear=ny;state.goalCalMonth=nm;state.goalCalDay=nd;
+    }
+  }catch(e){}
   render(true);
 }
 
@@ -4721,17 +4740,7 @@ function buildGoalSearchResults(q){
       const catObj=catByCode(g.cat);
       const hrs=calcGoalTotalHours(g.id);
       const row=h("div",{style:"display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;margin-bottom:3px;background:#111827;border:1px solid #1e293b;cursor:pointer",
-        onClick:function(){
-          if(sm.sc==="daily"){state.goalScope="daily";}
-          else if(sm.sc==="habits"){state.goalScope="habits";}
-          else if(sm.sc==="readingGoals"){state.tab="goals";state.goalScope="longterm";}
-          else{
-            state.goalScope=sm.sc;
-            if(sm.sc==="monthly"&&g.startMonth)state.goalMonth=g.startMonth;
-            if(sm.sc==="weekly"&&g.month){state.goalWeekMonth=g.month;state.goalWeekIdx=g.weekIdx||1;}
-          }
-          state.goalSearch="";render();
-        }
+        onClick:function(){navigateToGoal(sm.sc,g);}
       });
       row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:"+(catObj?catObj.color:"#94a3b8")+";font-family:monospace;flex-shrink:0;min-width:28px"},g.cat||""));
       const nameParts=g.name.split(new RegExp("("+q.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+")","gi"));
@@ -6709,7 +6718,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-20-v55";
+  var SEED_VER="2026-04-20-v56";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

@@ -1286,6 +1286,78 @@ function avgPerDay(total, days){
   return days>0?+(total/days).toFixed(2):0;
 }
 
+// ── 목표 날짜 판정 유틸 (필터 중복 통합, 단일 진실의 원천) ──
+// 특정 목표의 활동 기간이 주어진 날짜(y,m,d)를 포함하는지 판정
+// scope: "longterm" | "monthly" | "weekly" | "daily" | "readingGoals" | "habits"
+// daily는 dk 키로 직접 조회하므로 별도 처리 불필요
+function goalIncludesDate(g, scope, y, m, d){
+  if(!g)return false;
+  var key=y*10000+m*100+d;
+  if(scope==="longterm"){
+    var sy=g.startYear||g.targetYear||y;
+    var ey=g.endYear||g.targetYear||y;
+    return sy<=y&&y<=ey;
+  }
+  if(scope==="monthly"){
+    var gy=g.year||y;
+    if(gy!==y)return false;
+    var sm=g.startMonth||g.month||1, sd=g.startDay||1;
+    var em=g.endMonth||g.month||12, ed=g.endDay||daysInMonth(gy,em);
+    return gy*10000+sm*100+sd<=key && key<=gy*10000+em*100+ed;
+  }
+  if(scope==="weekly"){
+    var gy2=g.year||y;
+    if(gy2!==y)return false;
+    var sm2=g.startMonth||g.month||1, sd2=g.startDay||1;
+    var em2=g.endMonth||g.month||sm2, ed2=g.endDay||Math.min(sd2+6,daysInMonth(gy2,em2));
+    return gy2*10000+sm2*100+sd2<=key && key<=gy2*10000+em2*100+ed2;
+  }
+  if(scope==="readingGoals"){
+    if(g.type==="specific"&&(g.startDate||g.endDate)){
+      var dstr=y+"-"+String(m).padStart(2,"0")+"-"+String(d).padStart(2,"0");
+      if(g.startDate&&dstr<g.startDate)return false;
+      if(g.endDate&&dstr>g.endDate)return false;
+      return true;
+    }
+    var rsy=g.startYear||y, rey=g.endYear||2040;
+    return rsy<=y&&y<=rey;
+  }
+  if(scope==="habits"){
+    if(!g.startDate&&!g.endDate)return true;
+    var dstr2=y+"-"+String(m).padStart(2,"0")+"-"+String(d).padStart(2,"0");
+    if(g.startDate&&dstr2<g.startDate)return false;
+    if(g.endDate&&dstr2>g.endDate)return false;
+    return true;
+  }
+  return false;
+}
+// 목표의 종료일이 주어진 날짜 이전인지 (이연/만료 판정)
+function goalExpiredBefore(g, scope, y, m, d){
+  if(!g)return false;
+  var key=y*10000+m*100+d;
+  if(scope==="weekly"||scope==="monthly"){
+    var gy=g.year||y;
+    if(gy>y)return false;
+    if(gy<y)return true;
+    var em=g.endMonth||g.month||1;
+    var ed=g.endDay||daysInMonth(gy,em);
+    return gy*10000+em*100+ed<key;
+  }
+  if(scope==="longterm"){
+    var ey=g.endYear||g.targetYear||y;
+    return ey<y;
+  }
+  if(scope==="readingGoals"){
+    if(g.type==="specific"&&g.endDate){
+      var dstr=y+"-"+String(m).padStart(2,"0")+"-"+String(d).padStart(2,"0");
+      return g.endDate<dstr;
+    }
+    var ey2=g.endYear||2040;
+    return ey2<y;
+  }
+  return false;
+}
+
 function exportExcel(){
   // SheetJS 로드 확인
   if(typeof XLSX==="undefined"){
@@ -4002,46 +4074,31 @@ function getChildGoals(goalId){
 }
 
 // Get all active (non-100%) goals matching a category, for slot goal linking
-// Filters by current date's applicable period
+// Filters by current date's applicable period (통합 유틸 사용)
 function getActiveGoalsForCat(cat){
   var results=[];
-  var curM=state.month;
-  var curD=state.day;
-  var curWk=weekIdxOfDay(state.year,curM,curD);
-  // Longterm: current year falls within range
+  var curY=state.year, curM=state.month, curD=state.day;
+  // Longterm: 기간에 현재 연도 포함
   (state.goalData.longterm||[]).forEach(function(g){
     if(g.cat!==cat||(g.progress||0)>=100)return;
-    var sy=g.startYear||g.targetYear||state.year;
-    var ey=g.endYear||g.targetYear||state.year;
-    if(sy<=state.year&&state.year<=ey)results.push({scope:"longterm",goal:g});
+    if(goalIncludesDate(g,"longterm",curY,curM,curD))results.push({scope:"longterm",goal:g});
   });
-  // Monthly: current month falls within start~end range
+  // Monthly: 날짜 범위에 오늘 포함
   (state.goalData.monthly||[]).forEach(function(g){
-    if(g.cat!==cat||(g.progress||0)>=100||g.year!==state.year)return;
-    var sm=g.startMonth||g.month;
-    var em=g.endMonth||g.month;
-    if(sm<=curM&&curM<=em)results.push({scope:"monthly",goal:g});
-  });
-  // Weekly: current month + week matches
-  (state.goalData.weekly||[]).forEach(function(g){
     if(g.cat!==cat||(g.progress||0)>=100)return;
-    if(g.year===state.year&&g.month===curM&&g.weekIdx===curWk)results.push({scope:"weekly",goal:g});
+    if(goalIncludesDate(g,"monthly",curY,curM,curD))results.push({scope:"monthly",goal:g});
   });
-  // Weekly 이연: 이미 지난 주의 미완료 목표
-  (function(){
-    var today=new Date();
-    var todayY=today.getFullYear(),todayM=today.getMonth()+1,todayD=today.getDate();
-    var todayWk=weekIdxOfDay(todayY,todayM,todayD);
-    (state.goalData.weekly||[]).forEach(function(g){
-      if(g.cat!==cat||(g.progress||0)>=100)return;
-      if(g.year!==state.year)return;
-      var isPast=(g.month<todayM)||(g.month===todayM&&g.weekIdx<todayWk);
-      if(!isPast)return;
-      // 현재 주 필터와 중복 방지
-      if(g.month===curM&&g.weekIdx===curWk)return;
-      results.push({scope:"weekly",goal:g,fromDate:g.month+"월 W"+g.weekIdx});
-    });
-  })();
+  // Weekly: 날짜 범위에 오늘 포함 (weekIdx 엄격 비교 제거 — 다주 주간 목표도 포함)
+  (state.goalData.weekly||[]).forEach(function(g){
+    if(g.cat!==cat||(g.progress||0)>=100||g.done)return;
+    if(goalIncludesDate(g,"weekly",curY,curM,curD))results.push({scope:"weekly",goal:g});
+  });
+  // Weekly 이연: endDate가 오늘 이전 & 미완료
+  (state.goalData.weekly||[]).forEach(function(g){
+    if(g.cat!==cat||(g.progress||0)>=100||g.done)return;
+    if(!goalExpiredBefore(g,"weekly",curY,curM,curD))return;
+    results.push({scope:"weekly",goal:g,fromDate:(g.month||"?")+"월 W"+(g.weekIdx||"?")});
+  });
   // Habits: 카테고리 일치하는 습관 (피커에서는 날짜 무관하게 표시)
   (state.goalData.habits||[]).forEach(function(hb){
     if(hb.cat!==cat)return;
@@ -4335,7 +4392,7 @@ function navigateToGoal(scope,goal){
     }else if(scope==="weekly"){
       ny=goal.year||state.year;
       nm=goal.startMonth||goal.month||null;
-      nd=goal.startDay||null;
+      nd=goal.startDay||1;
     }else if(scope==="monthly"){
       ny=goal.year||state.year;
       nm=goal.startMonth||goal.month||null;
@@ -4665,7 +4722,14 @@ function renderWeeklyReview(){
   }
   const wkGoalsBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:14px;border:1px solid #1e293b"});
   wkGoalsBox.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},"📋 금주 목표"));
-  const wkGoalsList=(state.goalData.weekly||[]).filter(function(g){return g.year===y&&g.month===m&&g.weekIdx===wIdx});
+  // 금주 목표: 월요일~일요일 범위에 걸치는 주간 목표 (다주 주간 목표도 포함)
+  const wkGoalsList=(state.goalData.weekly||[]).filter(function(g){
+    for(var di=0;di<7;di++){
+      var dd=new Date(monDate);dd.setDate(monDate.getDate()+di);
+      if(goalIncludesDate(g,"weekly",dd.getFullYear(),dd.getMonth()+1,dd.getDate()))return true;
+    }
+    return false;
+  });
   if(wkGoalsList.length===0){
     wkGoalsBox.appendChild(h("div",{style:"text-align:center;padding:10px 0;color:#334155;font-size:12px"},"이번 주 목표가 없습니다"));
   }else{
@@ -5460,13 +5524,7 @@ function renderGoals(){
     // 주간: 기준일을 startDate~endDate 범위에 포함하는 것
     const _tRefKey=tgtY*10000+tgtM*100+tgtD;
     const tWeekly=(state.goalData.weekly||[]).filter(function(g){
-      const gy=g.year||tgtY;
-      if(gy!==tgtY)return false;
-      const sm=g.startMonth||g.month||1, sd=g.startDay||1;
-      const em=g.endMonth||g.month||sm, ed=g.endDay||Math.min(sd+6,daysInMonth(gy,em));
-      const startKey=gy*10000+sm*100+sd;
-      const endKey=gy*10000+em*100+ed;
-      return startKey<=_tRefKey && _tRefKey<=endKey;
+      return goalIncludesDate(g,"weekly",tgtY,tgtM,tgtD);
     });
 
     // 이연: 선택일 이전 30일 내 미완료 일간목표
@@ -5482,15 +5540,10 @@ function renderGoals(){
         });
       }
     })();
-    // 이연: 선택일 endDate가 이미 지난 미완료 주간목표
-    // year 필드 누락된 구데이터 허용 — state.year 기반으로 날짜 범위 판정
+    // 이연: endDate가 선택일 이전 & 미완료 주간 목표 (통합 유틸 사용)
     const weeklyCarryover=(state.goalData.weekly||[]).filter(function(g){
       if((g.progress||0)>=100||g.done)return false;
-      const gy=g.year||tgtY;
-      if(gy!==tgtY)return false;
-      const em=g.endMonth||g.month||1, ed=g.endDay||daysInMonth(gy,em);
-      const endKey=gy*10000+em*100+ed;
-      return endKey<_tRefKey;
+      return goalExpiredBefore(g,"weekly",tgtY,tgtM,tgtD);
     });
     // 이연: endDate 지난 specific 독서목표
     const tgtDateStr=new Date(tgtY,tgtM-1,tgtD).toISOString().slice(0,10);
@@ -5767,23 +5820,11 @@ function renderGoals(){
     });
     const mGoals2=(state.goalData.monthly||[]).filter(function(g){
       if(g.cat!==catCode)return false;
-      const gy=g.year||calY;
-      if(gy!==calY)return false;
-      const sm=g.startMonth||g.month||1, sd=g.startDay||1;
-      const em=g.endMonth||g.month||12, ed=g.endDay||daysInMonth(gy,em);
-      const startKey=gy*10000+sm*100+sd;
-      const endKey=gy*10000+em*100+ed;
-      return startKey<=_refKey && _refKey<=endKey;
+      return goalIncludesDate(g,"monthly",calY,calM,_refD);
     });
     const wGoals2=(state.goalData.weekly||[]).filter(function(g){
       if(g.cat!==catCode)return false;
-      const gy=g.year||calY;
-      if(gy!==calY)return false;
-      const sm=g.startMonth||g.month||1, sd=g.startDay||1;
-      const em=g.endMonth||g.month||sm, ed=g.endDay||Math.min(sd+6,daysInMonth(gy,em));
-      const startKey=gy*10000+sm*100+sd;
-      const endKey=gy*10000+em*100+ed;
-      return startKey<=_refKey && _refKey<=endKey;
+      return goalIncludesDate(g,"weekly",calY,calM,_refD);
     });
     // 기존 독서목표 (레거시): 카테고리 일치 + 현재 연도 포함
     const rgGoals2=(state.goalData.readingGoals||[]).filter(function(g){
@@ -6724,7 +6765,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-20-v58";
+  var SEED_VER="2026-04-20-v59";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

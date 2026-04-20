@@ -208,6 +208,83 @@ html,body{background:#0c0f1a;font-family:'Noto Sans KR',sans-serif;color:#e2e8f0
 .goal-date-nav{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:12px}
 .goal-date-arrow{background:#1e293b;border:1px solid #334155;color:#94a3b8;width:32px;height:32px;border-radius:8px;font-size:12px;cursor:pointer}
 .goal-date-label{font-size:14px;font-weight:700;color:#e2e8f0;font-family:'JetBrains Mono',monospace}
+
+/* ==== PC / Tablet responsive (태블릿 768px+, PC 1200px+) ==== */
+@media (min-width:768px){
+  #app{max-width:760px;padding-bottom:40px}
+  .main{padding:0 20px 30px}
+  .title{font-size:24px}
+  .date-day{font-size:32px}
+  .date-month{font-size:18px}
+  .date-arrow{width:40px;height:40px;font-size:15px}
+  .today-btn{font-size:13px;padding:7px 16px}
+  .tab{padding:12px 0}
+  .tab-icon{font-size:20px}
+  .tab-label{font-size:12px}
+  .slot{padding:10px 14px}
+  .slot-time{width:58px}
+  .time-text{font-size:14px}
+  .cat-badge{font-size:12px;padding:3px 9px}
+  .cat-label{font-size:14px}
+  .slot-empty{font-size:13px}
+  .memo-tag{font-size:12px;padding-left:58px}
+  .summary-col{padding:16px}
+  .summary-title{font-size:15px}
+  .group-header{font-size:12px;padding:7px 10px}
+  .group-name{font-size:11px}
+  .group-total{font-size:13px}
+  .cat-row{padding:5px 10px;font-size:12px}
+  .cat-code{font-size:11px;width:26px}
+  .cat-name{font-size:12px}
+  .cat-hours{font-size:13px}
+  .total-row{font-size:15px;padding:12px 0}
+  .bar-section,.chart-container,.dash-section,.book-section,.goal-section{padding:20px}
+  .bar-title,.dash-title,.chart-title,.book-section-title,.goal-section-title{font-size:16px}
+  .bar-row{margin-bottom:10px}
+  .bar-label{font-size:15px;width:20px}
+  .bar-track{height:28px}
+  .bar-val{font-size:12px;width:52px}
+  .dash-cat-row{font-size:13px;padding:6px 12px}
+  .dash-cat-code{font-size:12px;width:28px}
+  .dash-cat-val{font-size:12px;width:36px}
+  .dash-total{font-size:17px}
+  .chart-wrap{height:280px}
+  .goal-name{font-size:14px}
+  .goal-cat-tag{font-size:11px;padding:3px 8px}
+  .goal-meta{font-size:11px}
+  .goal-memo{font-size:12px}
+  .goal-input{font-size:13px;padding:9px 12px}
+  .goal-cat-select{font-size:13px;padding:9px 12px}
+  .goal-add-btn{font-size:13px;padding:9px 16px}
+  .goal-check{width:24px;height:24px}
+  .book-input{font-size:14px}
+  .book-item-title{font-size:14px}
+  .book-type-btn{font-size:13px}
+  .book-add-btn{font-size:14px;padding:9px 18px}
+  .book-summary-value{font-size:32px}
+  .book-summary-label{font-size:12px}
+  .year-hdr-row,.year-row{min-width:0}
+  .year-cell{font-size:12px}
+  .book-yr-row{min-width:0}
+  .book-yr-cell{font-size:12px}
+  .picker-sheet{max-width:560px;border-radius:20px;max-height:82vh}
+  .overlay{align-items:center}
+  .picker-btns{grid-template-columns:repeat(5,1fr)}
+  .picker-code{font-size:15px}
+  .picker-label{font-size:11px}
+}
+@media (min-width:1200px){
+  #app{max-width:960px}
+  .chart-wrap{height:340px}
+  .summary-grid{grid-template-columns:repeat(4,1fr)}
+}
+@media (hover:hover) and (pointer:fine){
+  .tab:hover{background:#1e293b}
+  .date-arrow:hover,.year-btn:hover,.month-btn:hover,.day-btn:hover{background:#334155}
+  .goal-scope-btn:hover,.dash-month-btn:hover,.book-month-btn:hover{background:#1e293b;color:#e2e8f0}
+  .clear-btn:hover,.book-del-btn:hover,.goal-del:hover{color:#f87171}
+  .today-btn:hover,.goal-add-btn:hover,.book-add-btn:hover,.memo-save-btn:hover{filter:brightness(1.1)}
+}
 </style>
 <script>
 var chartJsLoaded=false;
@@ -6446,7 +6523,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-18-v49";
+  var SEED_VER="2026-04-20-v50";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

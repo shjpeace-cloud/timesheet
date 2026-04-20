@@ -5567,7 +5567,7 @@ function renderGoals(){
     hdr.appendChild(h("span",{style:"font-size:9px;color:#475569;font-family:'JetBrains Mono',monospace"},summary.join(" · ")));
     box.appendChild(hdr);
 
-    function makeRow(icon,iconColor,accentColor,label,catCode,done,onToggle){
+    function makeRow(icon,iconColor,accentColor,label,catCode,done,onToggle,navScope,navGoal){
       const cat=catByCode(catCode);
       const row=h("div",{style:"display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #0f172a"});
       const chk=h("input",{type:"checkbox",style:"width:14px;height:14px;accent-color:"+accentColor+";flex-shrink:0;cursor:pointer"});
@@ -5576,7 +5576,17 @@ function renderGoals(){
       row.appendChild(chk);
       row.appendChild(h("span",{style:"font-size:9px;color:"+iconColor+";flex-shrink:0"},icon));
       row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:#fff;background:"+(cat?cat.color:"#475569")+";border-radius:3px;padding:1px 5px;flex-shrink:0;font-family:'JetBrains Mono',monospace"},catCode));
-      row.appendChild(h("span",{style:"flex:1;font-size:12px;color:"+(done?"#475569":"#e2e8f0")+(done?";text-decoration:line-through":"")+";overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},label));
+      // 이름 — 클릭 시 원래 설정일로 navigate (navScope/navGoal 제공 시)
+      const nameSpan=h("span",{
+        style:"flex:1;font-size:12px;color:"+(done?"#475569":"#e2e8f0")+(done?";text-decoration:line-through":"")+";overflow:hidden;text-overflow:ellipsis;white-space:nowrap"+(navScope?";cursor:pointer":"")
+      },label);
+      if(navScope&&navGoal){
+        nameSpan.addEventListener("click",function(e){e.stopPropagation();navigateToGoal(navScope,navGoal);});
+      }
+      row.appendChild(nameSpan);
+      if(navScope){
+        row.appendChild(h("span",{style:"font-size:9px;color:#0d9488;flex-shrink:0;cursor:pointer",onClick:function(e){e.stopPropagation();navigateToGoal(navScope,navGoal);}},"↗"));
+      }
       return row;
     }
 
@@ -5607,8 +5617,12 @@ function renderGoals(){
         row.appendChild(chk);
         row.appendChild(h("span",{style:"font-size:9px;color:#3b82f6;flex-shrink:0"},"🗓"));
         row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:#fff;background:"+(cat?cat.color:"#475569")+";border-radius:3px;padding:1px 5px;flex-shrink:0;font-family:'JetBrains Mono',monospace"},g.cat));
-        row.appendChild(h("span",{style:"flex:1;font-size:12px;color:#fca5a5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"+(g.done?";text-decoration:line-through;color:#475569":"")},g.name));
+        // 이름 클릭 → 원래 설정일로 navigate
+        const nameSpan=h("span",{style:"flex:1;font-size:12px;color:#fca5a5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer"+(g.done?";text-decoration:line-through;color:#475569":"")},g.name);
+        nameSpan.addEventListener("click",function(e){e.stopPropagation();navigateToGoal("weekly",g);});
+        row.appendChild(nameSpan);
         row.appendChild(h("span",{style:"font-size:9px;color:#ef4444;font-family:monospace;flex-shrink:0"},(g.month||"?")+"월"+(g.weekIdx||"?")+"주 "+(g.progress||0)+"%"));
+        row.appendChild(h("span",{style:"font-size:9px;color:#0d9488;flex-shrink:0;cursor:pointer",onClick:function(e){e.stopPropagation();navigateToGoal("weekly",g);}},"↗"));
         box.appendChild(row);
       });
       dailyCarryover.forEach(function(co){
@@ -5623,8 +5637,11 @@ function renderGoals(){
         row.appendChild(chk);
         row.appendChild(h("span",{style:"font-size:9px;color:#6366f1;flex-shrink:0"},"📌"));
         row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:#fff;background:"+(cat?cat.color:"#475569")+";border-radius:3px;padding:1px 5px;flex-shrink:0;font-family:'JetBrains Mono',monospace"},g.cat));
-        row.appendChild(h("span",{style:"flex:1;font-size:12px;color:#fca5a5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},g.name));
-        row.appendChild(h("span",{style:"font-size:9px;color:#ef4444;font-family:monospace;flex-shrink:0"},co.origKey));
+        // 이름 클릭 → 원래 설정일(co.origKey)로 navigate
+        const dNameSpan=h("span",{style:"flex:1;font-size:12px;color:#fca5a5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer"},g.name);
+        dNameSpan.addEventListener("click",function(e){e.stopPropagation();navigateToGoal("daily",g);});
+        row.appendChild(dNameSpan);
+        row.appendChild(h("span",{style:"font-size:9px;color:#ef4444;font-family:monospace;flex-shrink:0;cursor:pointer",onClick:function(e){e.stopPropagation();navigateToGoal("daily",g);}},co.origKey));
         // 선택일로 이동 버튼
         row.appendChild(h("button",{style:"font-size:10px;padding:2px 5px;background:transparent;border:1px solid #7f1d1d;color:#fca5a5;border-radius:4px;cursor:pointer;flex-shrink:0",title:tdk+"로 이동",onClick:function(e){
           e.stopPropagation();
@@ -5649,13 +5666,13 @@ function renderGoals(){
     tWeekly.forEach(function(g){
       const row=makeRow("🗓","#3b82f6","#3b82f6",g.name,g.cat,!!g.done,function(){
         markGoalDone(g,!g.done);saveGoalData();_isAutoRender=true;render();
-      });
+      },"weekly",g);
       box.appendChild(row);
     });
     tDaily.forEach(function(g){
       const row=makeRow("📌","#6366f1","#6366f1",g.name,g.cat,!!g.done,function(){
         markGoalDone(g,!g.done);saveGoalData();_isAutoRender=true;render();
-      });
+      },"daily",g);
       box.appendChild(row);
     });
     wrap.appendChild(box);
@@ -5818,13 +5835,18 @@ function renderGoals(){
       const endKey=ey*10000+em*100+daysInMonth(ey,em);
       return startKey<=_refKey && _refKey<=endKey;
     });
+    // 월간/주간: 오늘이 범위 내 OR 이연(endDate 지남 + 미완료) → DREAM 트리에 표시
     const mGoals2=(state.goalData.monthly||[]).filter(function(g){
       if(g.cat!==catCode)return false;
-      return goalIncludesDate(g,"monthly",calY,calM,_refD);
+      if(goalIncludesDate(g,"monthly",calY,calM,_refD))return true;
+      if(!g.done&&(g.progress||0)<100&&goalExpiredBefore(g,"monthly",calY,calM,_refD))return true;
+      return false;
     });
     const wGoals2=(state.goalData.weekly||[]).filter(function(g){
       if(g.cat!==catCode)return false;
-      return goalIncludesDate(g,"weekly",calY,calM,_refD);
+      if(goalIncludesDate(g,"weekly",calY,calM,_refD))return true;
+      if(!g.done&&goalExpiredBefore(g,"weekly",calY,calM,_refD))return true;
+      return false;
     });
     // 기존 독서목표 (레거시): 카테고리 일치 + 현재 연도 포함
     const rgGoals2=(state.goalData.readingGoals||[]).filter(function(g){
@@ -6765,7 +6787,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-20-v59";
+  var SEED_VER="2026-04-20-v60";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

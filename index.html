@@ -5766,19 +5766,23 @@ function renderGoals(){
       return startKey<=_refKey && _refKey<=endKey;
     });
     const mGoals2=(state.goalData.monthly||[]).filter(function(g){
-      if(g.cat!==catCode||g.year!==calY)return false;
+      if(g.cat!==catCode)return false;
+      const gy=g.year||calY;
+      if(gy!==calY)return false;
       const sm=g.startMonth||g.month||1, sd=g.startDay||1;
-      const em=g.endMonth||g.month||12, ed=g.endDay||daysInMonth(calY,em);
-      const startKey=calY*10000+sm*100+sd;
-      const endKey=calY*10000+em*100+ed;
+      const em=g.endMonth||g.month||12, ed=g.endDay||daysInMonth(gy,em);
+      const startKey=gy*10000+sm*100+sd;
+      const endKey=gy*10000+em*100+ed;
       return startKey<=_refKey && _refKey<=endKey;
     });
     const wGoals2=(state.goalData.weekly||[]).filter(function(g){
-      if(g.cat!==catCode||g.year!==calY)return false;
+      if(g.cat!==catCode)return false;
+      const gy=g.year||calY;
+      if(gy!==calY)return false;
       const sm=g.startMonth||g.month||1, sd=g.startDay||1;
-      const em=g.endMonth||g.month||sm, ed=g.endDay||Math.min(sd+6,daysInMonth(calY,em));
-      const startKey=calY*10000+sm*100+sd;
-      const endKey=calY*10000+em*100+ed;
+      const em=g.endMonth||g.month||sm, ed=g.endDay||Math.min(sd+6,daysInMonth(gy,em));
+      const startKey=gy*10000+sm*100+sd;
+      const endKey=gy*10000+em*100+ed;
       return startKey<=_refKey && _refKey<=endKey;
     });
     // 기존 독서목표 (레거시): 카테고리 일치 + 현재 연도 포함
@@ -6073,7 +6077,7 @@ function renderGoals(){
         return Object.values(pids).indexOf(lt.id)>=0;
       });
       childM.forEach(function(mg){
-        if(mg.year!==calY)return;
+        if((mg.year||calY)!==calY)return;
         renderedM.add(mg.id);
         pillAdd(mg,"monthly",1,undefined,14);
         // 하위 주간
@@ -6718,7 +6722,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-20-v56";
+  var SEED_VER="2026-04-20-v57";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

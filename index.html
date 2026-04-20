@@ -1888,17 +1888,17 @@ function showDiaryModal(text,month,day,year){
 function renderInput(){
   const wrap=h("div",{});
 
-  // 헤더: Plan | Actual 레이블
-  const hdr=h("div",{style:"display:grid;grid-template-columns:36px 1fr 4px 1fr;gap:0;padding:6px 0 8px;border-bottom:2px solid #1e293b;margin-bottom:2px"});
+  // 헤더: Plan | Actual 레이블 — 좌우 컬러 블록으로 구분 강조
+  const hdr=h("div",{style:"display:grid;grid-template-columns:36px 1fr 8px 1fr;gap:0;padding:6px 0 8px;border-bottom:2px solid #334155;margin-bottom:4px;background:#0c0f1a"});
   hdr.appendChild(h("div",{},""));
-  hdr.appendChild(h("div",{style:"text-align:center"},[
+  hdr.appendChild(h("div",{style:"text-align:center;background:rgba(99,102,241,0.08);border-radius:8px 8px 0 0;padding:4px 0"},[
     h("span",{style:"font-size:16px"},"📋"),
-    h("div",{style:"font-size:10px;color:#64748b;font-weight:700;letter-spacing:.5px;margin-top:2px"},"PLAN")
+    h("div",{style:"font-size:11px;color:#6366f1;font-weight:800;letter-spacing:1px;margin-top:2px"},"PLAN")
   ]));
-  hdr.appendChild(h("div",{style:"background:#1e293b;width:1px;margin:0 4px"},""));
-  hdr.appendChild(h("div",{style:"text-align:center"},[
+  hdr.appendChild(h("div",{style:"background:linear-gradient(180deg,#6366f1 0%,#0d9488 100%);width:2px;margin:0 auto;border-radius:1px;align-self:stretch"},""));
+  hdr.appendChild(h("div",{style:"text-align:center;background:rgba(13,148,136,0.08);border-radius:8px 8px 0 0;padding:4px 0"},[
     h("span",{style:"font-size:16px"},"✅"),
-    h("div",{style:"font-size:10px;color:#0d9488;font-weight:700;letter-spacing:.5px;margin-top:2px"},"ACTUAL")
+    h("div",{style:"font-size:11px;color:#0d9488;font-weight:800;letter-spacing:1px;margin-top:2px"},"ACTUAL")
   ]));
   wrap.appendChild(hdr);
 
@@ -1912,7 +1912,7 @@ function renderInput(){
     const actualCat=sd.actual?catByCode(sd.actual):null;
     const borderColor=actualCat?actualCat.color:(planCat?planCat.color+"80":"transparent");
 
-    const slot=h("div",{className:"slot"+(isHour?" hour-start":""),style:"border-left-color:"+borderColor+";display:grid;grid-template-columns:36px 1fr 4px 1fr;gap:0;align-items:center;min-height:36px"});
+    const slot=h("div",{className:"slot"+(isHour?" hour-start":""),style:"border-left-color:"+borderColor+";display:grid;grid-template-columns:36px 1fr 8px 1fr;gap:0;align-items:stretch;min-height:36px"});
 
     // 시간
     const timeDiv=h("div",{className:"slot-time",style:"flex-shrink:0"});
@@ -1920,7 +1920,7 @@ function renderInput(){
     slot.appendChild(timeDiv);
 
     // ── Plan 열 ──
-    const planCol=h("div",{style:"display:flex;align-items:center;gap:4px;overflow:hidden;padding:0 4px;cursor:pointer;background:"+(planCat?"#0c0f1a":"transparent")+";border-radius:6px;margin:2px 2px 2px 0",onClick:()=>{state.activeSlot=time;state.showCatPicker=true;state.mode="plan";state.memoInput="";render()}});
+    const planCol=h("div",{style:"display:flex;align-items:center;gap:4px;overflow:hidden;padding:0 6px;cursor:pointer;background:"+(planCat?"#0c0f1a":"rgba(99,102,241,0.04)")+";border-radius:6px;margin:2px 2px 2px 0",onClick:()=>{state.activeSlot=time;state.showCatPicker=true;state.mode="plan";state.memoInput="";render()}});
     if(planCat){
       planCol.appendChild(h("span",{className:"cat-badge",style:"background:"+planCat.color+";flex-shrink:0;font-size:10px;padding:2px 5px"},planCat.code));
       const planInp=h("input",{style:"flex:1;min-width:0;background:transparent;border:none;color:#64748b;font-size:11px;padding:1px 2px;outline:none;font-family:'Noto Sans KR',sans-serif",placeholder:"메모...",value:sd.planMemo||""});
@@ -1950,11 +1950,11 @@ function renderInput(){
     }
     slot.appendChild(planCol);
 
-    // 구분선
-    slot.appendChild(h("div",{style:"width:1px;background:#1e293b;align-self:stretch;margin:0 2px"},""));
+    // 구분선 — Plan(인디고) ↔ Actual(틸) 양쪽 컬러 힌트
+    slot.appendChild(h("div",{style:"width:2px;background:linear-gradient(180deg,rgba(99,102,241,0.5),rgba(13,148,136,0.5));align-self:stretch;margin:0 auto;border-radius:1px"},""));
 
     // ── Actual 열 ──
-    const actualCol=h("div",{style:"display:flex;align-items:center;gap:4px;overflow:hidden;padding:0 4px;cursor:pointer;background:"+(actualCat?"#0a1628":"transparent")+";border-radius:6px;margin:2px 0 2px 2px",onClick:()=>{state.activeSlot=time;state.showCatPicker=true;state.mode="actual";state.memoInput="";render()}});
+    const actualCol=h("div",{style:"display:flex;align-items:center;gap:4px;overflow:hidden;padding:0 6px;cursor:pointer;background:"+(actualCat?"#0a1628":"rgba(13,148,136,0.04)")+";border-radius:6px;margin:2px 0 2px 2px",onClick:()=>{state.activeSlot=time;state.showCatPicker=true;state.mode="actual";state.memoInput="";render()}});
     if(actualCat){
       actualCol.appendChild(h("span",{className:"cat-badge",style:"background:"+actualCat.color+";flex-shrink:0;font-size:10px;padding:2px 5px"},actualCat.code));
       const linkedGoalId=sd.actualGoalId;
@@ -6523,7 +6523,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-20-v50";
+  var SEED_VER="2026-04-20-v51";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

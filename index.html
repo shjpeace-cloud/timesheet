@@ -6024,9 +6024,11 @@ function renderGoals(){
 
     // ── 트리 구성: 장기 → 월간 → 주간 → 일간, 독서 ──
     // 완료된 목표는 숨김 (단, 미완료 자식이 있으면 조상은 유지)
+    // 주간: wGoals2 필터가 이미 "날짜 범위 내"만 통과시키므로 done이어도 표시 — 활동 기간 중 참조/복원 가능
     function isGoalActive(g,scope){
       if(scope==="readingGoals")return calcReadingGoalProgress(g)<100;
-      if(scope==="daily"||scope==="weekly")return !g.done;
+      if(scope==="daily")return !g.done;
+      if(scope==="weekly")return true;
       return (g.progress||0)<100 && !g.done;
     }
     const activeDescCache={};
@@ -6722,7 +6724,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-20-v57";
+  var SEED_VER="2026-04-20-v58";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

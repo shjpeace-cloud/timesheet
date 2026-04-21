@@ -692,10 +692,10 @@ function loadGoals(){
       seenIds[h.id]=true;return true;
     });
     if(deduped.length<habits.length){habits=deduped;migrated=true;}
-    var result={daily:p.daily||{},weekly:sortByDream(p.weekly||[]),monthly:sortByDream(p.monthly||[]),longterm:sortByDream(longterm),habits:habits,readingGoals:p.readingGoals||[]};
+    var result={daily:p.daily||{},weekly:sortByDream(p.weekly||[]),monthly:sortByDream(p.monthly||[]),longterm:sortByDream(longterm),habits:habits,readingGoals:p.readingGoals||[],_lastEdited:p._lastEdited||0};
     if(migrated)try{localStorage.setItem(goalStorageKey(),JSON.stringify(result))}catch(e){}
     return result;
-  }catch(e){return{daily:{},weekly:[],monthly:[],longterm:[],habits:[],readingGoals:[]}}
+  }catch(e){return{daily:{},weekly:[],monthly:[],longterm:[],habits:[],readingGoals:[],_lastEdited:0}}
 }
 // 습관 대상 longterm ID 목록 (D1새벽기도, D1묵상, D1성경읽기, D3성가대, R3영어뉴스스터디)
 var HABIT_LONGTERM_IDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
@@ -764,6 +764,7 @@ function migrateHabits(longtermList){
 }
 function save(){
   if(isArchiveMode())return; // 아카이브 모드: 과거/미래 연도 데이터는 편집 금지
+  state.data._lastEdited=Date.now();
   try{localStorage.setItem(storageKey(),JSON.stringify(state.data));showSave("saved")}catch(e){
     console.error("localStorage save failed:",e);
     showSave("error");
@@ -775,6 +776,7 @@ function save(){
 }
 function saveBookData(){
   if(isArchiveMode())return;
+  state.bookData._lastEdited=Date.now();
   try{localStorage.setItem(bookStorageKey(),JSON.stringify(state.bookData))}catch(e){
     console.error("localStorage book save failed:",e);
   }
@@ -785,6 +787,7 @@ function saveBookData(){
 }
 function saveGoalData(){
   if(isArchiveMode())return;
+  state.goalData._lastEdited=Date.now();
   try{localStorage.setItem(goalStorageKey(),JSON.stringify(state.goalData))}catch(e){
     console.error("localStorage goal save failed:",e);
   }
@@ -969,7 +972,22 @@ function cloudLoadGoals(){
     if(d.status==='ok'&&d.data){
       var cloud=d.data;
       var hasCloud=(cloud.daily&&Object.keys(cloud.daily).length>0)||(cloud.weekly&&cloud.weekly.length>0)||(cloud.monthly&&cloud.monthly.length>0)||(cloud.longterm&&cloud.longterm.length>0);
-      if(hasCloud){
+      if(!hasCloud)return;
+      var cloudEdited=cloud._lastEdited||0;
+      var localEdited=(state.goalData&&state.goalData._lastEdited)||0;
+      var localHas=(state.goalData&&(
+        (state.goalData.daily&&Object.keys(state.goalData.daily).length>0)||
+        (state.goalData.weekly&&state.goalData.weekly.length>0)||
+        (state.goalData.monthly&&state.goalData.monthly.length>0)||
+        (state.goalData.longterm&&state.goalData.longterm.length>0)
+      ));
+      // 로컬이 최신이면 푸시만 하고 종료
+      if(localHas&&localEdited>cloudEdited){
+        cloudSaveGoals();
+        return;
+      }
+      // 로컬 비어있거나 클라우드가 최신 → 교체
+      if(!localHas||cloudEdited>localEdited){
         var cloudLongterm=cloud.longterm||[];
         var cloudHabits=cloud.habits||[];
         if(cloudHabits.length===0){
@@ -981,7 +999,7 @@ function cloudLoadGoals(){
           var hIds=cloudHabits.map(function(h){return h.longtermId}).filter(Boolean);
           cloudLongterm=cloudLongterm.filter(function(g){return hIds.indexOf(g.id)===-1});
         }
-        state.goalData={daily:cloud.daily||{},weekly:sortByDream(cloud.weekly||[]),monthly:sortByDream(cloud.monthly||[]),longterm:sortByDream(cloudLongterm),habits:cloudHabits,readingGoals:cloud.readingGoals||[]};
+        state.goalData={daily:cloud.daily||{},weekly:sortByDream(cloud.weekly||[]),monthly:sortByDream(cloud.monthly||[]),longterm:sortByDream(cloudLongterm),habits:cloudHabits,readingGoals:cloud.readingGoals||[],_lastEdited:cloudEdited};
         // 클라우드에서 독서목표 내려받은 경우에도 이관 + 누적권수 정리
         var _m2=migrateReadingGoals();
         var _c2=cleanupLegacyBookTargets();
@@ -1039,11 +1057,25 @@ function cloudLoad(){
     if(d.status==='ok'&&d.data){
       var cloudEntries=Object.keys(d.data.entries||{}).length;
       var localEntries=Object.keys(state.data.entries||{}).length;
+      var cloudEdited=d.data._lastEdited||0;
+      var localEdited=(state.data&&state.data._lastEdited)||0;
+      // Cloud primary: 타임스탬프 비교로 자동 동기화 (confirm 제거)
+      // 1) 로컬 비어있고 클라우드 있으면 → 무조건 교체 (새 기기/초기화)
+      // 2) 클라우드가 더 최신이면 → 교체 (다른 기기에서 수정됨)
+      // 3) 로컬이 더 최신이면 → no-op (debounce save가 곧 푸시함)
+      // 4) 동일 타임스탬프면 → no-op
+      var shouldReplace=false;
       if(cloudEntries>0){
-        if(localEntries===0||confirm('클라우드에 '+cloudEntries+'일치 데이터가 있습니다. 불러오시겠습니까?\n(현재 로컬: '+localEntries+'일치)')){
-          state.data=d.data;
-          localStorage.setItem(storageKey(),JSON.stringify(d.data));
-        }
+        if(localEntries===0)shouldReplace=true;
+        else if(cloudEdited>localEdited)shouldReplace=true;
+      }
+      if(shouldReplace){
+        state.data=d.data;
+        localStorage.setItem(storageKey(),JSON.stringify(d.data));
+        _isAutoRender=true;render();
+      }else if(localEdited>cloudEdited&&localEntries>0){
+        // 오프라인에서 편집된 로컬을 푸시
+        cloudSave();
       }
       state.syncStatus='synced';_isAutoRender=true;render();
       setTimeout(()=>{state.syncStatus=null;_isAutoRender=true;render()},2000);
@@ -1065,14 +1097,22 @@ function cloudLoadBooks(){
     return r.json();
   }).then(d=>{
     if(d.status==='ok'&&d.data){
-      var cloudBooks=Object.keys(d.data).length;
-      var localBooks=Object.keys(state.bookData).length;
+      // _lastEdited는 데이터 키가 아니므로 제외하고 카운트
+      var cloudBooks=Object.keys(d.data).filter(function(k){return k!=='_lastEdited'}).length;
+      var localBooks=Object.keys(state.bookData||{}).filter(function(k){return k!=='_lastEdited'}).length;
+      var cloudEdited=d.data._lastEdited||0;
+      var localEdited=(state.bookData&&state.bookData._lastEdited)||0;
+      var shouldReplace=false;
       if(cloudBooks>0){
-        if(localBooks===0||confirm('클라우드에 독서 데이터('+cloudBooks+'개월)가 있습니다. 불러오시겠습니까?')){
-          state.bookData=d.data;
-          localStorage.setItem(bookStorageKey(),JSON.stringify(d.data));
-          _isAutoRender=true;render();
-        }
+        if(localBooks===0)shouldReplace=true;
+        else if(cloudEdited>localEdited)shouldReplace=true;
+      }
+      if(shouldReplace){
+        state.bookData=d.data;
+        localStorage.setItem(bookStorageKey(),JSON.stringify(d.data));
+        _isAutoRender=true;render();
+      }else if(localEdited>cloudEdited&&localBooks>0){
+        cloudSaveBooks();
       }
     }
   }).catch(e=>{
@@ -6794,7 +6834,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-20-v60";
+  var SEED_VER="2026-04-21-v61";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){
@@ -6871,6 +6911,28 @@ var _cleanup=cleanupLegacyBookTargets();
 if((_mig||_cleanup>0)&&typeof cloudSaveGoals==="function"&&CLOUD_URL){cloudSaveGoals();}
 render();
 if(CLOUD_URL)setTimeout(()=>cloudLoad(),500);
+
+// ── 페이지 종료 시 미저장 편집 보호 ──
+// debounce 중인 편집을 sendBeacon으로 즉시 푸시 (브라우저 닫기/탭 이동 시 fetch는 중단됨)
+function _flushPendingSaves(){
+  if(!CLOUD_URL||isArchiveMode())return;
+  try{
+    if(state.data&&state.data._lastEdited){
+      var body1='action=save&year='+state.year+'&data='+encodeURIComponent(JSON.stringify(state.data));
+      navigator.sendBeacon(CLOUD_URL,new Blob([body1],{type:'application/x-www-form-urlencoded'}));
+    }
+    if(state.bookData&&state.bookData._lastEdited){
+      var body2='action=saveBooks&year='+state.year+'&data='+encodeURIComponent(JSON.stringify(state.bookData));
+      navigator.sendBeacon(CLOUD_URL,new Blob([body2],{type:'application/x-www-form-urlencoded'}));
+    }
+    if(state.goalData&&state.goalData._lastEdited){
+      var body3='action=saveGoals&year='+state.year+'&data='+encodeURIComponent(JSON.stringify(state.goalData));
+      navigator.sendBeacon(CLOUD_URL,new Blob([body3],{type:'application/x-www-form-urlencoded'}));
+    }
+  }catch(e){console.error('flushPendingSaves failed:',e);}
+}
+window.addEventListener('pagehide',_flushPendingSaves);
+window.addEventListener('beforeunload',_flushPendingSaves);
 </script>
 </body>
 </html>

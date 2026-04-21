@@ -5520,10 +5520,12 @@ function renderGoals(){
     const isToday=tgtY===state.year&&tgtM===state.month&&tgtD===state.day;
     const tdk=tgtM+"-"+tgtD;
     const tWIdx=weekIdxOfDay(tgtY,tgtM,tgtD);
-    const tDaily=(state.goalData.daily[tdk]||[]);
-    // 주간: 기준일을 startDate~endDate 범위에 포함하는 것
+    // 완료 목표는 "최근 완료" 섹션에서만 표시 (picker/이연과 동일 기준)
+    const tDaily=(state.goalData.daily[tdk]||[]).filter(function(g){return !g.done;});
+    // 주간: 기준일을 startDate~endDate 범위에 포함하는 것 + 미완료
     const _tRefKey=tgtY*10000+tgtM*100+tgtD;
     const tWeekly=(state.goalData.weekly||[]).filter(function(g){
+      if(g.done||(g.progress||0)>=100)return false;
       return goalIncludesDate(g,"weekly",tgtY,tgtM,tgtD);
     });
 
@@ -5562,8 +5564,8 @@ function renderGoals(){
     const summary=[];
     const coTotal=dailyCarryover.length+weeklyCarryover.length+readingCarryover.length;
     if(coTotal)summary.push("🔴"+coTotal+" 이연");
-    if(tWeekly.length)summary.push(tWeekly.filter(g=>g.done).length+"/"+tWeekly.length+" 주간");
-    if(tDaily.length)summary.push(tDaily.filter(g=>g.done).length+"/"+tDaily.length+" 일간");
+    if(tWeekly.length)summary.push(tWeekly.length+" 주간");
+    if(tDaily.length)summary.push(tDaily.length+" 일간");
     hdr.appendChild(h("span",{style:"font-size:9px;color:#475569;font-family:'JetBrains Mono',monospace"},summary.join(" · ")));
     box.appendChild(hdr);
 

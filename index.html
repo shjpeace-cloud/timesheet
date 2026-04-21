@@ -1831,8 +1831,8 @@ function renderHeader(){
           onClick:()=>{
             state.year=yy;state.showYearPicker=false;
             state.data=load();state.bookData=loadBooks();state.goalData=loadGoals();
-            // 현재 연도일 때만 클라우드 pull (과거 연도를 현재 데이터로 덮지 않도록)
-            if(CLOUD_URL&&yy===curY)cloudLoad();
+            // 모든 연도 클라우드 pull — _lastEdited 타임스탬프 비교로 안전 (로컬 최신이면 푸시, 클라우드 최신이면 교체)
+            if(CLOUD_URL)cloudLoad();
             render();
           }
         },String(yy)));

@@ -1425,7 +1425,7 @@ function _doExportExcel(){
 
   // ── Sheet1: 시간통계 ──────────────────────────────────────
   const rows1=[["연도","날짜","시간","Actual카테고리","Actual카테고리명","DREAM","Plan카테고리","Plan메모","Actual메모","목표ID","목표명","일기/메모"]];
-  for(let y=2026;y<=2040;y++){
+  for(let y=2019;y<=2040;y++){
     let data;
     try{const r=localStorage.getItem("timesheet-data-"+y);if(!r)continue;data=JSON.parse(r)}catch(e){continue}
     const entries=data.entries||{};
@@ -1467,7 +1467,7 @@ function _doExportExcel(){
     if(!g.subtasks||g.subtasks.length===0)return "";
     return g.subtasks.map(function(s){return s.name+"("+(s.weight||0)+"%)"+(s.done?"[✓]":"");}).join(" | ");
   }
-  for(let y=2026;y<=2040;y++){
+  for(let y=2019;y<=2040;y++){
     let gd;
     try{const r=localStorage.getItem("goals-data-"+y);if(!r)continue;gd=JSON.parse(r)}catch(e){continue}
 
@@ -1576,7 +1576,7 @@ function _doExportExcel(){
   }
 
   // 주간 성찰
-  for(let y=2026;y<=2040;y++){
+  for(let y=2019;y<=2040;y++){
     for(let m=1;m<=12;m++){
       for(let w=1;w<=6;w++){
         try{
@@ -1592,7 +1592,7 @@ function _doExportExcel(){
   }
 
   // 월간 성찰
-  for(let y=2026;y<=2040;y++){
+  for(let y=2019;y<=2040;y++){
     for(let m=1;m<=12;m++){
       try{
         const r=localStorage.getItem("monthly-review-"+y+"-"+m);
@@ -1606,7 +1606,7 @@ function _doExportExcel(){
   }
 
   // 연간 성찰
-  for(let y=2026;y<=2040;y++){
+  for(let y=2019;y<=2040;y++){
     try{
       const r=localStorage.getItem("yearly-review-"+y);
       if(!r)continue;
@@ -1618,7 +1618,7 @@ function _doExportExcel(){
   }
 
   // 일간 성찰 (daily-review-YYYY-M-D, 구 gratitude-daily-* 포함)
-  for(let y=2026;y<=2040;y++){
+  for(let y=2019;y<=2040;y++){
     try{
       const tdata=localStorage.getItem("timesheet-data-"+y);
       if(!tdata)continue;
@@ -1643,7 +1643,7 @@ function _doExportExcel(){
 
   // ── Sheet5: 습관체크 ──────────────────────────────────────
   const rows5=[["카테고리","습관명","완료날짜","자동체크여부"]];
-  for(let y=2026;y<=2040;y++){
+  for(let y=2019;y<=2040;y++){
     let gd2;
     try{const r=localStorage.getItem("goals-data-"+y);if(!r)continue;gd2=JSON.parse(r)}catch(e){continue}
     (gd2.habits||[]).forEach(function(hb){
@@ -1652,7 +1652,7 @@ function _doExportExcel(){
       });
     });
   }
-  for(let y=2026;y<=2040;y++){
+  for(let y=2019;y<=2040;y++){
     let gd3,td;
     try{const r=localStorage.getItem("goals-data-"+y);if(!r)continue;gd3=JSON.parse(r)}catch(e){continue}
     try{const r=localStorage.getItem("timesheet-data-"+y);if(!r)continue;td=JSON.parse(r)}catch(e){continue}
@@ -1700,7 +1700,7 @@ function resetData(){
 function backupData(){
   const allData={},allBooks={},allGoals={};
   const allWeeklyReviews={},allWeeklyPlans={};
-  for(let y=2026;y<=2040;y++){
+  for(let y=2019;y<=2040;y++){
     try{const r=localStorage.getItem("timesheet-data-"+y);if(r)allData[y]=JSON.parse(r)}catch(e){}
     try{const r=localStorage.getItem("books-data-"+y);if(r)allBooks[y]=JSON.parse(r)}catch(e){}
     try{const r=localStorage.getItem("goals-data-"+y);if(r)allGoals[y]=JSON.parse(r)}catch(e){}
@@ -6834,7 +6834,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-21-v61";
+  var SEED_VER="2026-04-21-v62";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

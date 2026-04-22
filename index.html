@@ -952,6 +952,7 @@ function cloudSaveGoals(){
   // debounce: 연속 호출 방지
   clearTimeout(cloudSaveGoals._timer);
   cloudSaveGoals._timer=setTimeout(function(){
+    state.goalData._lastEdited=Date.now(); // 푸시 직전 재스탬프
     var body='action=saveGoals&year='+state.year+'&data='+encodeURIComponent(JSON.stringify(state.goalData));
     fetch(CLOUD_URL,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body,redirect:'follow'})
     .then(r=>r.json()).then(d=>{
@@ -1015,9 +1016,35 @@ function dateKey(){return state.month+"-"+state.day}
 function catByCode(c){return CATEGORIES.find(x=>x.code===c)||null}
 function groupCats(g){return CATEGORIES.filter(c=>c.group===g)}
 
+// ── 데이터 병합 헬퍼 (타임스탬프 동일하나 내용 다를 때 사용) ──
+// 두 entries 데이터를 병합. 날짜 키 합집합 + 충돌 시 슬롯 많은 쪽 선택.
+// 구버전 클라이언트가 _lastEdited 갱신 없이 푸시한 경우 유실 방지용.
+function mergeEntriesData(localData, cloudData){
+  var localEnt=(localData&&localData.entries)||{};
+  var cloudEnt=(cloudData&&cloudData.entries)||{};
+  var merged={entries:{}};
+  var allKeys={};
+  Object.keys(localEnt).forEach(function(k){allKeys[k]=1;});
+  Object.keys(cloudEnt).forEach(function(k){allKeys[k]=1;});
+  Object.keys(allKeys).forEach(function(k){
+    var l=localEnt[k], c=cloudEnt[k];
+    if(!l&&c)merged.entries[k]=c;
+    else if(l&&!c)merged.entries[k]=l;
+    else if(l&&c){
+      // 둘 다 있으면 슬롯 많은 쪽 선택 (이전 저장 보존 우선)
+      var lSlots=Object.keys(l).filter(function(x){return x!=="_diary";}).length;
+      var cSlots=Object.keys(c).filter(function(x){return x!=="_diary";}).length;
+      merged.entries[k]=cSlots>lSlots?c:l;
+    }
+  });
+  return merged;
+}
+
 function cloudSave(){
   if(!CLOUD_URL)return;
   if(isArchiveMode())return; // 아카이브 모드: 과거 연도 데이터 클라우드 쓰기 금지
+  // 푸시 직전 _lastEdited 재스탬프 — 구버전 코드가 state를 수정했어도 최신 타임스탬프로 전송
+  state.data._lastEdited=Date.now();
   state.syncStatus='syncing';_isAutoRender=true;render();
   var body='action=save&year='+state.year+'&data='+encodeURIComponent(JSON.stringify(state.data));
   fetch(CLOUD_URL,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body,redirect:'follow'})
@@ -1034,6 +1061,7 @@ function cloudSave(){
 function cloudSaveBooks(){
   if(isArchiveMode())return;
   if(!CLOUD_URL)return;
+  state.bookData._lastEdited=Date.now();
   state.syncStatus='syncing';_isAutoRender=true;render();
   var body='action=saveBooks&year='+state.year+'&data='+encodeURIComponent(JSON.stringify(state.bookData));
   fetch(CLOUD_URL,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body,redirect:'follow'})
@@ -1063,7 +1091,8 @@ function cloudLoad(){
       // 1) 로컬 비어있고 클라우드 있으면 → 무조건 교체 (새 기기/초기화)
       // 2) 클라우드가 더 최신이면 → 교체 (다른 기기에서 수정됨)
       // 3) 로컬이 더 최신이면 → no-op (debounce save가 곧 푸시함)
-      // 4) 동일 타임스탬프면 → no-op
+      // 4) 동일 타임스탬프 + 내용 다름 → MERGE (구버전 클라이언트의 타임스탬프 갱신 누락 대비)
+      // 5) 동일 타임스탬프 + 내용 같음 → no-op
       var shouldReplace=false;
       if(cloudEntries>0){
         if(localEntries===0)shouldReplace=true;
@@ -1076,6 +1105,31 @@ function cloudLoad(){
       }else if(localEdited>cloudEdited&&localEntries>0){
         // 오프라인에서 편집된 로컬을 푸시
         cloudSave();
+      }else if(cloudEdited===localEdited&&cloudEntries>0&&localEntries>0){
+        // 타임스탬프 동일 — 내용 비교 (구버전 클라이언트가 _lastEdited 갱신 없이 푸시한 경우)
+        var cloudKeys=Object.keys(d.data.entries||{});
+        var localKeys=Object.keys(state.data.entries||{});
+        var needMerge=false;
+        if(cloudKeys.length!==localKeys.length)needMerge=true;
+        else{
+          // 같은 날짜 키 수여도 슬롯 수가 다르면 merge
+          for(var i=0;i<cloudKeys.length;i++){
+            var k=cloudKeys[i];
+            if(!state.data.entries[k]){needMerge=true;break;}
+            var cSlots=Object.keys(d.data.entries[k]).length;
+            var lSlots=Object.keys(state.data.entries[k]).length;
+            if(cSlots!==lSlots){needMerge=true;break;}
+          }
+        }
+        if(needMerge){
+          console.warn("[sync] 타임스탬프 동일하나 내용 다름 — merge 수행");
+          var mergedData=mergeEntriesData(state.data,d.data);
+          mergedData._lastEdited=Date.now(); // 새 타임스탬프로 확정
+          state.data=mergedData;
+          localStorage.setItem(storageKey(),JSON.stringify(mergedData));
+          _isAutoRender=true;render();
+          cloudSave(); // merged 결과를 cloud에도 반영
+        }
       }
       state.syncStatus='synced';_isAutoRender=true;render();
       setTimeout(()=>{state.syncStatus=null;_isAutoRender=true;render()},2000);
@@ -6834,7 +6888,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-21-v62";
+  var SEED_VER="2026-04-22-v63";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

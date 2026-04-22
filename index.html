@@ -1243,18 +1243,31 @@ function cloudPushAllYears(){
   }
   if(tasks.length===0){alert('업로드할 과거 연도 데이터가 없습니다.');return;}
   if(!confirm(tasks.length+'개 항목(과거 연도 시간/독서/목표)을 클라우드에 업로드합니다.\n계속하시겠습니까?'))return;
-  var ok=0,fail=0,done=0;
+  var ok=0,fail=0,done=0,okItems=[],failItems=[];
+  function showResult(){
+    var msg='완료: 성공 '+ok+' / 실패 '+fail;
+    if(okItems.length>0)msg+='\n\n[성공]\n'+okItems.join(', ');
+    if(failItems.length>0)msg+='\n\n[실패]\n'+failItems.join('\n');
+    if(ok>0)msg+='\n\n다른 기기에서 새로고침하면 성공한 연도가 로드됩니다.';
+    alert(msg);
+  }
   tasks.forEach(function(t){
+    var label=t.action+' '+t.year;
     var body='action='+t.action+'&year='+t.year+'&data='+encodeURIComponent(t.data);
     fetch(CLOUD_URL,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body,redirect:'follow'})
-    .then(r=>r.json()).then(d=>{
-      if(d&&d.status==='ok')ok++;else fail++;
+    .then(r=>{
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      return r.json();
+    }).then(d=>{
+      if(d&&d.status==='ok'){ok++;okItems.push(label);}
+      else{fail++;failItems.push(label+' — '+(d&&d.message?d.message:'status '+(d&&d.status)));}
       done++;
-      if(done===tasks.length)alert('완료: 성공 '+ok+' / 실패 '+fail+'\n다른 기기에서 새로고침하면 과거 연도가 로드됩니다.');
+      if(done===tasks.length)showResult();
     }).catch(e=>{
-      console.error('push '+t.action+' '+t.year+' failed:',e);
-      fail++;done++;
-      if(done===tasks.length)alert('완료: 성공 '+ok+' / 실패 '+fail+'\n다른 기기에서 새로고침하면 과거 연도가 로드됩니다.');
+      console.error('push '+label+' failed:',e);
+      fail++;failItems.push(label+' — '+(e.message||'network error'));
+      done++;
+      if(done===tasks.length)showResult();
     });
   });
 }
@@ -7004,7 +7017,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-23-v66";
+  var SEED_VER="2026-04-23-v67";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

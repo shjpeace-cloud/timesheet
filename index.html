@@ -1139,9 +1139,10 @@ function cloudLoad(){
     state.syncStatus='error';_isAutoRender=true;render();
     setTimeout(()=>{state.syncStatus=null;_isAutoRender=true;render()},3000);
   });
-  // Also load books
+  // Also load books, goals, reviews
   cloudLoadBooks();
   cloudLoadGoals();
+  cloudLoadReviews(state.year);
 }
 
 // 과거 연도 데이터(time+books+goals)를 localStorage에 preload
@@ -1206,7 +1207,30 @@ function cloudLoadAllYears(){
           localStorage.setItem("goals-data-"+y,JSON.stringify(incoming));
         }
       }).catch(e=>console.error("cloudLoadAllYears goals "+y+":",e));
+      // 리뷰 메모: 각 개별 키를 localStorage에 반영
+      fetch(CLOUD_URL+'?action=loadReviews&year='+y,{redirect:'follow'}).then(r=>r.json()).then(rd=>{
+        if(rd.status!=='ok'||!rd.data)return;
+        var incoming=rd.data;
+        Object.keys(incoming).forEach(function(k){
+          if(k==='_lastEdited')return;
+          try{localStorage.setItem(k,JSON.stringify(incoming[k]));}catch(e){}
+        });
+      }).catch(e=>console.error("cloudLoadAllYears reviews "+y+":",e));
     });
+    // 리뷰 전용 연도(시간 데이터 없이 리뷰만 있는 경우) 보완 — loadAllReviews
+    fetch(CLOUD_URL+'?action=loadAllReviews',{redirect:'follow'}).then(r=>r.json()).then(rd=>{
+      if(rd.status!=='ok'||!rd.data)return;
+      Object.keys(rd.data).forEach(function(y){
+        if(String(y)===String(state.year))return;
+        if(years.indexOf(y)>=0)return; // 이미 위에서 처리됨
+        var blob=rd.data[y];
+        if(!blob)return;
+        Object.keys(blob).forEach(function(k){
+          if(k==='_lastEdited')return;
+          try{localStorage.setItem(k,JSON.stringify(blob[k]));}catch(e){}
+        });
+      });
+    }).catch(e=>console.error('cloudLoadAllYears loadAllReviews:',e));
     // async fetch들이 populate할 시간 주고 재렌더
     setTimeout(function(){_isAutoRender=true;render();},3000);
   }).catch(e=>{console.error("cloudLoadAllYears failed:",e);});
@@ -1241,6 +1265,20 @@ function cloudPushAllYears(){
       if(raw)tasks.push({action:'saveGoals',year:m[1],data:raw});
     }
   }
+  // 리뷰 메모: 키별 저장이므로 연도 그룹핑 후 blob으로 push
+  var reviewYears={};
+  for(var i=0;i<localStorage.length;i++){
+    var k=localStorage.key(i);
+    if(!k)continue;
+    var rm=k.match(/^(?:daily|weekly|monthly|yearly)-review-(\d+)/);
+    if(rm)reviewYears[rm[1]]=true;
+  }
+  Object.keys(reviewYears).forEach(function(y){
+    var blob=collectReviewsForYear(y);
+    if(Object.keys(blob).length===0)return;
+    blob._lastEdited=Date.now();
+    tasks.push({action:'saveReviews',year:y,data:JSON.stringify(blob)});
+  });
   if(tasks.length===0){alert('업로드할 과거 연도 데이터가 없습니다.');return;}
   if(!confirm(tasks.length+'개 항목(과거 연도 시간/독서/목표)을 클라우드에 업로드합니다.\n계속하시겠습니까?'))return;
   var ok=0,fail=0,done=0,okItems=[],failItems=[];
@@ -1272,6 +1310,37 @@ function cloudPushAllYears(){
   });
 }
 
+// ── 리뷰 메모 클라우드 sync ─────────────────────────────────────
+// 과거 연도도 sync됨 (isArchiveMode 가드 없음) — "뭐든 기록된 것은 다 공유" 원칙
+var _cloudSaveReviewsTimers={};
+function cloudSaveReviews(year){
+  if(!CLOUD_URL)return;
+  year=String(year||state.year);
+  clearTimeout(_cloudSaveReviewsTimers[year]);
+  _cloudSaveReviewsTimers[year]=setTimeout(function(){
+    var blob=collectReviewsForYear(year);
+    blob._lastEdited=Date.now();
+    var body='action=saveReviews&year='+year+'&data='+encodeURIComponent(JSON.stringify(blob));
+    fetch(CLOUD_URL,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body,redirect:'follow'})
+    .then(r=>r.json()).then(d=>{if(d.status!=='ok')console.error('cloudSaveReviews failed:',d);})
+    .catch(e=>console.error('cloudSaveReviews error:',e));
+  },1500);
+}
+function cloudLoadReviews(year){
+  if(!CLOUD_URL)return;
+  year=String(year||state.year);
+  fetch(CLOUD_URL+'?action=loadReviews&year='+year,{redirect:'follow'}).then(r=>{
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    return r.json();
+  }).then(d=>{
+    if(d.status!=='ok'||!d.data)return;
+    var incoming=d.data;
+    Object.keys(incoming).forEach(function(k){
+      if(k==='_lastEdited')return;
+      try{localStorage.setItem(k,JSON.stringify(incoming[k]));}catch(e){}
+    });
+  }).catch(e=>console.error('cloudLoadReviews failed:',e));
+}
 function cloudLoadBooks(){
   if(!CLOUD_URL)return;
   fetch(CLOUD_URL+'?action=loadBooks&year='+state.year,{redirect:'follow'}).then(r=>{
@@ -2570,6 +2639,28 @@ function renderReview(){
 // reviewKey: 기존 성찰 저장소 (weekly-review-*, monthly-review-*, yearly-review-*, daily-review-*)
 // gratitudeKey: 감사한 일 저장소 (별도 or null이면 reviewKey에 통합)
 // labels: {title, next} 커스터마이즈
+// 리뷰 키에서 연도 추출 — daily-review-Y-M-D / weekly-review-Y-M-W / monthly-review-Y-M / yearly-review-Y
+function yearFromReviewKey(key){
+  var m=key&&key.match(/^(?:daily|weekly|monthly|yearly)-review-(\d+)/);
+  return m?m[1]:null;
+}
+// 특정 연도의 모든 리뷰 메모를 localStorage에서 수집 (cloud push용)
+function collectReviewsForYear(y){
+  var out={};
+  var p1="daily-review-"+y+"-";
+  var p2="weekly-review-"+y+"-";
+  var p3="monthly-review-"+y+"-";
+  var exact="yearly-review-"+y;
+  for(var i=0;i<localStorage.length;i++){
+    var k=localStorage.key(i);
+    if(!k)continue;
+    if(k.indexOf(p1)===0||k.indexOf(p2)===0||k.indexOf(p3)===0||k===exact){
+      try{out[k]=JSON.parse(localStorage.getItem(k)||"{}");}catch(e){out[k]={};}
+    }
+  }
+  return out;
+}
+
 function renderReflectionBox(reviewKey,labels){
   var rv;
   try{rv=JSON.parse(localStorage.getItem(reviewKey)||"{}")}catch(e){rv={};}
@@ -2591,7 +2682,7 @@ function renderReflectionBox(reviewKey,labels){
   gta.addEventListener("input",function(e){
     rv.gratitude=e.target.value;
     clearTimeout(gTimer);
-    gTimer=setTimeout(function(){try{localStorage.setItem(reviewKey,JSON.stringify(rv))}catch(ex){}},800);
+    gTimer=setTimeout(function(){try{localStorage.setItem(reviewKey,JSON.stringify(rv))}catch(ex){}cloudSaveReviews(yearFromReviewKey(reviewKey));},800);
   });
   box.appendChild(gta);
 
@@ -2610,7 +2701,7 @@ function renderReflectionBox(reviewKey,labels){
     ta.addEventListener("input",function(e){
       rv[f.key]=e.target.value;
       clearTimeout(timer);
-      timer=setTimeout(function(){try{localStorage.setItem(reviewKey,JSON.stringify(rv))}catch(ex){}},800);
+      timer=setTimeout(function(){try{localStorage.setItem(reviewKey,JSON.stringify(rv))}catch(ex){}cloudSaveReviews(yearFromReviewKey(reviewKey));},800);
     });
     box.appendChild(ta);
   });
@@ -2619,6 +2710,7 @@ function renderReflectionBox(reviewKey,labels){
   const saveBtn=h("button",{style:"margin-top:10px;width:100%;padding:8px;border-radius:8px;background:#0d9488;border:none;color:#fff;font-size:13px;font-weight:700;cursor:pointer",
     onClick:function(){
       try{localStorage.setItem(reviewKey,JSON.stringify(rv))}catch(e){}
+      cloudSaveReviews(yearFromReviewKey(reviewKey));
       saveBtn.textContent="✅ 저장됨";
       setTimeout(function(){saveBtn.textContent="💾 저장"},1500);
     }
@@ -7017,7 +7109,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-23-v67";
+  var SEED_VER="2026-04-23-v68";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){
@@ -7112,6 +7204,13 @@ function _flushPendingSaves(){
     if(state.goalData&&state.goalData._lastEdited){
       var body3='action=saveGoals&year='+state.year+'&data='+encodeURIComponent(JSON.stringify(state.goalData));
       navigator.sendBeacon(CLOUD_URL,new Blob([body3],{type:'application/x-www-form-urlencoded'}));
+    }
+    // 리뷰 메모 debounce 중인 것 flush (현재 연도 기준)
+    var reviewBlob=collectReviewsForYear(state.year);
+    if(Object.keys(reviewBlob).length>0){
+      reviewBlob._lastEdited=Date.now();
+      var body4='action=saveReviews&year='+state.year+'&data='+encodeURIComponent(JSON.stringify(reviewBlob));
+      navigator.sendBeacon(CLOUD_URL,new Blob([body4],{type:'application/x-www-form-urlencoded'}));
     }
   }catch(e){console.error('flushPendingSaves failed:',e);}
 }

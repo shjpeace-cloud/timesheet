@@ -1144,7 +1144,8 @@ function cloudLoad(){
   cloudLoadGoals();
 }
 
-// 과거 연도 entries를 localStorage에 preload (새 기기에서 연간/리뷰 차트 공백 방지)
+// 과거 연도 데이터(time+books+goals)를 localStorage에 preload
+// — 새 기기에서 연간/3년 리뷰 차트 공백 방지
 // 현재 연도는 cloudLoad가 담당하므로 제외. _lastEdited로 로컬이 더 최신이면 보존.
 function cloudLoadAllYears(){
   if(!CLOUD_URL)return;
@@ -1153,26 +1154,109 @@ function cloudLoadAllYears(){
     return r.json();
   }).then(d=>{
     if(d.status!=='ok'||!d.data)return;
-    var wrote=0;
-    Object.keys(d.data).forEach(function(y){
+    var years=Object.keys(d.data);
+    // 1) Time entries
+    years.forEach(function(y){
       if(String(y)===String(state.year))return;
       try{
         var incoming=d.data[y];
         if(!incoming||typeof incoming!=='object')return;
+        var hasEntries=incoming.entries&&Object.keys(incoming.entries).length>0;
+        if(!hasEntries)return;
         var incomingEdited=incoming._lastEdited||0;
-        var existingEdited=0;
         var existingRaw=localStorage.getItem("timesheet-data-"+y);
-        if(existingRaw){
-          try{existingEdited=(JSON.parse(existingRaw)._lastEdited)||0;}catch(e){}
-        }
+        var existingEdited=0;
+        if(existingRaw){try{existingEdited=(JSON.parse(existingRaw)._lastEdited)||0;}catch(e){}}
         if(!existingRaw||incomingEdited>=existingEdited){
           localStorage.setItem("timesheet-data-"+y,JSON.stringify(incoming));
-          wrote++;
         }
-      }catch(e){console.error("cloudLoadAllYears year "+y+":",e);}
+      }catch(e){console.error("cloudLoadAllYears time "+y+":",e);}
     });
-    if(wrote>0){_isAutoRender=true;render();}
+    // 2) Books + Goals: per-year endpoints (time과 같은 연도 목록 기준)
+    years.forEach(function(y){
+      if(String(y)===String(state.year))return;
+      fetch(CLOUD_URL+'?action=loadBooks&year='+y,{redirect:'follow'}).then(r=>r.json()).then(bd=>{
+        if(bd.status!=='ok'||!bd.data)return;
+        var incoming=bd.data;
+        var hasBooks=Object.keys(incoming).some(function(k){return k!=='_lastEdited';});
+        if(!hasBooks)return;
+        var incomingEdited=incoming._lastEdited||0;
+        var existingRaw=localStorage.getItem("books-data-"+y);
+        var existingEdited=0;
+        if(existingRaw){try{existingEdited=(JSON.parse(existingRaw)._lastEdited)||0;}catch(e){}}
+        if(!existingRaw||incomingEdited>=existingEdited){
+          localStorage.setItem("books-data-"+y,JSON.stringify(incoming));
+        }
+      }).catch(e=>console.error("cloudLoadAllYears books "+y+":",e));
+      fetch(CLOUD_URL+'?action=loadGoals&year='+y,{redirect:'follow'}).then(r=>r.json()).then(gd=>{
+        if(gd.status!=='ok'||!gd.data)return;
+        var incoming=gd.data;
+        var hasGoals=(incoming.daily&&Object.keys(incoming.daily).length>0)||
+                     (incoming.weekly&&incoming.weekly.length>0)||
+                     (incoming.monthly&&incoming.monthly.length>0)||
+                     (incoming.longterm&&incoming.longterm.length>0)||
+                     (incoming.habits&&incoming.habits.length>0)||
+                     (incoming.readingGoals&&incoming.readingGoals.length>0);
+        if(!hasGoals)return;
+        var incomingEdited=incoming._lastEdited||0;
+        var existingRaw=localStorage.getItem("goals-data-"+y);
+        var existingEdited=0;
+        if(existingRaw){try{existingEdited=(JSON.parse(existingRaw)._lastEdited)||0;}catch(e){}}
+        if(!existingRaw||incomingEdited>=existingEdited){
+          localStorage.setItem("goals-data-"+y,JSON.stringify(incoming));
+        }
+      }).catch(e=>console.error("cloudLoadAllYears goals "+y+":",e));
+    });
+    // async fetch들이 populate할 시간 주고 재렌더
+    setTimeout(function(){_isAutoRender=true;render();},3000);
   }).catch(e=>{console.error("cloudLoadAllYears failed:",e);});
+}
+
+// localStorage의 모든 연도 데이터(time/books/goals)를 클라우드에 일괄 푸시
+// 기기 전환 초기 세팅용 — 데스크탑에서 한 번 클릭하면 과거 연도가 Sheets에 올라감
+function cloudPushAllYears(){
+  if(!CLOUD_URL){alert('클라우드 URL이 설정되지 않았습니다.');return;}
+  var tasks=[];
+  for(var i=0;i<localStorage.length;i++){
+    var key=localStorage.key(i);
+    if(!key)continue;
+    var m=key.match(/^timesheet-data-(\d+)$/);
+    if(m){
+      if(String(m[1])===String(state.year))continue;
+      var raw=localStorage.getItem(key);
+      if(raw)tasks.push({action:'save',year:m[1],data:raw});
+      continue;
+    }
+    m=key.match(/^books-data-(\d+)$/);
+    if(m){
+      if(String(m[1])===String(state.year))continue;
+      var raw=localStorage.getItem(key);
+      if(raw)tasks.push({action:'saveBooks',year:m[1],data:raw});
+      continue;
+    }
+    m=key.match(/^goals-data-(\d+)$/);
+    if(m){
+      if(String(m[1])===String(state.year))continue;
+      var raw=localStorage.getItem(key);
+      if(raw)tasks.push({action:'saveGoals',year:m[1],data:raw});
+    }
+  }
+  if(tasks.length===0){alert('업로드할 과거 연도 데이터가 없습니다.');return;}
+  if(!confirm(tasks.length+'개 항목(과거 연도 시간/독서/목표)을 클라우드에 업로드합니다.\n계속하시겠습니까?'))return;
+  var ok=0,fail=0,done=0;
+  tasks.forEach(function(t){
+    var body='action='+t.action+'&year='+t.year+'&data='+encodeURIComponent(t.data);
+    fetch(CLOUD_URL,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body,redirect:'follow'})
+    .then(r=>r.json()).then(d=>{
+      if(d&&d.status==='ok')ok++;else fail++;
+      done++;
+      if(done===tasks.length)alert('완료: 성공 '+ok+' / 실패 '+fail+'\n다른 기기에서 새로고침하면 과거 연도가 로드됩니다.');
+    }).catch(e=>{
+      console.error('push '+t.action+' '+t.year+' failed:',e);
+      fail++;done++;
+      if(done===tasks.length)alert('완료: 성공 '+ok+' / 실패 '+fail+'\n다른 기기에서 새로고침하면 과거 연도가 로드됩니다.');
+    });
+  });
 }
 
 function cloudLoadBooks(){
@@ -1930,6 +2014,7 @@ function renderHeader(){
     dd.appendChild(h("button",{onClick:()=>{state.showMenu=false;state.showSettings=!state.showSettings;render()}},"☁ 클라우드 설정"));
     if(CLOUD_URL)dd.appendChild(h("button",{onClick:()=>{state.showMenu=false;cloudLoad()}},"🔄 클라우드에서 불러오기"));
     if(CLOUD_URL)dd.appendChild(h("button",{onClick:()=>{state.showMenu=false;cloudSave();cloudSaveBooks()}},"⬆ 클라우드에 저장"));
+    if(CLOUD_URL)dd.appendChild(h("button",{onClick:()=>{state.showMenu=false;cloudPushAllYears()}},"⬆⬆ 모든 연도 일괄 업로드"));
     dd.appendChild(h("button",{onClick:exportExcel},"📊 Excel 내보내기"));
     dd.appendChild(h("button",{onClick:backupData},"💾 데이터 백업 (JSON)"));
     dd.appendChild(h("button",{onClick:restoreData},"📥 데이터 복원"));
@@ -6919,7 +7004,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-22-v65";
+  var SEED_VER="2026-04-23-v66";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

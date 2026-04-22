@@ -6888,7 +6888,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-22-v63";
+  var SEED_VER="2026-04-22-v64";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){
@@ -6987,6 +6987,21 @@ function _flushPendingSaves(){
 }
 window.addEventListener('pagehide',_flushPendingSaves);
 window.addEventListener('beforeunload',_flushPendingSaves);
+
+// ── 탭 재포커스 시 재-pull (다기기 동시 사용 대응) ──
+// 다른 기기에서 수정된 변경사항을 새로고침 없이 반영.
+// 30초 스로틀 — 탭 빠르게 토글해도 Apps Script 쿼터 낭비 안 함.
+var _lastCloudPullAt=0;
+function _maybeRepull(){
+  if(!CLOUD_URL||isArchiveMode())return;
+  if(document.visibilityState!=='visible')return;
+  var now=Date.now();
+  if(now-_lastCloudPullAt<30000)return;
+  _lastCloudPullAt=now;
+  cloudLoad();
+}
+document.addEventListener('visibilitychange',_maybeRepull);
+window.addEventListener('focus',_maybeRepull);
 </script>
 </body>
 </html>

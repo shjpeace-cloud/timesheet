@@ -1144,6 +1144,37 @@ function cloudLoad(){
   cloudLoadGoals();
 }
 
+// 과거 연도 entries를 localStorage에 preload (새 기기에서 연간/리뷰 차트 공백 방지)
+// 현재 연도는 cloudLoad가 담당하므로 제외. _lastEdited로 로컬이 더 최신이면 보존.
+function cloudLoadAllYears(){
+  if(!CLOUD_URL)return;
+  fetch(CLOUD_URL+'?action=loadAll',{redirect:'follow'}).then(r=>{
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    return r.json();
+  }).then(d=>{
+    if(d.status!=='ok'||!d.data)return;
+    var wrote=0;
+    Object.keys(d.data).forEach(function(y){
+      if(String(y)===String(state.year))return;
+      try{
+        var incoming=d.data[y];
+        if(!incoming||typeof incoming!=='object')return;
+        var incomingEdited=incoming._lastEdited||0;
+        var existingEdited=0;
+        var existingRaw=localStorage.getItem("timesheet-data-"+y);
+        if(existingRaw){
+          try{existingEdited=(JSON.parse(existingRaw)._lastEdited)||0;}catch(e){}
+        }
+        if(!existingRaw||incomingEdited>=existingEdited){
+          localStorage.setItem("timesheet-data-"+y,JSON.stringify(incoming));
+          wrote++;
+        }
+      }catch(e){console.error("cloudLoadAllYears year "+y+":",e);}
+    });
+    if(wrote>0){_isAutoRender=true;render();}
+  }).catch(e=>{console.error("cloudLoadAllYears failed:",e);});
+}
+
 function cloudLoadBooks(){
   if(!CLOUD_URL)return;
   fetch(CLOUD_URL+'?action=loadBooks&year='+state.year,{redirect:'follow'}).then(r=>{
@@ -6888,7 +6919,7 @@ function render(force){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-22-v64";
+  var SEED_VER="2026-04-22-v65";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){
@@ -6965,6 +6996,7 @@ var _cleanup=cleanupLegacyBookTargets();
 if((_mig||_cleanup>0)&&typeof cloudSaveGoals==="function"&&CLOUD_URL){cloudSaveGoals();}
 render();
 if(CLOUD_URL)setTimeout(()=>cloudLoad(),500);
+if(CLOUD_URL)setTimeout(()=>cloudLoadAllYears(),1500);
 
 // ── 페이지 종료 시 미저장 편집 보호 ──
 // debounce 중인 편집을 sendBeacon으로 즉시 푸시 (브라우저 닫기/탭 이동 시 fetch는 중단됨)

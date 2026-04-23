@@ -2157,10 +2157,35 @@ function restoreData(){
     const reader=new FileReader();
     reader.onload=function(ev){
       try{
-        const backup=JSON.parse(ev.target.result);
-        if(!backup.data||typeof backup.data!=="object"){alert("올바른 백업 파일이 아닙니다.");return}
+        const raw=JSON.parse(ev.target.result);
+        // 포맷 감지: (A) 백업 포맷 {data:{"YYYY":...},books,goals} (B) 단일 연도 {entries:...}
+        var isBackup=raw&&raw.data&&typeof raw.data==='object'&&Object.keys(raw.data).length>0;
+        var isSingleYear=raw&&raw.entries&&typeof raw.entries==='object';
+        if(!isBackup&&!isSingleYear){alert("올바른 복원 파일이 아닙니다.\n\n지원 포맷:\n• 백업 파일: {data:{...}, books, goals}\n• 단일 연도: {entries:{...}}");return}
+        // (B) 단일 연도 파일 → 연도를 물어봄 (기본값 = 현재 state.year)
+        if(!isBackup&&isSingleYear){
+          var inputYear=prompt("어느 연도의 데이터입니까?\n(파일에 entries만 있어 연도를 자동 감지할 수 없습니다)",String(state.year));
+          if(!inputYear)return;
+          var y=parseInt(inputYear,10);
+          if(!y||y<2019||y>2040){alert("유효한 연도가 아닙니다.");return}
+          var slotCount=0;
+          Object.values(raw.entries||{}).forEach(function(d){Object.keys(d).forEach(function(s){if(s!=='_diary')slotCount++;});});
+          var dateCount=Object.keys(raw.entries||{}).length;
+          if(!confirm(y+"년 시간 데이터 복원:\n• "+dateCount+"개 날짜, "+slotCount+"개 슬롯\n\n"+y+"년의 기존 데이터를 덮어씁니다. 계속할까요?"))return;
+          localStorage.setItem("timesheet-data-"+y,JSON.stringify(raw));
+          // 현재 state 갱신
+          if(y===state.year){
+            state.data=load();
+            // 큐에 즉시 enqueue → 클라우드에 푸시 → 다른 기기에서 union merge로 받음
+            if(CLOUD_URL)enqueueWrite('time',y,function(){return state.data;});
+          }
+          state.showMenu=false;render();
+          alert("복원 완료! "+y+"년 시간 데이터가 localStorage에 저장되었습니다."+(CLOUD_URL?"\n클라우드에도 자동 푸시됩니다.":""));
+          return;
+        }
+        // (A) 표준 백업 포맷
+        const backup=raw;
         const years=Object.keys(backup.data);
-        if(years.length===0){alert("백업 파일에 데이터가 없습니다.");return}
         const msg="백업 파일 정보:\n• 내보낸 날짜: "+(backup.exportDate?backup.exportDate.slice(0,10):"알 수 없음")+"\n• 포함된 연도: "+years.join(", ")+"년\n\n기존 데이터를 덮어씁니다. 복원하시겠습니까?";
         if(!confirm(msg))return;
         years.forEach(y=>{
@@ -2192,12 +2217,30 @@ function restoreData(){
             });
           });
         }
+        // reviews (새 통합 백업 포맷 — Code.gs v5)
+        if(backup.reviews){
+          Object.values(backup.reviews).forEach(function(yObj){
+            Object.keys(yObj).forEach(function(k){
+              if(k==='_lastEdited')return;
+              localStorage.setItem(k,JSON.stringify(yObj[k]));
+            });
+          });
+        }
         state.data=load();
         state.bookData=loadBooks();
         state.goalData=loadGoals();
+        // 클라우드에도 자동 푸시 (복원된 연도 전부)
+        if(CLOUD_URL){
+          years.forEach(function(y){
+            var yearData=backup.data[y];
+            enqueueWrite('time',y,function(){return yearData;});
+            if(backup.books&&backup.books[y]){var bd=backup.books[y];enqueueWrite('books',y,function(){return bd;});}
+            if(backup.goals&&backup.goals[y]){var gd=backup.goals[y];enqueueWrite('goals',y,function(){return gd;});}
+          });
+        }
         state.showMenu=false;render();
-        alert("복원 완료! "+years.length+"개 연도 데이터가 복원되었습니다.");
-      }catch(err){alert("파일을 읽을 수 없습니다. 올바른 백업 파일인지 확인해주세요.")}
+        alert("복원 완료! "+years.length+"개 연도 데이터가 복원되었습니다."+(CLOUD_URL?"\n클라우드에도 자동 푸시됩니다.":""));
+      }catch(err){console.error('restoreData:',err);alert("파일을 읽을 수 없습니다. 올바른 백업 파일인지 확인해주세요.\n\n"+err.message)}
     };
     reader.readAsText(file);
   };
@@ -7309,7 +7352,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-23-v70";
+  var SEED_VER="2026-04-23-v71";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

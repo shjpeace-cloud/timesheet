@@ -1120,55 +1120,74 @@ function cloudLoadCurrent(){
     fetch(CLOUD_URL+'?action=loadReviews&year='+y,{redirect:'follow'}).then(r=>r.json()).catch(e=>({status:'error',e:String(e)}))
   ]).then(function(results){
     var t=results[0],b=results[1],g=results[2],rv=results[3];
-    var changed=false;
-    // ─── Time ───
+    var changed=false,pushTime=false,pushBooks=false,pushGoals=false;
+    // ─── Time: union merge (데이터 손실 방지) ───
+    // 절대 원칙: 로컬에 있고 클라우드에 없는 슬롯은 지우지 않음.
+    // 같은 (날짜,시각) 슬롯이 양쪽에 있고 내용이 다르면 → 더 많은 필드를 가진 쪽 (안전한 근사),
+    // 또는 `_hasPendingFor`가 true면 사용자 선택 모달.
     if(t&&t.status==='ok'&&t.data){
-      var hasCloud=t.data.entries&&Object.keys(t.data.entries).length>0;
-      if(hasCloud){
-        if(!_deepEqual({entries:t.data.entries},{entries:state.data.entries||{}})){
-          if(_hasPendingFor('time',y))_enqueueConflict('time',y,t.data,state.data);
-          else{state.data=t.data;localStorage.setItem(storageKey(),JSON.stringify(t.data));changed=true;}
-        }
+      var mergeT=_mergeTimeEntries(state.data.entries||{},t.data.entries||{});
+      if(mergeT.hasTrueConflict&&_hasPendingFor('time',y)){
+        _enqueueConflict('time',y,t.data,state.data);
+      }else if(mergeT.changed){
+        state.data.entries=mergeT.entries;
+        localStorage.setItem(storageKey(),JSON.stringify(state.data));
+        changed=true;
+        // 로컬에만 있던 데이터가 있으면 클라우드에 다시 push (merged 결과)
+        if(mergeT.localOnlyCount>0||mergeT.localRicher>0)pushTime=true;
       }
     }
-    // ─── Books ───
+    // ─── Books: union merge by month/id ───
     if(b&&b.status==='ok'&&b.data){
-      var hasCloudB=Object.keys(b.data).some(function(k){return k!=='_lastEdited';});
-      if(hasCloudB){
-        if(!_deepEqual(b.data,state.bookData||{})){
-          if(_hasPendingFor('books',y))_enqueueConflict('books',y,b.data,state.bookData);
-          else{state.bookData=b.data;localStorage.setItem(bookStorageKey(),JSON.stringify(b.data));changed=true;}
-        }
+      var mergeB=_mergeBooks(state.bookData||{},b.data||{});
+      if(mergeB.hasTrueConflict&&_hasPendingFor('books',y)){
+        _enqueueConflict('books',y,b.data,state.bookData);
+      }else if(mergeB.changed){
+        state.bookData=mergeB.data;
+        localStorage.setItem(bookStorageKey(),JSON.stringify(state.bookData));
+        changed=true;
+        if(mergeB.localOnlyCount>0)pushBooks=true;
       }
     }
-    // ─── Goals ───
+    // ─── Goals: union merge by id per scope ───
     if(g&&g.status==='ok'&&g.data){
       var inc=g.data;
-      var hasGoals=(inc.daily&&Object.keys(inc.daily).length>0)||(inc.weekly&&inc.weekly.length>0)||(inc.monthly&&inc.monthly.length>0)||(inc.longterm&&inc.longterm.length>0)||(inc.habits&&inc.habits.length>0)||(inc.readingGoals&&inc.readingGoals.length>0);
-      if(hasGoals){
-        var cloudLongterm=inc.longterm||[];
-        var cloudHabits=inc.habits||[];
-        if(cloudHabits.length===0){
-          cloudHabits=migrateHabits(cloudLongterm);
-          if(cloudHabits.length>0)cloudLongterm=cloudLongterm.filter(function(g0){return HABIT_LONGTERM_IDS.indexOf(g0.id)===-1});
-        }else{
-          var hIds=cloudHabits.map(function(h){return h.longtermId}).filter(Boolean);
-          cloudLongterm=cloudLongterm.filter(function(g0){return hIds.indexOf(g0.id)===-1});
-        }
-        var newGoals={daily:inc.daily||{},weekly:sortByDream(inc.weekly||[]),monthly:sortByDream(inc.monthly||[]),longterm:sortByDream(cloudLongterm),habits:cloudHabits,readingGoals:inc.readingGoals||[]};
-        if(!_deepEqual(newGoals,state.goalData||{})){
-          if(_hasPendingFor('goals',y))_enqueueConflict('goals',y,newGoals,state.goalData);
-          else{state.goalData=newGoals;localStorage.setItem(goalStorageKey(),JSON.stringify(newGoals));changed=true;}
-        }
+      var cloudLongterm=inc.longterm||[];
+      var cloudHabits=inc.habits||[];
+      if(cloudHabits.length===0){
+        cloudHabits=migrateHabits(cloudLongterm);
+        if(cloudHabits.length>0)cloudLongterm=cloudLongterm.filter(function(g0){return HABIT_LONGTERM_IDS.indexOf(g0.id)===-1});
+      }else{
+        var hIds=cloudHabits.map(function(h){return h.longtermId}).filter(Boolean);
+        cloudLongterm=cloudLongterm.filter(function(g0){return hIds.indexOf(g0.id)===-1});
+      }
+      var cloudGoals={daily:inc.daily||{},weekly:inc.weekly||[],monthly:inc.monthly||[],longterm:cloudLongterm,habits:cloudHabits,readingGoals:inc.readingGoals||[]};
+      var mergeG=_mergeGoals(state.goalData||{},cloudGoals);
+      if(mergeG.hasTrueConflict&&_hasPendingFor('goals',y)){
+        _enqueueConflict('goals',y,cloudGoals,state.goalData);
+      }else if(mergeG.changed){
+        state.goalData={daily:mergeG.data.daily,weekly:sortByDream(mergeG.data.weekly),monthly:sortByDream(mergeG.data.monthly),longterm:sortByDream(mergeG.data.longterm),habits:mergeG.data.habits,readingGoals:mergeG.data.readingGoals};
+        localStorage.setItem(goalStorageKey(),JSON.stringify(state.goalData));
+        changed=true;
+        if(mergeG.localOnlyCount>0)pushGoals=true;
       }
     }
-    // ─── Reviews (충돌 처리 단순화: 항상 cloud 우선, 키별 localStorage 갱신) ───
+    // ─── Reviews: 개별 키로 union (keys만 추가, 삭제 안 함) ───
     if(rv&&rv.status==='ok'&&rv.data){
       Object.keys(rv.data).forEach(function(k){
         if(k==='_lastEdited')return;
-        try{localStorage.setItem(k,JSON.stringify(rv.data[k]));}catch(e){}
+        // 로컬에 이미 있으면 비교. 더 긴/풍부한 쪽 선택.
+        var existing=localStorage.getItem(k);
+        var incoming=JSON.stringify(rv.data[k]);
+        if(!existing||String(existing).length<incoming.length){
+          try{localStorage.setItem(k,incoming);}catch(e){}
+        }
       });
     }
+    // 로컬에만 있던 데이터는 push (현재 연도)
+    if(pushTime)enqueueWrite('time',y,function(){return state.data;});
+    if(pushBooks)enqueueWrite('books',y,function(){return state.bookData;});
+    if(pushGoals)enqueueWrite('goals',y,function(){return state.goalData;});
     if(changed&&_bootDone){_isAutoRender=true;render();}
     _refreshSyncBadge();
     return true;
@@ -1179,10 +1198,140 @@ function cloudLoadCurrent(){
   });
 }
 
+// ── Union merge helpers ──────────────────────────────────────
+// 원칙: 데이터 손실 방지 — 한쪽에만 있는 항목은 무조건 유지, 양쪽에 있으면 더 풍부한 쪽 선택.
+// 진짜 충돌(같은 슬롯/id가 양쪽에 있고 실질적으로 다름)만 모달.
+
+function _mergeTimeEntries(localE,cloudE){
+  var merged={};
+  var allDates={};
+  Object.keys(localE).forEach(function(d){allDates[d]=1;});
+  Object.keys(cloudE).forEach(function(d){allDates[d]=1;});
+  var localOnlyCount=0,localRicher=0,hasTrueConflict=false,changed=false;
+  Object.keys(allDates).forEach(function(d){
+    var l=localE[d],c=cloudE[d];
+    if(l&&!c){merged[d]=l;localOnlyCount++;changed=true;return;}
+    if(!l&&c){merged[d]=c;changed=true;return;}
+    // both — slot-level
+    var mday={};
+    var slots={};
+    Object.keys(l).forEach(function(s){slots[s]=1;});
+    Object.keys(c).forEach(function(s){slots[s]=1;});
+    Object.keys(slots).forEach(function(s){
+      var ls=l[s],cs=c[s];
+      if(ls!=null&&cs==null){mday[s]=ls;localRicher++;changed=true;return;}
+      if(ls==null&&cs!=null){mday[s]=cs;changed=true;return;}
+      // both exist
+      if(s==='_diary'){
+        var la=String(ls||'');var ca=String(cs||'');
+        if(la===ca){mday[s]=ls;return;}
+        // 다른 내용 — 긴 쪽 선택 (일기는 누가 더 많이 썼나 기준)
+        mday[s]=la.length>=ca.length?ls:cs;
+        changed=true;return;
+      }
+      // 슬롯 오브젝트: 필드 풍부한 쪽 선택
+      if(JSON.stringify(ls)===JSON.stringify(cs)){mday[s]=ls;return;}
+      var lf=Object.keys(ls||{}).filter(function(k){return ls[k]!=null&&ls[k]!=='';}).length;
+      var cf=Object.keys(cs||{}).filter(function(k){return cs[k]!=null&&cs[k]!=='';}).length;
+      if(lf===cf){hasTrueConflict=true;} // 필드 수 동일인데 내용 다름 → 진짜 충돌
+      mday[s]=lf>=cf?ls:cs;
+      if(lf>cf)localRicher++;
+      changed=true;
+    });
+    merged[d]=mday;
+  });
+  return {entries:merged,localOnlyCount:localOnlyCount,localRicher:localRicher,hasTrueConflict:hasTrueConflict,changed:changed};
+}
+
+function _mergeBooks(local,cloud){
+  var merged={};
+  var months={};
+  Object.keys(local).forEach(function(k){if(k!=='_lastEdited')months[k]=1;});
+  Object.keys(cloud).forEach(function(k){if(k!=='_lastEdited')months[k]=1;});
+  var localOnlyCount=0,hasTrueConflict=false,changed=false;
+  Object.keys(months).forEach(function(m){
+    var lb=local[m]||[];
+    var cb=cloud[m]||[];
+    var byId={};
+    lb.forEach(function(bk){var id=bk&&bk.id;if(id!=null)byId[id]={local:bk};else{byId['_noid_l_'+Math.random()]={local:bk};}});
+    cb.forEach(function(bk){var id=bk&&bk.id;if(id!=null){if(byId[id])byId[id].cloud=bk;else byId[id]={cloud:bk};}else{byId['_noid_c_'+Math.random()]={cloud:bk};}});
+    var arr=[];
+    Object.keys(byId).forEach(function(id){
+      var e=byId[id];
+      if(e.local&&!e.cloud){arr.push(e.local);localOnlyCount++;changed=true;return;}
+      if(!e.local&&e.cloud){arr.push(e.cloud);changed=true;return;}
+      if(JSON.stringify(e.local)===JSON.stringify(e.cloud)){arr.push(e.local);return;}
+      // 둘 다 있고 다름 — 메모 긴 쪽
+      var lm=String(e.local.memo||'').length,cm=String(e.cloud.memo||'').length;
+      arr.push(lm>=cm?e.local:e.cloud);
+      if(lm!==cm)changed=true;
+      else hasTrueConflict=true;
+    });
+    merged[m]=arr;
+  });
+  return {data:merged,localOnlyCount:localOnlyCount,hasTrueConflict:hasTrueConflict,changed:changed};
+}
+
+function _mergeGoalArr(localArr,cloudArr){
+  // id 기준 union. 양쪽에 같은 id가 있으면 progress 높은 쪽 (또는 더 많은 필드).
+  var byId={};
+  var result=[];
+  var localOnly=0,trueConflict=false,changed=false;
+  (localArr||[]).forEach(function(it){var id=it&&it.id;if(id!=null)byId[id]={local:it};});
+  (cloudArr||[]).forEach(function(it){var id=it&&it.id;if(id!=null){if(byId[id])byId[id].cloud=it;else byId[id]={cloud:it};}});
+  Object.keys(byId).forEach(function(id){
+    var e=byId[id];
+    if(e.local&&!e.cloud){result.push(e.local);localOnly++;changed=true;return;}
+    if(!e.local&&e.cloud){result.push(e.cloud);changed=true;return;}
+    if(JSON.stringify(e.local)===JSON.stringify(e.cloud)){result.push(e.local);return;}
+    // 둘 다 있음 — progress/done 선호 후 필드 수
+    var lp=Number(e.local.progress||0),cp=Number(e.cloud.progress||0);
+    var ld=e.local.done===true?1:0,cd=e.cloud.done===true?1:0;
+    if(ld!==cd){result.push(ld>cd?e.local:e.cloud);changed=true;return;}
+    if(lp!==cp){result.push(lp>cp?e.local:e.cloud);changed=true;return;}
+    // 필드 수로 tie-break
+    var lf=Object.keys(e.local).length,cf=Object.keys(e.cloud).length;
+    if(lf===cf)trueConflict=true;
+    result.push(lf>=cf?e.local:e.cloud);
+    changed=true;
+  });
+  return {arr:result,localOnly:localOnly,trueConflict:trueConflict,changed:changed};
+}
+
+function _mergeGoals(local,cloud){
+  var out={};
+  var localOnlyCount=0,hasTrueConflict=false,changed=false;
+  // daily: {M-D: [goals]}
+  var dailyMerged={};
+  var dKeys={};
+  Object.keys(local.daily||{}).forEach(function(k){dKeys[k]=1;});
+  Object.keys(cloud.daily||{}).forEach(function(k){dKeys[k]=1;});
+  Object.keys(dKeys).forEach(function(dk){
+    var m=_mergeGoalArr((local.daily||{})[dk]||[],(cloud.daily||{})[dk]||[]);
+    dailyMerged[dk]=m.arr;
+    localOnlyCount+=m.localOnly;
+    if(m.trueConflict)hasTrueConflict=true;
+    if(m.changed)changed=true;
+  });
+  out.daily=dailyMerged;
+  // 배열 scope들
+  ['weekly','monthly','longterm','habits','readingGoals'].forEach(function(sc){
+    var m=_mergeGoalArr(local[sc]||[],cloud[sc]||[]);
+    out[sc]=m.arr;
+    localOnlyCount+=m.localOnly;
+    if(m.trueConflict)hasTrueConflict=true;
+    if(m.changed)changed=true;
+  });
+  return {data:out,localOnlyCount:localOnlyCount,hasTrueConflict:hasTrueConflict,changed:changed};
+}
+
+// 과거 연도 전체 sync: 각 kind별로 cloud에 존재하는 연도 집합을 반환
+// 반환값 {time:Set, books:Set, goals:Set, reviews:Set} — bootstrap auto-push 기준
 function cloudLoadPastYears(){
-  if(!CLOUD_URL)return Promise.resolve([]);
+  if(!CLOUD_URL)return Promise.resolve({time:{},books:{},goals:{},reviews:{}});
+  var present={time:{},books:{},goals:{},reviews:{}};
   return fetch(CLOUD_URL+'?action=loadAll',{redirect:'follow'}).then(r=>r.json()).then(function(d){
-    if(d.status!=='ok'||!d.data)return [];
+    if(d.status!=='ok'||!d.data)return present;
     var years=Object.keys(d.data);
     var pastYears=[];
     years.forEach(function(y){
@@ -1192,51 +1341,60 @@ function cloudLoadPastYears(){
         var inc=d.data[y];
         if(!inc||typeof inc!=='object')return;
         if(!inc.entries||Object.keys(inc.entries).length===0)return;
+        present.time[y]=1;
         localStorage.setItem('timesheet-data-'+y,JSON.stringify(inc));
       }catch(e){console.error('past time '+y+':',e);}
     });
     var fetches=[];
     pastYears.forEach(function(y){
       fetches.push(fetch(CLOUD_URL+'?action=loadBooks&year='+y,{redirect:'follow'}).then(r=>r.json()).then(function(bd){
-        if(bd.status==='ok'&&bd.data&&Object.keys(bd.data).some(function(k){return k!=='_lastEdited';}))
+        if(bd.status==='ok'&&bd.data&&Object.keys(bd.data).some(function(k){return k!=='_lastEdited';})){
+          present.books[y]=1;
           try{localStorage.setItem('books-data-'+y,JSON.stringify(bd.data));}catch(e){}
+        }
       }).catch(function(e){console.error('past books '+y+':',e);}));
       fetches.push(fetch(CLOUD_URL+'?action=loadGoals&year='+y,{redirect:'follow'}).then(r=>r.json()).then(function(gd){
         if(gd.status!=='ok'||!gd.data)return;
         var inc=gd.data;
         var hasG=(inc.daily&&Object.keys(inc.daily).length>0)||(inc.weekly&&inc.weekly.length>0)||(inc.monthly&&inc.monthly.length>0)||(inc.longterm&&inc.longterm.length>0)||(inc.habits&&inc.habits.length>0)||(inc.readingGoals&&inc.readingGoals.length>0);
-        if(hasG)try{localStorage.setItem('goals-data-'+y,JSON.stringify(inc));}catch(e){}
+        if(hasG){
+          present.goals[y]=1;
+          try{localStorage.setItem('goals-data-'+y,JSON.stringify(inc));}catch(e){}
+        }
       }).catch(function(e){console.error('past goals '+y+':',e);}));
     });
+    // 리뷰는 연도 리스트를 미리 모름 — loadAllReviews로 한 번에
     fetches.push(fetch(CLOUD_URL+'?action=loadAllReviews',{redirect:'follow'}).then(r=>r.json()).then(function(rd){
       if(rd.status!=='ok'||!rd.data)return;
       Object.keys(rd.data).forEach(function(y){
         var blob=rd.data[y];if(!blob)return;
+        var hasBlob=Object.keys(blob).some(function(k){return k!=='_lastEdited';});
+        if(hasBlob)present.reviews[y]=1;
         Object.keys(blob).forEach(function(k){
           if(k==='_lastEdited')return;
           try{localStorage.setItem(k,JSON.stringify(blob[k]));}catch(e){}
         });
       });
     }).catch(function(e){console.error('past reviews:',e);}));
-    return Promise.all(fetches).then(function(){return pastYears;});
-  }).catch(function(e){console.error('cloudLoadPastYears failed:',e);return [];});
+    return Promise.all(fetches).then(function(){return present;});
+  }).catch(function(e){console.error('cloudLoadPastYears failed:',e);return present;});
 }
 
-// 부팅 시 1회: cloud → state 주입 → cloud에 없는 로컬 연도 자동 push
+// 부팅 시 1회: cloud → state 주입 → cloud에 없는 로컬 연도 자동 push (time/books/goals/reviews 모두)
+// → cloudPushAllYears 수동 버튼 불필요 (기기 전환 시 자동 합류)
 function cloudBootstrap(){
   if(!CLOUD_URL)return Promise.resolve();
   state.syncStatus='syncing';
   return cloudLoadCurrent().then(function(){
     return cloudLoadPastYears();
-  }).then(function(cloudYears){
-    cloudYears=cloudYears||[];
-    // localStorage에는 있지만 cloud에 없는 과거 연도 자동 푸시 (다른 노트북 데이터 합류)
-    // 현재 연도는 cloudLoadCurrent가 처리함
-    var ySet={};cloudYears.forEach(function(y){ySet[y]=1;});
+  }).then(function(present){
+    present=present||{time:{},books:{},goals:{},reviews:{}};
+    var curY=String(state.year);
+    // 1) time data: localStorage에는 있지만 cloud에 없는 연도 push
     for(var i=0;i<localStorage.length;i++){
       var key=localStorage.key(i);if(!key)continue;
       var m=key.match(/^timesheet-data-(\d+)$/);
-      if(m&&!ySet[m[1]]&&String(m[1])!==String(state.year)){
+      if(m&&!present.time[m[1]]&&m[1]!==curY){
         var raw=localStorage.getItem(key);if(!raw)continue;
         try{
           var p=JSON.parse(raw);
@@ -1246,6 +1404,49 @@ function cloudBootstrap(){
         }catch(e){}
       }
     }
+    // 2) books data
+    for(var i2=0;i2<localStorage.length;i2++){
+      var k2=localStorage.key(i2);if(!k2)continue;
+      var m2=k2.match(/^books-data-(\d+)$/);
+      if(m2&&!present.books[m2[1]]&&m2[1]!==curY){
+        var raw2=localStorage.getItem(k2);if(!raw2)continue;
+        try{
+          var p2=JSON.parse(raw2);
+          var hasB=p2&&Object.keys(p2).some(function(k){return k!=='_lastEdited';});
+          if(hasB){
+            (function(yy,data){enqueueWrite('books',yy,function(){return data;});})(m2[1],p2);
+          }
+        }catch(e){}
+      }
+    }
+    // 3) goals data
+    for(var i3=0;i3<localStorage.length;i3++){
+      var k3=localStorage.key(i3);if(!k3)continue;
+      var m3=k3.match(/^goals-data-(\d+)$/);
+      if(m3&&!present.goals[m3[1]]&&m3[1]!==curY){
+        var raw3=localStorage.getItem(k3);if(!raw3)continue;
+        try{
+          var p3=JSON.parse(raw3);
+          var hasG=p3&&((p3.daily&&Object.keys(p3.daily).length>0)||(p3.weekly&&p3.weekly.length>0)||(p3.monthly&&p3.monthly.length>0)||(p3.longterm&&p3.longterm.length>0)||(p3.habits&&p3.habits.length>0)||(p3.readingGoals&&p3.readingGoals.length>0));
+          if(hasG){
+            (function(yy,data){enqueueWrite('goals',yy,function(){return data;});})(m3[1],p3);
+          }
+        }catch(e){}
+      }
+    }
+    // 4) reviews: localStorage의 *-review-YYYY-* 키에서 연도 수집 → cloud에 없는 연도만 push
+    var localReviewYears={};
+    for(var i4=0;i4<localStorage.length;i4++){
+      var k4=localStorage.key(i4);if(!k4)continue;
+      var rm=k4.match(/^(?:daily|weekly|monthly|yearly)-review-(\d+)/);
+      if(rm&&rm[1]!==curY)localReviewYears[rm[1]]=true;
+    }
+    Object.keys(localReviewYears).forEach(function(y){
+      if(present.reviews[y])return;
+      var blob=collectReviewsForYear(y);
+      if(Object.keys(blob).length===0)return;
+      (function(yy,data){enqueueWrite('reviews',yy,function(){data._lastEdited=Date.now();return data;});})(y,blob);
+    });
     _refreshSyncBadge();
   }).catch(function(e){
     console.error('cloudBootstrap failed:',e);
@@ -7108,7 +7309,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-23-v69";
+  var SEED_VER="2026-04-23-v70";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

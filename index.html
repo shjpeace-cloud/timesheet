@@ -597,9 +597,89 @@ let state={
   rgNewStartYear:2025,rgNewEndYear:2040
 };
 
-// Cloud sync config
+// ── Cloud sync (Sheets-as-truth, 2026-04-23 v69) ──
+// Google Sheets = 진실의 원천. localStorage = 캐시 (앱 재시작 시 빠른 표시 + 오프라인 폴백)
+// 모든 쓰기는 단일 FIFO 큐(_writeQueue)를 통해 직렬화 — race condition 제거 (이전 syncTimer 공유 버그 해결)
+// 충돌 발생 시(클라우드 데이터 ≠ 로컬 미푸시 변경) 사용자에게 모달로 선택 제시
 var CLOUD_URL=localStorage.getItem('timesheet-cloud-url')||'';
-var syncTimer=null;
+var SYNC_DEBOUNCE_MS=1500;            // 같은 (kind,year) 연속 변경 합치기
+var SYNC_REPULL_INTERVAL=30000;       // 탭 재포커스 재-pull 스로틀
+var _writeQueue=[];                    // [{kind, year, getter, scheduledAt, attempts}]
+var _writeInFlight=false;
+var _writeDrainTimer=null;
+var _bootDone=false;                   // cloudBootstrap 완료 여부
+var _lastCloudPullAt=0;
+function _refreshSyncBadge(){
+  if(!CLOUD_URL){if(state.syncStatus!=='offline'){state.syncStatus='offline';if(_bootDone){_isAutoRender=true;render();}}return;}
+  var s=(_writeInFlight||_writeQueue.length>0)?'syncing':'idle';
+  if(state.syncStatus!==s){state.syncStatus=s;if(_bootDone){_isAutoRender=true;render();}}
+}
+// 모든 쓰기는 enqueueWrite를 통과 — 같은 (kind,year)는 마지막 변경만 푸시
+function enqueueWrite(kind,year,getter){
+  if(!CLOUD_URL)return;
+  if(isArchiveMode()&&kind!=='reviews')return; // 과거 연도는 reviews만 sync
+  var keyStr=kind+'|'+String(year);
+  _writeQueue=_writeQueue.filter(function(x){return (x.kind+'|'+x.year)!==keyStr;});
+  _writeQueue.push({kind:kind,year:String(year),getter:getter,scheduledAt:Date.now()+SYNC_DEBOUNCE_MS,attempts:0});
+  _refreshSyncBadge();
+  _scheduleDrain();
+}
+function _scheduleDrain(){
+  if(_writeInFlight||_writeQueue.length===0)return;
+  clearTimeout(_writeDrainTimer);
+  var nextDelay=Math.max(0,_writeQueue[0].scheduledAt-Date.now());
+  _writeDrainTimer=setTimeout(_drainQueue,nextDelay);
+}
+function _drainQueue(){
+  if(_writeInFlight||_writeQueue.length===0)return;
+  var head=_writeQueue[0];
+  if(Date.now()<head.scheduledAt){_scheduleDrain();return;}
+  _writeQueue.shift();
+  var payload;
+  try{payload=head.getter();}catch(e){console.error('queue getter failed:',head.kind,e);_drainQueue();return;}
+  if(payload==null){_scheduleDrain();return;}
+  var actionMap={time:'save',books:'saveBooks',goals:'saveGoals',reviews:'saveReviews'};
+  var action=actionMap[head.kind];
+  if(!action){console.error('unknown queue kind:',head.kind);_scheduleDrain();return;}
+  _writeInFlight=true;_refreshSyncBadge();
+  var body='action='+action+'&year='+encodeURIComponent(head.year)+'&data='+encodeURIComponent(JSON.stringify(payload));
+  fetch(CLOUD_URL,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body,redirect:'follow'})
+  .then(function(r){return r.json();}).then(function(d){
+    _writeInFlight=false;
+    if(!d||d.status!=='ok'){
+      console.error('queue push not-ok:',head.kind,head.year,d);
+      head.attempts++;
+      if(head.attempts<=3){head.scheduledAt=Date.now()+3000*head.attempts;_writeQueue.unshift(head);}
+      else{state.syncStatus='error';if(_bootDone){_isAutoRender=true;render();}}
+    }
+    _refreshSyncBadge();_scheduleDrain();
+  }).catch(function(e){
+    console.error('queue push error:',head.kind,head.year,e);
+    _writeInFlight=false;
+    head.attempts++;
+    if(head.attempts<=3){head.scheduledAt=Date.now()+3000*head.attempts;_writeQueue.unshift(head);}
+    else{state.syncStatus='error';if(_bootDone){_isAutoRender=true;render();}}
+    _refreshSyncBadge();_scheduleDrain();
+  });
+}
+function _hasPendingFor(kind,year){
+  year=String(year);
+  if(_writeInFlight)return true; // in-flight도 충돌 가능성 있음
+  return _writeQueue.some(function(x){return x.kind===kind&&x.year===year;});
+}
+// 페이지 닫기 시 큐 잔량 sendBeacon으로 즉시 푸시 (debounce 무시)
+function flushQueueNow(){
+  if(!CLOUD_URL||_writeQueue.length===0)return;
+  var actionMap={time:'save',books:'saveBooks',goals:'saveGoals',reviews:'saveReviews'};
+  while(_writeQueue.length>0){
+    var item=_writeQueue.shift();
+    var action=actionMap[item.kind];if(!action)continue;
+    var payload;try{payload=item.getter();}catch(e){continue;}
+    if(payload==null)continue;
+    var body='action='+action+'&year='+encodeURIComponent(item.year)+'&data='+encodeURIComponent(JSON.stringify(payload));
+    try{navigator.sendBeacon(CLOUD_URL,new Blob([body],{type:'application/x-www-form-urlencoded'}));}catch(e){}
+  }
+}
 
 function storageKey(){return "timesheet-data-"+state.year}
 function bookStorageKey(){return "books-data-"+state.year}
@@ -762,17 +842,16 @@ function migrateHabits(longtermList){
   });
   return result;
 }
+// save/saveBookData/saveGoalData: localStorage 즉시 캐싱 + 클라우드 큐 enqueue
+// _lastEdited는 호환성 유지를 위해 계속 stamp (구버전 클라이언트와 데이터 교환 시)
 function save(){
-  if(isArchiveMode())return; // 아카이브 모드: 과거/미래 연도 데이터는 편집 금지
+  if(isArchiveMode())return; // 아카이브 모드: 과거 연도 편집 금지
   state.data._lastEdited=Date.now();
   try{localStorage.setItem(storageKey(),JSON.stringify(state.data));showSave("saved")}catch(e){
     console.error("localStorage save failed:",e);
     showSave("error");
   }
-  if(CLOUD_URL){
-    clearTimeout(syncTimer);
-    syncTimer=setTimeout(()=>cloudSave(),2000);
-  }
+  enqueueWrite('time',state.year,function(){return state.data;});
 }
 function saveBookData(){
   if(isArchiveMode())return;
@@ -780,10 +859,7 @@ function saveBookData(){
   try{localStorage.setItem(bookStorageKey(),JSON.stringify(state.bookData))}catch(e){
     console.error("localStorage book save failed:",e);
   }
-  if(CLOUD_URL){
-    clearTimeout(syncTimer);
-    syncTimer=setTimeout(()=>cloudSaveBooks(),2000);
-  }
+  enqueueWrite('books',state.year,function(){return state.bookData;});
 }
 function saveGoalData(){
   if(isArchiveMode())return;
@@ -791,10 +867,7 @@ function saveGoalData(){
   try{localStorage.setItem(goalStorageKey(),JSON.stringify(state.goalData))}catch(e){
     console.error("localStorage goal save failed:",e);
   }
-  if(CLOUD_URL){
-    clearTimeout(syncTimer);
-    syncTimer=setTimeout(()=>cloudSaveGoals(),2000);
-  }
+  enqueueWrite('goals',state.year,function(){return state.goalData;});
 }
 
 // 누적권수 목표 (bookTarget.targetCount >= 1) 일괄 삭제 — 1회성 정리
@@ -946,70 +1019,11 @@ function migrateReadingGoals(){
   console.log("[migrateReadingGoals] migrated "+rgList.length+" reading goals → longterm/weekly");
   return true;
 }
+// cloudSave* 들은 enqueue wrapper (하위호환 — 30+ 호출 site 유지)
 function cloudSaveGoals(){
   if(!CLOUD_URL)return;
-  if(isArchiveMode())return; // 아카이브 모드: 클라우드 쓰기 금지
-  // debounce: 연속 호출 방지
-  clearTimeout(cloudSaveGoals._timer);
-  cloudSaveGoals._timer=setTimeout(function(){
-    state.goalData._lastEdited=Date.now(); // 푸시 직전 재스탬프
-    var body='action=saveGoals&year='+state.year+'&data='+encodeURIComponent(JSON.stringify(state.goalData));
-    fetch(CLOUD_URL,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body,redirect:'follow'})
-    .then(r=>r.json()).then(d=>{
-      state.syncStatus=d.status==='ok'?'synced':'error';
-      _isAutoRender=true;render();
-      setTimeout(()=>{state.syncStatus=null;_isAutoRender=true;render()},2000);
-    }).catch(e=>{
-      console.error("Cloud goal save failed:",e);
-    });
-  },1500);
-}
-function cloudLoadGoals(){
-  if(!CLOUD_URL)return;
-  fetch(CLOUD_URL+'?action=loadGoals&year='+state.year,{redirect:'follow'}).then(r=>{
-    if(!r.ok)throw new Error('HTTP '+r.status);
-    return r.json();
-  }).then(d=>{
-    if(d.status==='ok'&&d.data){
-      var cloud=d.data;
-      var hasCloud=(cloud.daily&&Object.keys(cloud.daily).length>0)||(cloud.weekly&&cloud.weekly.length>0)||(cloud.monthly&&cloud.monthly.length>0)||(cloud.longterm&&cloud.longterm.length>0);
-      if(!hasCloud)return;
-      var cloudEdited=cloud._lastEdited||0;
-      var localEdited=(state.goalData&&state.goalData._lastEdited)||0;
-      var localHas=(state.goalData&&(
-        (state.goalData.daily&&Object.keys(state.goalData.daily).length>0)||
-        (state.goalData.weekly&&state.goalData.weekly.length>0)||
-        (state.goalData.monthly&&state.goalData.monthly.length>0)||
-        (state.goalData.longterm&&state.goalData.longterm.length>0)
-      ));
-      // 로컬이 최신이면 푸시만 하고 종료
-      if(localHas&&localEdited>cloudEdited){
-        cloudSaveGoals();
-        return;
-      }
-      // 로컬 비어있거나 클라우드가 최신 → 교체
-      if(!localHas||cloudEdited>localEdited){
-        var cloudLongterm=cloud.longterm||[];
-        var cloudHabits=cloud.habits||[];
-        if(cloudHabits.length===0){
-          cloudHabits=migrateHabits(cloudLongterm);
-          if(cloudHabits.length>0)
-            cloudLongterm=cloudLongterm.filter(function(g){return HABIT_LONGTERM_IDS.indexOf(g.id)===-1});
-        }else{
-          // habits의 longtermId에 해당하는 항목을 longterm에서 제거
-          var hIds=cloudHabits.map(function(h){return h.longtermId}).filter(Boolean);
-          cloudLongterm=cloudLongterm.filter(function(g){return hIds.indexOf(g.id)===-1});
-        }
-        state.goalData={daily:cloud.daily||{},weekly:sortByDream(cloud.weekly||[]),monthly:sortByDream(cloud.monthly||[]),longterm:sortByDream(cloudLongterm),habits:cloudHabits,readingGoals:cloud.readingGoals||[],_lastEdited:cloudEdited};
-        // 클라우드에서 독서목표 내려받은 경우에도 이관 + 누적권수 정리
-        var _m2=migrateReadingGoals();
-        var _c2=cleanupLegacyBookTargets();
-        if((_m2||_c2>0)&&typeof cloudSaveGoals==="function"&&CLOUD_URL){cloudSaveGoals();}
-        localStorage.setItem(goalStorageKey(),JSON.stringify(state.goalData));
-        _isAutoRender=true;render();
-      }
-    }
-  }).catch(e=>{console.error("Cloud goal load failed:",e)});
+  if(isArchiveMode())return;
+  enqueueWrite('goals',state.year,function(){return state.goalData;});
 }
 function showSave(s){state.saveStatus=s;render(true);setTimeout(()=>{state.saveStatus=null;render(true)},1500)}
 function dateKey(){return state.month+"-"+state.day}
@@ -1042,199 +1056,206 @@ function mergeEntriesData(localData, cloudData){
 
 function cloudSave(){
   if(!CLOUD_URL)return;
-  if(isArchiveMode())return; // 아카이브 모드: 과거 연도 데이터 클라우드 쓰기 금지
-  // 푸시 직전 _lastEdited 재스탬프 — 구버전 코드가 state를 수정했어도 최신 타임스탬프로 전송
-  state.data._lastEdited=Date.now();
-  state.syncStatus='syncing';_isAutoRender=true;render();
-  var body='action=save&year='+state.year+'&data='+encodeURIComponent(JSON.stringify(state.data));
-  fetch(CLOUD_URL,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body,redirect:'follow'})
-  .then(r=>r.json()).then(d=>{
-    state.syncStatus=d.status==='ok'?'synced':'error';_isAutoRender=true;render();
-    setTimeout(()=>{state.syncStatus=null;_isAutoRender=true;render()},2000);
-  }).catch(e=>{
-    console.error("Cloud save failed:",e);
-    state.syncStatus='error';_isAutoRender=true;render();
-    setTimeout(()=>{state.syncStatus=null;_isAutoRender=true;render()},2000);
-  });
-}
-
-function cloudSaveBooks(){
   if(isArchiveMode())return;
+  enqueueWrite('time',state.year,function(){return state.data;});
+}
+function cloudSaveBooks(){
   if(!CLOUD_URL)return;
-  state.bookData._lastEdited=Date.now();
-  state.syncStatus='syncing';_isAutoRender=true;render();
-  var body='action=saveBooks&year='+state.year+'&data='+encodeURIComponent(JSON.stringify(state.bookData));
-  fetch(CLOUD_URL,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body,redirect:'follow'})
-  .then(r=>r.json()).then(d=>{
-    state.syncStatus=d.status==='ok'?'synced':'error';_isAutoRender=true;render();
-    setTimeout(()=>{state.syncStatus=null;_isAutoRender=true;render()},2000);
-  }).catch(e=>{
-    console.error("Cloud book save failed:",e);
-    state.syncStatus='error';_isAutoRender=true;render();
-    setTimeout(()=>{state.syncStatus=null;_isAutoRender=true;render()},2000);
-  });
+  if(isArchiveMode())return;
+  enqueueWrite('books',state.year,function(){return state.bookData;});
 }
 
-function cloudLoad(){
-  if(!CLOUD_URL)return;
-  state.syncStatus='syncing';_isAutoRender=true;render();
-  fetch(CLOUD_URL+'?action=load&year='+state.year,{redirect:'follow'}).then(r=>{
-    if(!r.ok)throw new Error('HTTP '+r.status);
-    return r.json();
-  }).then(d=>{
-    if(d.status==='ok'&&d.data){
-      var cloudEntries=Object.keys(d.data.entries||{}).length;
-      var localEntries=Object.keys(state.data.entries||{}).length;
-      var cloudEdited=d.data._lastEdited||0;
-      var localEdited=(state.data&&state.data._lastEdited)||0;
-      // Cloud primary: 타임스탬프 비교로 자동 동기화 (confirm 제거)
-      // 1) 로컬 비어있고 클라우드 있으면 → 무조건 교체 (새 기기/초기화)
-      // 2) 클라우드가 더 최신이면 → 교체 (다른 기기에서 수정됨)
-      // 3) 로컬이 더 최신이면 → no-op (debounce save가 곧 푸시함)
-      // 4) 동일 타임스탬프 + 내용 다름 → MERGE (구버전 클라이언트의 타임스탬프 갱신 누락 대비)
-      // 5) 동일 타임스탬프 + 내용 같음 → no-op
-      var shouldReplace=false;
-      if(cloudEntries>0){
-        if(localEntries===0)shouldReplace=true;
-        else if(cloudEdited>localEdited)shouldReplace=true;
-      }
-      if(shouldReplace){
-        state.data=d.data;
-        localStorage.setItem(storageKey(),JSON.stringify(d.data));
-        _isAutoRender=true;render();
-      }else if(localEdited>cloudEdited&&localEntries>0){
-        // 오프라인에서 편집된 로컬을 푸시
-        cloudSave();
-      }else if(cloudEdited===localEdited&&cloudEntries>0&&localEntries>0){
-        // 타임스탬프 동일 — 내용 비교 (구버전 클라이언트가 _lastEdited 갱신 없이 푸시한 경우)
-        var cloudKeys=Object.keys(d.data.entries||{});
-        var localKeys=Object.keys(state.data.entries||{});
-        var needMerge=false;
-        if(cloudKeys.length!==localKeys.length)needMerge=true;
-        else{
-          // 같은 날짜 키 수여도 슬롯 수가 다르면 merge
-          for(var i=0;i<cloudKeys.length;i++){
-            var k=cloudKeys[i];
-            if(!state.data.entries[k]){needMerge=true;break;}
-            var cSlots=Object.keys(d.data.entries[k]).length;
-            var lSlots=Object.keys(state.data.entries[k]).length;
-            if(cSlots!==lSlots){needMerge=true;break;}
-          }
+// ── 충돌 모달 ────────────────────────────────────────────────
+// 클라우드 데이터가 로컬과 다른데 큐에 미푸시 변경이 있을 때 사용자에게 선택권 제공.
+// state._conflictQueue: 미해결 충돌 목록 [{kind, year, cloudData, localData}]
+// 한 번에 하나씩 처리. 모달이 떠 있는 동안 _maybeRepull은 일시 정지.
+function _enqueueConflict(kind,year,cloudData,localData){
+  state._conflictQueue=state._conflictQueue||[];
+  // 같은 (kind,year) 중복 제거
+  state._conflictQueue=state._conflictQueue.filter(function(c){return !(c.kind===kind&&c.year===year);});
+  state._conflictQueue.push({kind:kind,year:String(year),cloudData:cloudData,localData:localData});
+  if(_bootDone){_isAutoRender=true;render();}
+}
+function _resolveConflict(useCloud){
+  var c=(state._conflictQueue||[]).shift();if(!c)return;
+  var keyMap={time:storageKey,books:bookStorageKey,goals:goalStorageKey};
+  if(useCloud){
+    // 클라우드로 교체 + 큐의 해당 (kind,year) 제거
+    _writeQueue=_writeQueue.filter(function(x){return !(x.kind===c.kind&&x.year===c.year);});
+    if(c.kind==='time'){state.data=c.cloudData;localStorage.setItem(keyMap.time(),JSON.stringify(c.cloudData));}
+    else if(c.kind==='books'){state.bookData=c.cloudData;localStorage.setItem(keyMap.books(),JSON.stringify(c.cloudData));}
+    else if(c.kind==='goals'){state.goalData=c.cloudData;localStorage.setItem(keyMap.goals(),JSON.stringify(c.cloudData));}
+  }else{
+    // 로컬 유지 → 강제 푸시
+    if(c.kind==='time')enqueueWrite('time',c.year,function(){return state.data;});
+    else if(c.kind==='books')enqueueWrite('books',c.year,function(){return state.bookData;});
+    else if(c.kind==='goals')enqueueWrite('goals',c.year,function(){return state.goalData;});
+  }
+  _isAutoRender=true;render();
+}
+
+// 키 정규화 — JSON 문자열 비교 시 키 순서/내부 메타가 달라도 같다고 판정하기 위해
+function _normalizeForCompare(obj){
+  if(obj==null||typeof obj!=='object')return obj;
+  if(Array.isArray(obj))return obj.map(_normalizeForCompare);
+  var out={};
+  Object.keys(obj).sort().forEach(function(k){
+    if(k==='_lastEdited')return; // 타임스탬프는 비교에서 제외
+    out[k]=_normalizeForCompare(obj[k]);
+  });
+  return out;
+}
+function _deepEqual(a,b){return JSON.stringify(_normalizeForCompare(a))===JSON.stringify(_normalizeForCompare(b));}
+
+// ── 클라우드 읽기 (server = truth) ────────────────────────────
+// _lastEdited 비교 제거. 서버 데이터를 항상 캐시에 적용.
+// 단, 큐에 미푸시 write가 있는 (kind,year)는 충돌 모달로 사용자 선택.
+function cloudLoadCurrent(){
+  if(!CLOUD_URL)return Promise.resolve(false);
+  var y=state.year;
+  return Promise.all([
+    fetch(CLOUD_URL+'?action=load&year='+y,{redirect:'follow'}).then(r=>r.json()).catch(e=>({status:'error',e:String(e)})),
+    fetch(CLOUD_URL+'?action=loadBooks&year='+y,{redirect:'follow'}).then(r=>r.json()).catch(e=>({status:'error',e:String(e)})),
+    fetch(CLOUD_URL+'?action=loadGoals&year='+y,{redirect:'follow'}).then(r=>r.json()).catch(e=>({status:'error',e:String(e)})),
+    fetch(CLOUD_URL+'?action=loadReviews&year='+y,{redirect:'follow'}).then(r=>r.json()).catch(e=>({status:'error',e:String(e)}))
+  ]).then(function(results){
+    var t=results[0],b=results[1],g=results[2],rv=results[3];
+    var changed=false;
+    // ─── Time ───
+    if(t&&t.status==='ok'&&t.data){
+      var hasCloud=t.data.entries&&Object.keys(t.data.entries).length>0;
+      if(hasCloud){
+        if(!_deepEqual({entries:t.data.entries},{entries:state.data.entries||{}})){
+          if(_hasPendingFor('time',y))_enqueueConflict('time',y,t.data,state.data);
+          else{state.data=t.data;localStorage.setItem(storageKey(),JSON.stringify(t.data));changed=true;}
         }
-        if(needMerge){
-          console.warn("[sync] 타임스탬프 동일하나 내용 다름 — merge 수행");
-          var mergedData=mergeEntriesData(state.data,d.data);
-          mergedData._lastEdited=Date.now(); // 새 타임스탬프로 확정
-          state.data=mergedData;
-          localStorage.setItem(storageKey(),JSON.stringify(mergedData));
-          _isAutoRender=true;render();
-          cloudSave(); // merged 결과를 cloud에도 반영
-        }
       }
-      state.syncStatus='synced';_isAutoRender=true;render();
-      setTimeout(()=>{state.syncStatus=null;_isAutoRender=true;render()},2000);
     }
-  }).catch(e=>{
-    console.error("Cloud load failed:",e);
-    state.syncStatus='error';_isAutoRender=true;render();
-    setTimeout(()=>{state.syncStatus=null;_isAutoRender=true;render()},3000);
+    // ─── Books ───
+    if(b&&b.status==='ok'&&b.data){
+      var hasCloudB=Object.keys(b.data).some(function(k){return k!=='_lastEdited';});
+      if(hasCloudB){
+        if(!_deepEqual(b.data,state.bookData||{})){
+          if(_hasPendingFor('books',y))_enqueueConflict('books',y,b.data,state.bookData);
+          else{state.bookData=b.data;localStorage.setItem(bookStorageKey(),JSON.stringify(b.data));changed=true;}
+        }
+      }
+    }
+    // ─── Goals ───
+    if(g&&g.status==='ok'&&g.data){
+      var inc=g.data;
+      var hasGoals=(inc.daily&&Object.keys(inc.daily).length>0)||(inc.weekly&&inc.weekly.length>0)||(inc.monthly&&inc.monthly.length>0)||(inc.longterm&&inc.longterm.length>0)||(inc.habits&&inc.habits.length>0)||(inc.readingGoals&&inc.readingGoals.length>0);
+      if(hasGoals){
+        var cloudLongterm=inc.longterm||[];
+        var cloudHabits=inc.habits||[];
+        if(cloudHabits.length===0){
+          cloudHabits=migrateHabits(cloudLongterm);
+          if(cloudHabits.length>0)cloudLongterm=cloudLongterm.filter(function(g0){return HABIT_LONGTERM_IDS.indexOf(g0.id)===-1});
+        }else{
+          var hIds=cloudHabits.map(function(h){return h.longtermId}).filter(Boolean);
+          cloudLongterm=cloudLongterm.filter(function(g0){return hIds.indexOf(g0.id)===-1});
+        }
+        var newGoals={daily:inc.daily||{},weekly:sortByDream(inc.weekly||[]),monthly:sortByDream(inc.monthly||[]),longterm:sortByDream(cloudLongterm),habits:cloudHabits,readingGoals:inc.readingGoals||[]};
+        if(!_deepEqual(newGoals,state.goalData||{})){
+          if(_hasPendingFor('goals',y))_enqueueConflict('goals',y,newGoals,state.goalData);
+          else{state.goalData=newGoals;localStorage.setItem(goalStorageKey(),JSON.stringify(newGoals));changed=true;}
+        }
+      }
+    }
+    // ─── Reviews (충돌 처리 단순화: 항상 cloud 우선, 키별 localStorage 갱신) ───
+    if(rv&&rv.status==='ok'&&rv.data){
+      Object.keys(rv.data).forEach(function(k){
+        if(k==='_lastEdited')return;
+        try{localStorage.setItem(k,JSON.stringify(rv.data[k]));}catch(e){}
+      });
+    }
+    if(changed&&_bootDone){_isAutoRender=true;render();}
+    _refreshSyncBadge();
+    return true;
+  }).catch(function(e){
+    console.error('cloudLoadCurrent failed:',e);
+    state.syncStatus='error';if(_bootDone){_isAutoRender=true;render();}
+    return false;
   });
-  // Also load books, goals, reviews
-  cloudLoadBooks();
-  cloudLoadGoals();
-  cloudLoadReviews(state.year);
 }
 
-// 과거 연도 데이터(time+books+goals)를 localStorage에 preload
-// — 새 기기에서 연간/3년 리뷰 차트 공백 방지
-// 현재 연도는 cloudLoad가 담당하므로 제외. _lastEdited로 로컬이 더 최신이면 보존.
-function cloudLoadAllYears(){
-  if(!CLOUD_URL)return;
-  fetch(CLOUD_URL+'?action=loadAll',{redirect:'follow'}).then(r=>{
-    if(!r.ok)throw new Error('HTTP '+r.status);
-    return r.json();
-  }).then(d=>{
-    if(d.status!=='ok'||!d.data)return;
+function cloudLoadPastYears(){
+  if(!CLOUD_URL)return Promise.resolve([]);
+  return fetch(CLOUD_URL+'?action=loadAll',{redirect:'follow'}).then(r=>r.json()).then(function(d){
+    if(d.status!=='ok'||!d.data)return [];
     var years=Object.keys(d.data);
-    // 1) Time entries
+    var pastYears=[];
     years.forEach(function(y){
       if(String(y)===String(state.year))return;
+      pastYears.push(String(y));
       try{
-        var incoming=d.data[y];
-        if(!incoming||typeof incoming!=='object')return;
-        var hasEntries=incoming.entries&&Object.keys(incoming.entries).length>0;
-        if(!hasEntries)return;
-        var incomingEdited=incoming._lastEdited||0;
-        var existingRaw=localStorage.getItem("timesheet-data-"+y);
-        var existingEdited=0;
-        if(existingRaw){try{existingEdited=(JSON.parse(existingRaw)._lastEdited)||0;}catch(e){}}
-        if(!existingRaw||incomingEdited>=existingEdited){
-          localStorage.setItem("timesheet-data-"+y,JSON.stringify(incoming));
-        }
-      }catch(e){console.error("cloudLoadAllYears time "+y+":",e);}
+        var inc=d.data[y];
+        if(!inc||typeof inc!=='object')return;
+        if(!inc.entries||Object.keys(inc.entries).length===0)return;
+        localStorage.setItem('timesheet-data-'+y,JSON.stringify(inc));
+      }catch(e){console.error('past time '+y+':',e);}
     });
-    // 2) Books + Goals: per-year endpoints (time과 같은 연도 목록 기준)
-    years.forEach(function(y){
-      if(String(y)===String(state.year))return;
-      fetch(CLOUD_URL+'?action=loadBooks&year='+y,{redirect:'follow'}).then(r=>r.json()).then(bd=>{
-        if(bd.status!=='ok'||!bd.data)return;
-        var incoming=bd.data;
-        var hasBooks=Object.keys(incoming).some(function(k){return k!=='_lastEdited';});
-        if(!hasBooks)return;
-        var incomingEdited=incoming._lastEdited||0;
-        var existingRaw=localStorage.getItem("books-data-"+y);
-        var existingEdited=0;
-        if(existingRaw){try{existingEdited=(JSON.parse(existingRaw)._lastEdited)||0;}catch(e){}}
-        if(!existingRaw||incomingEdited>=existingEdited){
-          localStorage.setItem("books-data-"+y,JSON.stringify(incoming));
-        }
-      }).catch(e=>console.error("cloudLoadAllYears books "+y+":",e));
-      fetch(CLOUD_URL+'?action=loadGoals&year='+y,{redirect:'follow'}).then(r=>r.json()).then(gd=>{
+    var fetches=[];
+    pastYears.forEach(function(y){
+      fetches.push(fetch(CLOUD_URL+'?action=loadBooks&year='+y,{redirect:'follow'}).then(r=>r.json()).then(function(bd){
+        if(bd.status==='ok'&&bd.data&&Object.keys(bd.data).some(function(k){return k!=='_lastEdited';}))
+          try{localStorage.setItem('books-data-'+y,JSON.stringify(bd.data));}catch(e){}
+      }).catch(function(e){console.error('past books '+y+':',e);}));
+      fetches.push(fetch(CLOUD_URL+'?action=loadGoals&year='+y,{redirect:'follow'}).then(r=>r.json()).then(function(gd){
         if(gd.status!=='ok'||!gd.data)return;
-        var incoming=gd.data;
-        var hasGoals=(incoming.daily&&Object.keys(incoming.daily).length>0)||
-                     (incoming.weekly&&incoming.weekly.length>0)||
-                     (incoming.monthly&&incoming.monthly.length>0)||
-                     (incoming.longterm&&incoming.longterm.length>0)||
-                     (incoming.habits&&incoming.habits.length>0)||
-                     (incoming.readingGoals&&incoming.readingGoals.length>0);
-        if(!hasGoals)return;
-        var incomingEdited=incoming._lastEdited||0;
-        var existingRaw=localStorage.getItem("goals-data-"+y);
-        var existingEdited=0;
-        if(existingRaw){try{existingEdited=(JSON.parse(existingRaw)._lastEdited)||0;}catch(e){}}
-        if(!existingRaw||incomingEdited>=existingEdited){
-          localStorage.setItem("goals-data-"+y,JSON.stringify(incoming));
-        }
-      }).catch(e=>console.error("cloudLoadAllYears goals "+y+":",e));
-      // 리뷰 메모: 각 개별 키를 localStorage에 반영
-      fetch(CLOUD_URL+'?action=loadReviews&year='+y,{redirect:'follow'}).then(r=>r.json()).then(rd=>{
-        if(rd.status!=='ok'||!rd.data)return;
-        var incoming=rd.data;
-        Object.keys(incoming).forEach(function(k){
-          if(k==='_lastEdited')return;
-          try{localStorage.setItem(k,JSON.stringify(incoming[k]));}catch(e){}
-        });
-      }).catch(e=>console.error("cloudLoadAllYears reviews "+y+":",e));
+        var inc=gd.data;
+        var hasG=(inc.daily&&Object.keys(inc.daily).length>0)||(inc.weekly&&inc.weekly.length>0)||(inc.monthly&&inc.monthly.length>0)||(inc.longterm&&inc.longterm.length>0)||(inc.habits&&inc.habits.length>0)||(inc.readingGoals&&inc.readingGoals.length>0);
+        if(hasG)try{localStorage.setItem('goals-data-'+y,JSON.stringify(inc));}catch(e){}
+      }).catch(function(e){console.error('past goals '+y+':',e);}));
     });
-    // 리뷰 전용 연도(시간 데이터 없이 리뷰만 있는 경우) 보완 — loadAllReviews
-    fetch(CLOUD_URL+'?action=loadAllReviews',{redirect:'follow'}).then(r=>r.json()).then(rd=>{
+    fetches.push(fetch(CLOUD_URL+'?action=loadAllReviews',{redirect:'follow'}).then(r=>r.json()).then(function(rd){
       if(rd.status!=='ok'||!rd.data)return;
       Object.keys(rd.data).forEach(function(y){
-        if(String(y)===String(state.year))return;
-        if(years.indexOf(y)>=0)return; // 이미 위에서 처리됨
-        var blob=rd.data[y];
-        if(!blob)return;
+        var blob=rd.data[y];if(!blob)return;
         Object.keys(blob).forEach(function(k){
           if(k==='_lastEdited')return;
           try{localStorage.setItem(k,JSON.stringify(blob[k]));}catch(e){}
         });
       });
-    }).catch(e=>console.error('cloudLoadAllYears loadAllReviews:',e));
-    // async fetch들이 populate할 시간 주고 재렌더
-    setTimeout(function(){_isAutoRender=true;render();},3000);
-  }).catch(e=>{console.error("cloudLoadAllYears failed:",e);});
+    }).catch(function(e){console.error('past reviews:',e);}));
+    return Promise.all(fetches).then(function(){return pastYears;});
+  }).catch(function(e){console.error('cloudLoadPastYears failed:',e);return [];});
 }
+
+// 부팅 시 1회: cloud → state 주입 → cloud에 없는 로컬 연도 자동 push
+function cloudBootstrap(){
+  if(!CLOUD_URL)return Promise.resolve();
+  state.syncStatus='syncing';
+  return cloudLoadCurrent().then(function(){
+    return cloudLoadPastYears();
+  }).then(function(cloudYears){
+    cloudYears=cloudYears||[];
+    // localStorage에는 있지만 cloud에 없는 과거 연도 자동 푸시 (다른 노트북 데이터 합류)
+    // 현재 연도는 cloudLoadCurrent가 처리함
+    var ySet={};cloudYears.forEach(function(y){ySet[y]=1;});
+    for(var i=0;i<localStorage.length;i++){
+      var key=localStorage.key(i);if(!key)continue;
+      var m=key.match(/^timesheet-data-(\d+)$/);
+      if(m&&!ySet[m[1]]&&String(m[1])!==String(state.year)){
+        var raw=localStorage.getItem(key);if(!raw)continue;
+        try{
+          var p=JSON.parse(raw);
+          if(p&&p.entries&&Object.keys(p.entries).length>0){
+            (function(yy,data){enqueueWrite('time',yy,function(){return data;});})(m[1],p);
+          }
+        }catch(e){}
+      }
+    }
+    _refreshSyncBadge();
+  }).catch(function(e){
+    console.error('cloudBootstrap failed:',e);
+    state.syncStatus='error';
+  });
+}
+
+// ── 하위호환 wrapper (외부 호출 site 유지용) ────────────────
+function cloudLoad(){return cloudLoadCurrent();}
+function cloudLoadAllYears(){return cloudLoadPastYears();}
 
 // localStorage의 모든 연도 데이터(time/books/goals)를 클라우드에 일괄 푸시
 // 기기 전환 초기 세팅용 — 데스크탑에서 한 번 클릭하면 과거 연도가 Sheets에 올라감
@@ -1312,64 +1333,15 @@ function cloudPushAllYears(){
 
 // ── 리뷰 메모 클라우드 sync ─────────────────────────────────────
 // 과거 연도도 sync됨 (isArchiveMode 가드 없음) — "뭐든 기록된 것은 다 공유" 원칙
-var _cloudSaveReviewsTimers={};
+// 리뷰 메모: 큐 enqueue. 과거 연도도 OK (isArchiveMode 가드 없음 — 리뷰는 어느 연도든 sync)
 function cloudSaveReviews(year){
   if(!CLOUD_URL)return;
   year=String(year||state.year);
-  clearTimeout(_cloudSaveReviewsTimers[year]);
-  _cloudSaveReviewsTimers[year]=setTimeout(function(){
-    var blob=collectReviewsForYear(year);
-    blob._lastEdited=Date.now();
-    var body='action=saveReviews&year='+year+'&data='+encodeURIComponent(JSON.stringify(blob));
-    fetch(CLOUD_URL,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body,redirect:'follow'})
-    .then(r=>r.json()).then(d=>{if(d.status!=='ok')console.error('cloudSaveReviews failed:',d);})
-    .catch(e=>console.error('cloudSaveReviews error:',e));
-  },1500);
+  enqueueWrite('reviews',year,function(){var b=collectReviewsForYear(year);b._lastEdited=Date.now();return b;});
 }
-function cloudLoadReviews(year){
-  if(!CLOUD_URL)return;
-  year=String(year||state.year);
-  fetch(CLOUD_URL+'?action=loadReviews&year='+year,{redirect:'follow'}).then(r=>{
-    if(!r.ok)throw new Error('HTTP '+r.status);
-    return r.json();
-  }).then(d=>{
-    if(d.status!=='ok'||!d.data)return;
-    var incoming=d.data;
-    Object.keys(incoming).forEach(function(k){
-      if(k==='_lastEdited')return;
-      try{localStorage.setItem(k,JSON.stringify(incoming[k]));}catch(e){}
-    });
-  }).catch(e=>console.error('cloudLoadReviews failed:',e));
-}
-function cloudLoadBooks(){
-  if(!CLOUD_URL)return;
-  fetch(CLOUD_URL+'?action=loadBooks&year='+state.year,{redirect:'follow'}).then(r=>{
-    if(!r.ok)throw new Error('HTTP '+r.status);
-    return r.json();
-  }).then(d=>{
-    if(d.status==='ok'&&d.data){
-      // _lastEdited는 데이터 키가 아니므로 제외하고 카운트
-      var cloudBooks=Object.keys(d.data).filter(function(k){return k!=='_lastEdited'}).length;
-      var localBooks=Object.keys(state.bookData||{}).filter(function(k){return k!=='_lastEdited'}).length;
-      var cloudEdited=d.data._lastEdited||0;
-      var localEdited=(state.bookData&&state.bookData._lastEdited)||0;
-      var shouldReplace=false;
-      if(cloudBooks>0){
-        if(localBooks===0)shouldReplace=true;
-        else if(cloudEdited>localEdited)shouldReplace=true;
-      }
-      if(shouldReplace){
-        state.bookData=d.data;
-        localStorage.setItem(bookStorageKey(),JSON.stringify(d.data));
-        _isAutoRender=true;render();
-      }else if(localEdited>cloudEdited&&localBooks>0){
-        cloudSaveBooks();
-      }
-    }
-  }).catch(e=>{
-    console.error("Cloud book load failed:",e);
-  });
-}
+// 호환성 stub — cloudLoadCurrent가 reviews도 함께 로드함
+function cloudLoadReviews(year){return cloudLoadCurrent();}
+function cloudLoadBooks(){return cloudLoadCurrent();}
 
 function cloudPing(){
   if(!CLOUD_URL){alert('클라우드 URL이 설정되지 않았습니다.');return}
@@ -2062,9 +2034,12 @@ function renderHeader(){
   top.appendChild(trow);
 
   const acts=h("div",{className:"header-actions"});
-  if(state.syncStatus==="syncing")acts.appendChild(h("span",{className:"saved-badge",style:"background:#1e3a5f;color:#60a5fa"},"☁ 동기화중.."));
-  else if(state.syncStatus==="synced")acts.appendChild(h("span",{className:"saved-badge",style:"background:#064e3b;color:#6ee7b7"},"☁ 동기화됨"));
+  // 큐 상태 기반 sync 뱃지 (idle/syncing/error/offline) — 거짓 'synced' 표시 제거
+  var qLen=_writeQueue.length+(_writeInFlight?1:0);
+  if(state.syncStatus==="syncing")acts.appendChild(h("span",{className:"saved-badge",style:"background:#1e3a5f;color:#60a5fa"},"☁ 동기화중"+(qLen>1?" ("+qLen+")":"")));
   else if(state.syncStatus==="error")acts.appendChild(h("span",{className:"saved-badge error"},"☁ 동기화 실패"));
+  else if(state.syncStatus==="offline")acts.appendChild(h("span",{className:"saved-badge",style:"background:#1e293b;color:#94a3b8"},"☁ 오프라인"));
+  else if(state.syncStatus==="idle")acts.appendChild(h("span",{className:"saved-badge",style:"background:#064e3b;color:#6ee7b7"},"☁ 동기화됨"));
   else if(CLOUD_URL)acts.appendChild(h("span",{className:"saved-badge",style:"background:#1e293b;color:#64748b;font-size:10px"},"☁"));
   if(state.saveStatus==="saved"&&!state.syncStatus)acts.appendChild(h("span",{className:"saved-badge"},"✓ 저장됨"));
   if(state.saveStatus==="error")acts.appendChild(h("span",{className:"saved-badge error"},"⚠ 저장 실패"));
@@ -2082,8 +2057,8 @@ function renderHeader(){
           onClick:()=>{
             state.year=yy;state.showYearPicker=false;
             state.data=load();state.bookData=loadBooks();state.goalData=loadGoals();
-            // 모든 연도 클라우드 pull — _lastEdited 타임스탬프 비교로 안전 (로컬 최신이면 푸시, 클라우드 최신이면 교체)
-            if(CLOUD_URL)cloudLoad();
+            // 캐시 먼저 보여주고 클라우드 fetch — 클라우드 데이터가 다르면 교체 (충돌 시 모달)
+            if(CLOUD_URL)cloudLoadCurrent();
             render();
           }
         },String(yy)));
@@ -2318,7 +2293,7 @@ function showDiaryModal(text,month,day,year){
         if(!state.data.entries[dk2])state.data.entries[dk2]={};
         state.data.entries[dk2]._diary=val;
         try{localStorage.setItem(storageKey(),JSON.stringify(state.data))}catch(ex){}
-        if(CLOUD_URL){clearTimeout(syncTimer);syncTimer=setTimeout(()=>cloudSave(),2000);}
+        if(CLOUD_URL)enqueueWrite('time',state.year,function(){return state.data;});
       },800);
     });
     body.appendChild(editArea);
@@ -2491,7 +2466,7 @@ function renderInput(){
       if(!state.data.entries[dk])state.data.entries[dk]={};
       state.data.entries[dk]._diary=val;
       try{localStorage.setItem(storageKey(),JSON.stringify(state.data))}catch(e){}
-      if(CLOUD_URL){clearTimeout(syncTimer);syncTimer=setTimeout(()=>cloudSave(),2000)}
+      if(CLOUD_URL)enqueueWrite('time',state.year,function(){return state.data;});
     },1000);
   });
   diary.appendChild(ta);
@@ -7105,11 +7080,35 @@ function render(force){
   app.appendChild(main);
   if(state.showDatePicker&&state.tab==="goals")app.appendChild(renderDatePicker());
   if(state.showCatPicker)app.appendChild(renderCatPicker());
+  if(state._conflictQueue&&state._conflictQueue.length>0)app.appendChild(renderConflictModal());
+}
+
+// 충돌 모달: 클라우드 데이터가 다른데 로컬 큐에 미푸시 변경이 있을 때
+function renderConflictModal(){
+  var c=state._conflictQueue[0];
+  var labels={time:'시간 데이터',books:'독서 데이터',goals:'목표 데이터'};
+  var ov=h("div",{style:"position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px"});
+  var box=h("div",{style:"background:#1e293b;border:1px solid #334155;border-radius:12px;padding:20px;max-width:500px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,0.5)"});
+  box.appendChild(h("div",{style:"font-size:16px;font-weight:700;color:#fbbf24;margin-bottom:12px"},"⚠ 동기화 충돌"));
+  box.appendChild(h("div",{style:"font-size:13px;color:#cbd5e1;line-height:1.6;margin-bottom:16px"},c.year+'년 '+(labels[c.kind]||c.kind)+'가 클라우드에서 변경되었습니다. 이 기기에는 아직 클라우드에 푸시되지 않은 변경사항이 있습니다.'));
+  if(state._conflictQueue.length>1)box.appendChild(h("div",{style:"font-size:11px;color:#94a3b8;margin-bottom:12px"},"(미해결 충돌 "+state._conflictQueue.length+"개)"));
+  var btnRow=h("div",{style:"display:flex;gap:8px;flex-direction:column"});
+  btnRow.appendChild(h("button",{
+    style:"padding:10px 14px;border-radius:8px;border:1px solid #6366f1;background:#312e8133;color:#c7d2fe;font-size:13px;cursor:pointer;text-align:left",
+    onClick:function(){_resolveConflict(false);}
+  },"📤 내 변경사항 유지 (클라우드에 덮어쓰기)"));
+  btnRow.appendChild(h("button",{
+    style:"padding:10px 14px;border-radius:8px;border:1px solid #b91c1c;background:#7f1d1d22;color:#fca5a5;font-size:13px;cursor:pointer;text-align:left",
+    onClick:function(){_resolveConflict(true);}
+  },"📥 클라우드 데이터로 교체 (이 기기 변경 사라짐)"));
+  box.appendChild(btnRow);
+  ov.appendChild(box);
+  return ov;
 }
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-23-v68";
+  var SEED_VER="2026-04-23-v69";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){
@@ -7184,50 +7183,36 @@ if((state.goalData.habits||[]).length===0&&(state.goalData.longterm||[]).length=
 var _mig=migrateReadingGoals();
 var _cleanup=cleanupLegacyBookTargets();
 if((_mig||_cleanup>0)&&typeof cloudSaveGoals==="function"&&CLOUD_URL){cloudSaveGoals();}
+// 1단계: 캐시(localStorage) 데이터로 즉시 첫 paint
 render();
-if(CLOUD_URL)setTimeout(()=>cloudLoad(),500);
-if(CLOUD_URL)setTimeout(()=>cloudLoadAllYears(),1500);
-
-// ── 페이지 종료 시 미저장 편집 보호 ──
-// debounce 중인 편집을 sendBeacon으로 즉시 푸시 (브라우저 닫기/탭 이동 시 fetch는 중단됨)
-function _flushPendingSaves(){
-  if(!CLOUD_URL||isArchiveMode())return;
-  try{
-    if(state.data&&state.data._lastEdited){
-      var body1='action=save&year='+state.year+'&data='+encodeURIComponent(JSON.stringify(state.data));
-      navigator.sendBeacon(CLOUD_URL,new Blob([body1],{type:'application/x-www-form-urlencoded'}));
-    }
-    if(state.bookData&&state.bookData._lastEdited){
-      var body2='action=saveBooks&year='+state.year+'&data='+encodeURIComponent(JSON.stringify(state.bookData));
-      navigator.sendBeacon(CLOUD_URL,new Blob([body2],{type:'application/x-www-form-urlencoded'}));
-    }
-    if(state.goalData&&state.goalData._lastEdited){
-      var body3='action=saveGoals&year='+state.year+'&data='+encodeURIComponent(JSON.stringify(state.goalData));
-      navigator.sendBeacon(CLOUD_URL,new Blob([body3],{type:'application/x-www-form-urlencoded'}));
-    }
-    // 리뷰 메모 debounce 중인 것 flush (현재 연도 기준)
-    var reviewBlob=collectReviewsForYear(state.year);
-    if(Object.keys(reviewBlob).length>0){
-      reviewBlob._lastEdited=Date.now();
-      var body4='action=saveReviews&year='+state.year+'&data='+encodeURIComponent(JSON.stringify(reviewBlob));
-      navigator.sendBeacon(CLOUD_URL,new Blob([body4],{type:'application/x-www-form-urlencoded'}));
-    }
-  }catch(e){console.error('flushPendingSaves failed:',e);}
+// 2단계: 클라우드에서 최신 데이터 가져와 state 동기화 (충돌 시 모달)
+if(CLOUD_URL){
+  cloudBootstrap().then(function(){
+    _bootDone=true;
+    _refreshSyncBadge();
+    if(state._conflictQueue&&state._conflictQueue.length>0){_isAutoRender=true;render();}
+  });
+}else{
+  _bootDone=true;
+  state.syncStatus='offline';
+  _isAutoRender=true;render();
 }
-window.addEventListener('pagehide',_flushPendingSaves);
-window.addEventListener('beforeunload',_flushPendingSaves);
+
+// ── 페이지 종료 시 큐 잔량 강제 푸시 ──
+// debounce 중이거나 아직 in-flight인 항목을 sendBeacon으로 즉시 푸시
+window.addEventListener('pagehide',flushQueueNow);
+window.addEventListener('beforeunload',flushQueueNow);
 
 // ── 탭 재포커스 시 재-pull (다기기 동시 사용 대응) ──
-// 다른 기기에서 수정된 변경사항을 새로고침 없이 반영.
-// 30초 스로틀 — 탭 빠르게 토글해도 Apps Script 쿼터 낭비 안 함.
-var _lastCloudPullAt=0;
+// 30초 스로틀 — 충돌 모달이 열려있으면 일시 정지 (사용자 결정 대기)
 function _maybeRepull(){
   if(!CLOUD_URL||isArchiveMode())return;
   if(document.visibilityState!=='visible')return;
+  if(state._conflictQueue&&state._conflictQueue.length>0)return; // 충돌 미해결 시 pull 정지
   var now=Date.now();
-  if(now-_lastCloudPullAt<30000)return;
+  if(now-_lastCloudPullAt<SYNC_REPULL_INTERVAL)return;
   _lastCloudPullAt=now;
-  cloudLoad();
+  cloudLoadCurrent();
 }
 document.addEventListener('visibilitychange',_maybeRepull);
 window.addEventListener('focus',_maybeRepull);

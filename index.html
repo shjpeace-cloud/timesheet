@@ -3036,7 +3036,7 @@ function renderDailyReview(){
       dayData.push({dayHrs:dayHrs,total:daySum,date:dd});
     }
     const summaryBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:12px;border:1px solid #1e293b"});
-    summaryBox.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},"📊 일별 비교 (이번 주)"));
+    summaryBox.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},"📊 일별 실적"));
 
     const maxDay=Math.max.apply(null,dayData.map(function(d){return d.total}).concat([1]));
     const dayBarWrap=h("div",{});
@@ -3079,6 +3079,40 @@ function renderDailyReview(){
     });
     dayBarWrap.appendChild(dayNumRow);
     summaryBox.appendChild(dayBarWrap);
+
+    // ── DREAM 그룹 × 요일 합계 표 ──
+    function fmtH(v){return v>0?(v===Math.floor(v)?String(v):v.toFixed(1)):"–";}
+    const tblWrap=h("div",{style:"margin-top:10px;border-top:1px solid #1e293b;padding-top:10px"});
+    const tbl=h("div",{style:"display:grid;grid-template-columns:24px repeat(7,1fr) 32px;gap:2px;font-size:9px;font-family:'JetBrains Mono',monospace"});
+    tbl.appendChild(h("span",{style:"text-align:center"},""));
+    dayLabels.forEach(function(dl,di){
+      const dd=dayData[di].date;
+      const isCur=dd.getFullYear()===ry&&(dd.getMonth()+1)===rm&&dd.getDate()===rd;
+      tbl.appendChild(h("span",{style:"text-align:center;color:"+(isCur?"#6366f1":"#64748b")+";font-weight:700"},dl));
+    });
+    tbl.appendChild(h("span",{style:"text-align:center;color:#64748b;font-weight:700"},"주합"));
+    GROUPS.forEach(function(g){
+      tbl.appendChild(h("span",{style:"text-align:center;color:"+GC[g]+";font-weight:700"},g));
+      var gWeekTot=0;
+      dayData.forEach(function(day){
+        const dd=day.date;
+        const isCur=dd.getFullYear()===ry&&(dd.getMonth()+1)===rm&&dd.getDate()===rd;
+        const v=day.dayHrs[g]||0;
+        gWeekTot+=v;
+        tbl.appendChild(h("span",{style:"text-align:center;color:"+(v>0?(isCur?"#e2e8f0":"#cbd5e1"):"#334155")+";background:"+(v>0?(isCur?GC[g]+"40":GC[g]+"20"):"transparent")+";border-radius:2px;padding:2px 0"},fmtH(v)));
+      });
+      tbl.appendChild(h("span",{style:"text-align:center;color:"+GC[g]+";font-weight:700"},fmtH(gWeekTot)));
+    });
+    tbl.appendChild(h("span",{style:"text-align:center;color:#64748b;font-weight:700;border-top:1px solid #334155;padding-top:3px;margin-top:1px"},"합"));
+    dayData.forEach(function(day){
+      const dd=day.date;
+      const isCur=dd.getFullYear()===ry&&(dd.getMonth()+1)===rm&&dd.getDate()===rd;
+      tbl.appendChild(h("span",{style:"text-align:center;color:"+(day.total>0?(isCur?"#6366f1":"#94a3b8"):"#334155")+";font-weight:700;border-top:1px solid #334155;padding-top:3px;margin-top:1px"},fmtH(day.total)));
+    });
+    tbl.appendChild(h("span",{style:"text-align:center;color:#e2e8f0;font-weight:900;border-top:1px solid #334155;padding-top:3px;margin-top:1px"},fmtH(weekTotalD)));
+    tblWrap.appendChild(tbl);
+    summaryBox.appendChild(tblWrap);
+
     wrap.appendChild(summaryBox);
   }
 
@@ -3174,14 +3208,6 @@ function renderDailyReview(){
     }
   }
 
-  // ── 금월 일별 DREAM 추이 ──
-  const dailyChartSec=h("div",{className:"chart-container",style:"margin-bottom:12px"});
-  dailyChartSec.appendChild(h("h3",{className:"chart-title"},rm+"월 일별 DREAM 추이"));
-  const dailyChartWrap=h("div",{className:"chart-wrap",style:"height:180px"});
-  dailyChartWrap.appendChild(h("canvas",{id:"reviewDailyChart"}));
-  dailyChartSec.appendChild(dailyChartWrap);
-  wrap.appendChild(dailyChartSec);
-
   // ── 금일 목표 ──
   const goalBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:12px;border:1px solid #1e293b"});
   goalBox.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},"📌 금일 목표"));
@@ -3222,32 +3248,6 @@ function renderDailyReview(){
   // ── 일간 성찰 ──
   wrap.appendChild(renderReflectionBox("daily-review-"+ry+"-"+rm+"-"+rd,{title:"✍️ 오늘 성찰",next:"🎯 내일 한 가지",nextPh:"내일 반드시 할 것은?"}));
 
-  setTimeout(function(){
-    if(typeof Chart==="undefined")return;
-    try{
-      if(window._reviewDailyChartInst){window._reviewDailyChartInst.destroy();window._reviewDailyChartInst=null;}
-      const cv=document.getElementById("reviewDailyChart");if(!cv)return;
-      const maxD=daysInMonth(ry,rm);const labels=[];const groupData={};
-      GROUPS.forEach(function(g){groupData[g]=[];});
-      for(var d2=1;d2<=maxD;d2++){
-        labels.push(String(d2));
-        const k2=rm+"-"+d2;const slots2=state.data.entries[k2]||{};
-        const dayCats2={};CATEGORIES.forEach(function(c){dayCats2[c.code]=0;});
-        Object.keys(slots2).forEach(function(sk){if(sk!=="_diary"&&slots2[sk]&&slots2[sk].actual)dayCats2[slots2[sk].actual]=(dayCats2[slots2[sk].actual]||0)+0.5;});
-        GROUPS.forEach(function(g){groupData[g].push(groupCats(g).reduce(function(s,c){return s+(dayCats2[c.code]||0);},0));});
-      }
-      window._reviewDailyChartInst=new Chart(cv,{
-        type:"bar",
-        data:{labels:labels,datasets:GROUPS.map(function(g){return{label:g,data:groupData[g],backgroundColor:GC[g],borderWidth:0,borderRadius:1,stack:"d"};})},
-        options:{responsive:true,maintainAspectRatio:false,
-          plugins:{legend:{labels:{color:"#94a3b8",font:{size:10},boxWidth:10,padding:6}},
-            tooltip:{backgroundColor:"#1e293b",titleColor:"#e2e8f0",bodyColor:"#cbd5e1",borderColor:"#334155",borderWidth:1,
-              callbacks:{title:function(ctx){return rm+"월 "+ctx[0].label+"일";},label:function(ctx){return ctx.dataset.label+": "+ctx.parsed.y+"h";},footer:function(ctx){var t=0;ctx.forEach(function(c){t+=c.parsed.y;});return "합계: "+t+"h";}}}},
-          scales:{x:{stacked:true,ticks:{color:"#64748b",font:{size:8}},grid:{display:false}},
-            y:{stacked:true,beginAtZero:true,ticks:{color:"#64748b",font:{size:9},callback:function(v){return v+"h";}},grid:{color:"#1e293b"}}}}
-      });
-    }catch(e){console.log("reviewDailyChart err:",e);}
-  },0);
   return wrap;
 }
 
@@ -7228,7 +7228,6 @@ function render(force){
   try{if(dashDailyChartInst){dashDailyChartInst.destroy();dashDailyChartInst=null}}catch(e){}
   try{if(dailyMonthChartInst){dailyMonthChartInst.destroy();dailyMonthChartInst=null}}catch(e){}
   try{if(bookChartInst){bookChartInst.destroy();bookChartInst=null}}catch(e){}
-  try{if(window._reviewDailyChartInst){window._reviewDailyChartInst.destroy();window._reviewDailyChartInst=null}}catch(e){}
   const app=document.getElementById("app");
   app.innerHTML="";
   app.appendChild(renderHeader());
@@ -7305,7 +7304,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-25-v72";
+  var SEED_VER="2026-04-25-v73";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

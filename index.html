@@ -396,7 +396,8 @@ function habitKey(y,m,d){return y+"-"+m+"-"+d}
 // 일간 입력에서 자동 체크 판정: 해당 날짜에 habit.id와 연결된 슬롯이 있으면 true
 function isHabitAutoChecked(habit,y,m,d){
   var dk=(m)+"-"+(d);
-  var slots=state.data.entries[dk]||{};
+  // 그 연도 entries 사용 — 과거 연도 평가 시 현재 연도 데이터로 거짓 매칭 방지
+  var slots=getEntriesForYear(y)[dk]||{};
   var id=habit.id;
   // 직접 연결된 슬롯 확인
   for(var t in slots){
@@ -419,6 +420,15 @@ function isHabitAutoChecked(habit,y,m,d){
     for(var t2 in slots){
       if(t2==="_diary")continue;
       if(slots[t2].actualGoalId&&descIds.has(slots[t2].actualGoalId))return true;
+    }
+  }
+  // 새벽 기도 추론 — 과거 데이터에서 actualGoalId 연결이 없을 때 카테고리+시간대로 자동 매칭
+  // 5:00~6:30 슬롯에 D1(기도/성경)이 actual로 입력되어 있으면 새벽기도 완료로 인정
+  if(habit.name&&habit.name.indexOf("새벽 기도")>=0){
+    for(var t3 in slots){
+      if(t3==="_diary")continue;
+      var hr=parseInt((t3||"").split(":")[0],10);
+      if(hr>=5&&hr<7&&slots[t3]&&slots[t3].actual==="D1")return true;
     }
   }
   return false;
@@ -7676,7 +7686,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-25-v91";
+  var SEED_VER="2026-04-25-v92";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

@@ -5125,8 +5125,12 @@ function renderWeeklyReview(){
     const hdrRow=h("div",{style:"display:grid;grid-template-columns:repeat("+nW+",1fr);gap:3px;margin-bottom:3px"});
     weekData.forEach(function(wk){
       const isCur=wk.monD.getTime()===monDate.getTime();
-      const lbl=(wk.monD.getMonth()+1)+"/"+wk.monD.getDate();
-      hdrRow.appendChild(h("div",{style:"text-align:center;font-size:9px;font-weight:700;color:"+(isCur?"#3b82f6":"#94a3b8")+";font-family:'JetBrains Mono',monospace"},lbl));
+      const wm=wk.monD.getMonth()+1,wd_=wk.monD.getDate();
+      const wIdx=weekIdxOfDay(wk.monD.getFullYear(),wm,wd_);
+      const cell=h("div",{style:"text-align:center;background:"+(isCur?"#1e3a5f":"transparent")+";border-radius:4px;padding:2px 0"});
+      cell.appendChild(h("div",{style:"font-size:9px;font-weight:700;color:"+(isCur?"#3b82f6":"#cbd5e1")},wm+"월"+wIdx+"주"));
+      cell.appendChild(h("div",{style:"font-size:8px;color:"+(isCur?"#3b82f6":"#64748b")+";font-family:'JetBrains Mono',monospace"},wm+"/"+wd_));
+      hdrRow.appendChild(cell);
     });
     barWrap.appendChild(hdrRow);
 
@@ -5160,6 +5164,43 @@ function renderWeeklyReview(){
     barWrap.appendChild(numRow);
 
     summaryBox.appendChild(barWrap);
+
+    // ── DREAM 그룹 × 5주 합계 표 (일간 표와 동일 형식) ──
+    function fmtH(v){return v>0?(v===Math.floor(v)?String(v):v.toFixed(1)):"–";}
+    const tblWrap=h("div",{style:"margin-top:10px;border-top:1px solid #1e293b;padding-top:10px"});
+    const tbl=h("div",{style:"display:grid;grid-template-columns:24px repeat("+nW+",1fr) 36px;gap:2px;font-size:9px;font-family:'JetBrains Mono',monospace"});
+    tbl.appendChild(h("span",{style:"text-align:center"},""));
+    weekData.forEach(function(wk){
+      const isCur=wk.monD.getTime()===monDate.getTime();
+      const wm=wk.monD.getMonth()+1;
+      const wIdx=weekIdxOfDay(wk.monD.getFullYear(),wm,wk.monD.getDate());
+      tbl.appendChild(h("span",{style:"text-align:center;color:"+(isCur?"#3b82f6":"#64748b")+";font-weight:700"},wm+"."+wIdx));
+    });
+    tbl.appendChild(h("span",{style:"text-align:center;color:#64748b;font-weight:700"},"주평균"));
+    GROUPS.forEach(function(g){
+      tbl.appendChild(h("span",{style:"text-align:center;color:"+GC[g]+";font-weight:700"},g));
+      var gSum=0;
+      weekData.forEach(function(wk){
+        const isCur=wk.monD.getTime()===monDate.getTime();
+        const v=wk.dayHrs[g]||0;
+        gSum+=v;
+        tbl.appendChild(h("span",{style:"text-align:center;color:"+(v>0?(isCur?"#e2e8f0":"#cbd5e1"):"#334155")+";background:"+(v>0?(isCur?GC[g]+"40":GC[g]+"20"):"transparent")+";border-radius:2px;padding:2px 0"},fmtH(v)));
+      });
+      const gAvg=gSum/weekData.length;
+      tbl.appendChild(h("span",{style:"text-align:center;color:"+GC[g]+";font-weight:700"},fmtH(+gAvg.toFixed(1))));
+    });
+    tbl.appendChild(h("span",{style:"text-align:center;color:#64748b;font-weight:700;border-top:1px solid #334155;padding-top:3px;margin-top:1px"},"합"));
+    var totSum=0;
+    weekData.forEach(function(wk){
+      const isCur=wk.monD.getTime()===monDate.getTime();
+      totSum+=wk.total;
+      tbl.appendChild(h("span",{style:"text-align:center;color:"+(wk.total>0?(isCur?"#3b82f6":"#94a3b8"):"#334155")+";font-weight:700;border-top:1px solid #334155;padding-top:3px;margin-top:1px"},fmtH(wk.total)));
+    });
+    const totAvg=totSum/weekData.length;
+    tbl.appendChild(h("span",{style:"text-align:center;color:#e2e8f0;font-weight:900;border-top:1px solid #334155;padding-top:3px;margin-top:1px"},fmtH(+totAvg.toFixed(1))));
+    tblWrap.appendChild(tbl);
+    summaryBox.appendChild(tblWrap);
+
     wrap.appendChild(summaryBox);
   })();
 
@@ -7371,7 +7412,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-25-v74";
+  var SEED_VER="2026-04-25-v75";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

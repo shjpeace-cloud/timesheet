@@ -3111,10 +3111,29 @@ function renderDailyReview(){
     dayBarWrap.appendChild(dayNumRow);
     summaryBox.appendChild(dayBarWrap);
 
-    // ── DREAM 그룹 × 요일(월~토) + 주평균 + 월평균 표 ──
+    // ── DREAM 그룹 × 요일(월~토) + 주평균 + 지난주 + 월평균 표 ──
     function fmtH(v){return v>=0.05?(v===Math.floor(v)?String(v):v.toFixed(1)):"–";}
     // 이번 주 기록일수 (월~토 중 시간 입력 있는 날 수)
     const recDaysWk=dayData.filter(function(d){return d.total>0;}).length;
+    // 지난주 데이터 (월~토)
+    const lastMonD=new Date(monDateD);lastMonD.setDate(monDateD.getDate()-7);
+    const lastWkCats={};CATEGORIES.forEach(function(c){lastWkCats[c.code]=0;});
+    var lastWkRD=0;
+    for(var _li=0;_li<6;_li++){
+      const _dd=new Date(lastMonD);_dd.setDate(lastMonD.getDate()+_li);
+      const _dy=_dd.getFullYear(),_dm=_dd.getMonth()+1,_dd2=_dd.getDate();
+      const _ent=getEntriesForYear(_dy);
+      const _sl=_ent[_dm+"-"+_dd2]||{};
+      var _hasL=false;
+      Object.keys(_sl).forEach(function(sk){
+        if(sk==="_diary")return;
+        if(_sl[sk]&&_sl[sk].actual){
+          lastWkCats[_sl[sk].actual]=(lastWkCats[_sl[sk].actual]||0)+0.5;
+          _hasL=true;
+        }
+      });
+      if(_hasL)lastWkRD++;
+    }
     // 이번 달 데이터 (일요일 제외)
     const mthCats={};CATEGORIES.forEach(function(c){mthCats[c.code]=0;});
     var mthRecDays=0;
@@ -3136,7 +3155,7 @@ function renderDailyReview(){
     }
 
     const tblWrap=h("div",{style:"margin-top:10px;border-top:1px solid #1e293b;padding-top:10px"});
-    const tbl=h("div",{style:"display:grid;grid-template-columns:24px repeat("+NDAYS+",1fr) 36px 36px;gap:2px;font-size:9px;font-family:'JetBrains Mono',monospace"});
+    const tbl=h("div",{style:"display:grid;grid-template-columns:24px repeat("+NDAYS+",1fr) 36px 36px 36px;gap:2px;font-size:9px;font-family:'JetBrains Mono',monospace"});
     tbl.appendChild(h("span",{style:"text-align:center"},""));
     dayLabels.forEach(function(dl,di){
       const dd=dayData[di].date;
@@ -3144,6 +3163,7 @@ function renderDailyReview(){
       tbl.appendChild(h("span",{style:"text-align:center;color:"+(isCur?"#6366f1":"#64748b")+";font-weight:700"},dl));
     });
     tbl.appendChild(h("span",{style:"text-align:center;color:#0d9488;font-weight:700"},"주평균"));
+    tbl.appendChild(h("span",{style:"text-align:center;color:#94a3b8;font-weight:700"},"지난주"));
     tbl.appendChild(h("span",{style:"text-align:center;color:#a855f7;font-weight:700"},"월평균"));
 
     GROUPS.forEach(function(g){
@@ -3157,9 +3177,12 @@ function renderDailyReview(){
         tbl.appendChild(h("span",{style:"text-align:center;color:"+(v>0?(isCur?"#e2e8f0":"#cbd5e1"):"#334155")+";background:"+(v>0?(isCur?GC[g]+"40":GC[g]+"20"):"transparent")+";border-radius:2px;padding:2px 0"},fmtH(v)));
       });
       const wkAvg=recDaysWk>0?gWeekTot/recDaysWk:0;
+      const gLastTot=groupCats(g).reduce(function(s,c){return s+(lastWkCats[c.code]||0);},0);
+      const lastAvg=lastWkRD>0?gLastTot/lastWkRD:0;
       const gMthTot=groupCats(g).reduce(function(s,c){return s+(mthCats[c.code]||0);},0);
       const mthAvg=mthRecDays>0?gMthTot/mthRecDays:0;
       tbl.appendChild(h("span",{style:"text-align:center;color:#0d9488;font-weight:700"},fmtH(wkAvg)));
+      tbl.appendChild(h("span",{style:"text-align:center;color:#94a3b8;font-weight:700"},fmtH(lastAvg)));
       tbl.appendChild(h("span",{style:"text-align:center;color:#a855f7;font-weight:700"},fmtH(mthAvg)));
     });
 
@@ -3170,13 +3193,16 @@ function renderDailyReview(){
       tbl.appendChild(h("span",{style:"text-align:center;color:"+(day.total>0?(isCur?"#6366f1":"#94a3b8"):"#334155")+";font-weight:700;border-top:1px solid #334155;padding-top:3px;margin-top:1px"},fmtH(day.total)));
     });
     const wkAvgTot=recDaysWk>0?weekTotalD/recDaysWk:0;
+    const lastTotSum=CATEGORIES.reduce(function(s,c){return s+(lastWkCats[c.code]||0);},0);
+    const lastAvgTot=lastWkRD>0?lastTotSum/lastWkRD:0;
     const mthTot=CATEGORIES.reduce(function(s,c){return s+(mthCats[c.code]||0);},0);
     const mthAvgTot=mthRecDays>0?mthTot/mthRecDays:0;
     tbl.appendChild(h("span",{style:"text-align:center;color:#0d9488;font-weight:900;border-top:1px solid #334155;padding-top:3px;margin-top:1px"},fmtH(wkAvgTot)));
+    tbl.appendChild(h("span",{style:"text-align:center;color:#94a3b8;font-weight:900;border-top:1px solid #334155;padding-top:3px;margin-top:1px"},fmtH(lastAvgTot)));
     tbl.appendChild(h("span",{style:"text-align:center;color:#a855f7;font-weight:900;border-top:1px solid #334155;padding-top:3px;margin-top:1px"},fmtH(mthAvgTot)));
     tblWrap.appendChild(tbl);
     summaryBox.appendChild(tblWrap);
-    summaryBox.appendChild(h("div",{style:"font-size:8px;color:#475569;margin-top:6px;text-align:right"},"일별=h · 주/월평균=h/일 · 일요일 제외 · 분모=기록일수 "+recDaysWk+"/"+mthRecDays+"일"));
+    summaryBox.appendChild(h("div",{style:"font-size:8px;color:#475569;margin-top:6px;text-align:right"},"일별=h · 주/지난주/월평균=h/일 · 일요일 제외 · 분모=기록일수 "+recDaysWk+"/"+lastWkRD+"/"+mthRecDays+"일"));
 
     wrap.appendChild(summaryBox);
   }
@@ -3652,14 +3678,23 @@ function renderYearlyReview(){
     const summaryBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:14px;border:1px solid #1e293b"});
     summaryBox.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},"📊 연간 실적 (최근 5년)"));
 
+    // 5년 평균 (years5 누적)
+    const fyG={};GROUPS.forEach(function(g){fyG[g]=0;});
+    var fyRD=0;
+    yrData.forEach(function(yo){
+      GROUPS.forEach(function(g){fyG[g]+=yo.dayHrs[g]||0;});
+      fyRD+=yo.recDays;
+    });
+
     function fmtAvg(v){return v>=0.05?v.toFixed(1):"–";}
     const tblWrap=h("div",{});
-    const tbl=h("div",{style:"display:grid;grid-template-columns:24px repeat(5,1fr) 40px;gap:2px;font-size:9px;font-family:'JetBrains Mono',monospace"});
+    const tbl=h("div",{style:"display:grid;grid-template-columns:24px repeat(5,1fr) 36px 40px;gap:2px;font-size:9px;font-family:'JetBrains Mono',monospace"});
     tbl.appendChild(h("span",{style:"text-align:center"},""));
     yrData.forEach(function(yo){
       const isCur=yo.y===cy;
       tbl.appendChild(h("span",{style:"text-align:center;color:"+(isCur?"#3b82f6":"#64748b")+";font-weight:700"},String(yo.y).slice(2)+"년"));
     });
+    tbl.appendChild(h("span",{style:"text-align:center;color:#0d9488;font-weight:700"},"5년"));
     tbl.appendChild(h("span",{style:"text-align:center;color:#a855f7;font-weight:700"},"전체"));
 
     GROUPS.forEach(function(g){
@@ -3669,7 +3704,9 @@ function renderYearlyReview(){
         const v=yo.recDays>0?yo.dayHrs[g]/yo.recDays:0;
         tbl.appendChild(h("span",{style:"text-align:center;color:"+(v>=0.05?(isCur?"#e2e8f0":"#cbd5e1"):"#334155")+";background:"+(v>=0.05?(isCur?GC[g]+"40":GC[g]+"20"):"transparent")+";border-radius:2px;padding:2px 0"},fmtAvg(v)));
       });
+      const fyAvg=fyRD>0?fyG[g]/fyRD:0;
       const allAvg=allRD>0?allG[g]/allRD:0;
+      tbl.appendChild(h("span",{style:"text-align:center;color:#0d9488;font-weight:700"},fmtAvg(fyAvg)));
       tbl.appendChild(h("span",{style:"text-align:center;color:#a855f7;font-weight:700"},fmtAvg(allAvg)));
     });
 
@@ -3679,8 +3716,11 @@ function renderYearlyReview(){
       const totAvg=yo.recDays>0?yo.total/yo.recDays:0;
       tbl.appendChild(h("span",{style:"text-align:center;color:"+(totAvg>=0.05?(isCur?"#3b82f6":"#94a3b8"):"#334155")+";font-weight:700;border-top:1px solid #334155;padding-top:3px;margin-top:1px"},fmtAvg(totAvg)));
     });
+    const fyTot=GROUPS.reduce(function(s,g){return s+fyG[g];},0);
     const allTot=GROUPS.reduce(function(s,g){return s+allG[g];},0);
+    const fyAvgT=fyRD>0?fyTot/fyRD:0;
     const allAvgT=allRD>0?allTot/allRD:0;
+    tbl.appendChild(h("span",{style:"text-align:center;color:#0d9488;font-weight:900;border-top:1px solid #334155;padding-top:3px;margin-top:1px"},fmtAvg(fyAvgT)));
     tbl.appendChild(h("span",{style:"text-align:center;color:#a855f7;font-weight:900;border-top:1px solid #334155;padding-top:3px;margin-top:1px"},fmtAvg(allAvgT)));
 
     tblWrap.appendChild(tbl);
@@ -3761,18 +3801,19 @@ function renderYearlyReview(){
     const habBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:14px;border:1px solid #1e293b"});
     habBox.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:8px;letter-spacing:.5px"},"🔁 습관 연간 달성률 (최근 5년)"));
 
-    const hdrRow=h("div",{style:"display:grid;grid-template-columns:1fr repeat(5,40px) 40px;gap:4px;align-items:center;margin-bottom:4px"});
+    const hdrRow=h("div",{style:"display:grid;grid-template-columns:1fr repeat(5,40px) 40px 40px;gap:4px;align-items:center;margin-bottom:4px"});
     hdrRow.appendChild(h("div",{},""));
     years5.forEach(function(y){
       const isCur=y===cy;
       hdrRow.appendChild(h("div",{style:"text-align:center;font-size:9px;color:"+(isCur?"#3b82f6":"#94a3b8")+";font-weight:"+(isCur?"700":"400")+";background:"+(isCur?"#1e3a5f":"transparent")+";border-radius:4px;padding:2px 0"},String(y).slice(2)+"년"));
     });
+    hdrRow.appendChild(h("div",{style:"text-align:center;font-size:9px;color:#0d9488;font-weight:700"},"5년"));
     hdrRow.appendChild(h("div",{style:"text-align:center;font-size:9px;color:#a855f7;font-weight:700"},"전체"));
     habBox.appendChild(hdrRow);
 
     habits.forEach(function(hb){
       const cat=catByCode(hb.cat);
-      const hrow=h("div",{style:"display:grid;grid-template-columns:1fr repeat(5,40px) 40px;gap:4px;align-items:center;padding:5px 0;border-top:1px solid #1e293b"});
+      const hrow=h("div",{style:"display:grid;grid-template-columns:1fr repeat(5,40px) 40px 40px;gap:4px;align-items:center;padding:5px 0;border-top:1px solid #1e293b"});
       const nameCell=h("div",{style:"display:flex;align-items:center;gap:4px;overflow:hidden;min-width:0;cursor:pointer",
         onClick:function(){navigateToGoal("habits",hb);}
       });
@@ -3780,16 +3821,20 @@ function renderYearlyReview(){
       nameCell.appendChild(h("span",{style:"font-size:11px;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},hb.name));
       hrow.appendChild(nameCell);
 
-      var allSum=0,allCnt=0;
+      var fySum=0;
       years5.forEach(function(y){
         const isCur=y===cy;
         const pct=calcYrPct(hb,y);
+        fySum+=pct;
         const color=pct===100?"#0d9488":pct>=60?"#f59e0b":pct>0?"#94a3b8":"#334155";
         hrow.appendChild(h("div",{style:"text-align:center;font-size:10px;color:"+color+";font-weight:"+(isCur?"900":"700")+";font-family:monospace;background:"+(isCur?"#1e3a5f":"transparent")+";border-radius:4px;padding:3px 0"},pct+"%"));
       });
+      const fyAvg=Math.round(fySum/years5.length);
       // 전체 평균 (2019~cy)
+      var allSum=0,allCnt=0;
       for(var ay=2019;ay<=cy;ay++){allSum+=calcYrPct(hb,ay);allCnt++;}
       const allAvg=allCnt>0?Math.round(allSum/allCnt):0;
+      hrow.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#0d9488;font-weight:700;font-family:monospace"},fyAvg+"%"));
       hrow.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#a855f7;font-weight:700;font-family:monospace"},allAvg+"%"));
       habBox.appendChild(hrow);
     });
@@ -7652,7 +7697,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-25-v87";
+  var SEED_VER="2026-04-25-v88";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

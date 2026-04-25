@@ -431,55 +431,32 @@ function isHabitAutoChecked(habit,y,m,d){
       if(hr>=5&&hr<7&&slots[t3]&&slots[t3].actual==="D1")return true;
     }
   }
-  // 묵상 추론 — D1 슬롯의 메모 또는 연결 목표 이름에 "묵상"이 포함되면 묵상 완료로 인정
+  // 묵상 추론 — D1 슬롯의 메모에 "묵상" 포함 시 인정
   if(habit.name&&habit.name.indexOf("묵상")>=0){
     for(var t4 in slots){
       if(t4==="_diary")continue;
       var s4=slots[t4];
       if(!s4||s4.actual!=="D1")continue;
-      var memo4=(s4.actualMemo||"").toString();
-      if(memo4.indexOf("묵상")>=0)return true;
-      if(s4.actualGoalId){
-        try{
-          var gr4=findGoalById(s4.actualGoalId);
-          if(gr4&&gr4.goal&&(gr4.goal.name||"").indexOf("묵상")>=0)return true;
-        }catch(e){}
-      }
+      if((s4.actualMemo||"").indexOf("묵상")>=0)return true;
     }
   }
-  // 성경 읽기 추론 — D1 슬롯의 메모 또는 연결 목표 이름에 "성경"이 포함되면 성경읽기 완료로 인정
+  // 성경 읽기 추론 — D1 슬롯의 메모에 "성경" 포함 시 인정
   if(habit.name&&habit.name.indexOf("성경")>=0){
     for(var t5 in slots){
       if(t5==="_diary")continue;
       var s5=slots[t5];
       if(!s5||s5.actual!=="D1")continue;
-      var memo5=(s5.actualMemo||"").toString();
-      if(memo5.indexOf("성경")>=0)return true;
-      if(s5.actualGoalId){
-        try{
-          var gr5=findGoalById(s5.actualGoalId);
-          if(gr5&&gr5.goal&&(gr5.goal.name||"").indexOf("성경")>=0)return true;
-        }catch(e){}
-      }
+      if((s5.actualMemo||"").indexOf("성경")>=0)return true;
     }
   }
-  // 영어뉴스 추론 — R3 슬롯의 메모 또는 연결 목표 이름에 "영어" 또는 "뉴스"가 포함되면 영어뉴스 완료로 인정
+  // 영어뉴스 추론 — R3 슬롯의 메모에 "영어" 또는 "뉴스" 포함 시 인정
   if(habit.name&&habit.name.indexOf("영어뉴스")>=0){
     for(var t6 in slots){
       if(t6==="_diary")continue;
       var s6=slots[t6];
       if(!s6||s6.actual!=="R3")continue;
-      var memo6=(s6.actualMemo||"").toString();
+      var memo6=(s6.actualMemo||"");
       if(memo6.indexOf("영어")>=0||memo6.indexOf("뉴스")>=0)return true;
-      if(s6.actualGoalId){
-        try{
-          var gr6=findGoalById(s6.actualGoalId);
-          if(gr6&&gr6.goal){
-            var gn6=(gr6.goal.name||"").toString();
-            if(gn6.indexOf("영어")>=0||gn6.indexOf("뉴스")>=0)return true;
-          }
-        }catch(e){}
-      }
     }
   }
   return false;
@@ -3029,10 +3006,13 @@ function renderReflectionBox(reviewKey,labels){
 }
 
 // ── 리뷰 공통 데이터 헬퍼 ─────────────────────────────────────
+var _entriesCache={};
 function getEntriesForYear(y){
   if(y===state.year)return state.data.entries;
-  try{var raw=localStorage.getItem("timesheet-data-"+y);if(!raw)return{};var p=JSON.parse(raw);return p.entries||{};}catch(e){return{};}
+  if(_entriesCache.hasOwnProperty(y))return _entriesCache[y];
+  try{var raw=localStorage.getItem("timesheet-data-"+y);if(!raw){_entriesCache[y]={};return _entriesCache[y];}var p=JSON.parse(raw);_entriesCache[y]=p.entries||{};return _entriesCache[y];}catch(e){_entriesCache[y]={};return _entriesCache[y];}
 }
+function _invalidateEntriesCache(){_entriesCache={};}
 function getCatHoursByMonth(entries,m){
   var r={};CATEGORIES.forEach(function(c){r[c.code]=0;});
   Object.keys(entries).forEach(function(k){
@@ -7737,7 +7717,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-25-v95";
+  var SEED_VER="2026-04-25-v96";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

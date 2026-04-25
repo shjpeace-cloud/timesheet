@@ -3622,77 +3622,179 @@ function renderYearlyReview(){
   var ys=yearSummary();
   var cy=state.year;
 
-  // 연간 합계 계산 함수
-  function getYearCatTotals(y2){
-    var ent=getEntriesForYear(y2);
-    var r={};CATEGORIES.forEach(function(c){r[c.code]=0;});
-    for(var m=1;m<=12;m++){var mo=getCatHoursByMonth(ent,m);CATEGORIES.forEach(function(c){r[c.code]+=(mo[c.code]||0);});}
-    return r;
-  }
-  var yr0=getYearCatTotals(cy),yr1=getYearCatTotals(cy-1),yr2=getYearCatTotals(cy-2);
-  // 기록일수 (분모 — 진행 중인 해는 기록된 날만 카운트 → 자연스럽게 경과일 반영)
-  var rd0=countRecordedDaysInYear(cy),rd1=countRecordedDaysInYear(cy-1),rd2=countRecordedDaysInYear(cy-2);
-  // 각 연도 카테고리별 일평균
-  var yr0a={},yr1a={},yr2a={};
-  CATEGORIES.forEach(function(c){
-    yr0a[c.code]=avgPerDay(yr0[c.code]||0,rd0);
-    yr1a[c.code]=avgPerDay(yr1[c.code]||0,rd1);
-    yr2a[c.code]=avgPerDay(yr2[c.code]||0,rd2);
-  });
-  // 3년 일평균 = 연 일평균의 단순평균 (각 연도 동등)
-  var avg3={};CATEGORIES.forEach(function(c){avg3[c.code]=+((yr0a[c.code]+yr1a[c.code]+yr2a[c.code])/3).toFixed(2);});
-
-  // ── 금년 / 작년 / 3년평균 비교표 (연↔연, 3년 일평균으로 수렴, 단위 h/일) ──
-  var cmpSec=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:16px;border:1px solid #1e293b"});
-  var cmpH=h("div",{style:"display:flex;align-items:center;margin-bottom:8px"});
-  cmpH.appendChild(h("span",{style:"font-size:10px;color:#64748b;font-weight:700;letter-spacing:.5px;flex:1"},"📊 연간 일평균 (h/일)"));
-  [cy+"년",(cy-1)+"년","3년평균"].forEach(function(lb,idx){
-    cmpH.appendChild(h("span",{style:"font-size:8px;color:"+(idx===0?"#6366f1":idx===2?"#0d9488":"#475569")+";font-family:monospace;width:40px;text-align:right;font-weight:"+(idx!==1?"700":"400")},lb));
-  });
-  cmpH.appendChild(h("span",{style:"font-size:8px;color:#475569;font-family:monospace;width:30px;text-align:right"},"vs평균"));
-  cmpSec.appendChild(cmpH);
-
-  function fmtHday(v){return v>=0.05?v.toFixed(2)+"h":"–";}
-  var grandTot0=0,grandTot1=0,grandAvg=0;
-  GROUPS.forEach(function(g){
-    var gCats=groupCats(g);
-    var gV0=gCats.reduce(function(s,c){return s+(yr0a[c.code]||0);},0);
-    var gV1=gCats.reduce(function(s,c){return s+(yr1a[c.code]||0);},0);
-    var gA=gCats.reduce(function(s,c){return s+(avg3[c.code]||0);},0);
-    if(gV0<0.05&&gV1<0.05&&gA<0.05)return;
-    grandTot0+=gV0;grandTot1+=gV1;grandAvg+=gA;
-    var gDiff=fmtDiff(gV0,gA);
-    var gHdr=h("div",{style:"display:flex;align-items:center;padding:4px 0;border-bottom:1px solid #1e293b"});
-    gHdr.appendChild(h("span",{style:"font-size:10px;font-weight:700;color:"+GC[g]+";font-family:monospace;flex:1"},g+" "+GN[g]));
-    [gV0,gV1,gA].forEach(function(v,idx){
-      gHdr.appendChild(h("span",{style:"font-size:10px;color:"+(idx===0?GC[g]:idx===2?"#0d9488":(v>0?"#475569":"#334155"))+";font-family:monospace;width:40px;text-align:right;font-weight:"+(idx!==1?"700":"400")},fmtHday(v)));
+  // ── 1a. 연간 실적 (최근 5년 + 전체평균 표) ──
+  (function(){
+    const years5=[];for(var yi=cy-4;yi<=cy;yi++)years5.push(yi);
+    const yrData=years5.map(function(y){
+      const ent=getEntriesForYear(y);
+      const dayHrs={};GROUPS.forEach(function(g){dayHrs[g]=0;});
+      for(var mi=1;mi<=12;mi++){
+        const mo=getCatHoursByMonth(ent,mi);
+        CATEGORIES.forEach(function(c){dayHrs[c.group]+=(mo[c.code]||0);});
+      }
+      const total=Object.values(dayHrs).reduce(function(s,v){return s+v;},0);
+      const rd=countRecordedDaysInYear(y);
+      return{dayHrs:dayHrs,total:total,recDays:rd,y:y};
     });
-    gHdr.appendChild(h("span",{style:"font-size:9px;color:"+gDiff.color+";font-family:monospace;width:30px;text-align:right;font-weight:700"},gDiff.txt));
-    cmpSec.appendChild(gHdr);
-    gCats.forEach(function(c){
-      var v0=yr0a[c.code]||0,v1=yr1a[c.code]||0,av=avg3[c.code]||0;
-      if(v0<0.05&&v1<0.05&&av<0.05)return;
-      var diff=fmtDiff(v0,av);
-      var row=h("div",{style:"display:flex;align-items:center;padding:2px 0 2px 8px;border-bottom:1px solid #0f172a"});
-      row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:"+c.color+";font-family:monospace;width:22px;flex-shrink:0"},c.code));
-      row.appendChild(h("span",{style:"flex:1;font-size:9px;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},c.label));
-      [v0,v1,av].forEach(function(v,idx){
-        row.appendChild(h("span",{style:"font-size:10px;color:"+(v>0?(idx===0?"#e2e8f0":idx===2?"#0d9488":"#94a3b8"):"#334155")+";font-family:monospace;width:40px;text-align:right;font-weight:"+(v>0&&idx!==1?"700":"400")},fmtHday(v)));
+
+    // 전체 평균 (2019 ~ cy)
+    const allG={};GROUPS.forEach(function(g){allG[g]=0;});
+    var allRD=0;
+    for(var ay=2019;ay<=cy;ay++){
+      const aent=getEntriesForYear(ay);
+      for(var mi2=1;mi2<=12;mi2++){
+        const amo=getCatHoursByMonth(aent,mi2);
+        CATEGORIES.forEach(function(c){allG[c.group]+=(amo[c.code]||0);});
+      }
+      allRD+=countRecordedDaysInYear(ay);
+    }
+
+    const summaryBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:14px;border:1px solid #1e293b"});
+    summaryBox.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},"📊 연간 실적 (최근 5년)"));
+
+    function fmtAvg(v){return v>=0.05?v.toFixed(1):"–";}
+    const tblWrap=h("div",{});
+    const tbl=h("div",{style:"display:grid;grid-template-columns:24px repeat(5,1fr) 40px;gap:2px;font-size:9px;font-family:'JetBrains Mono',monospace"});
+    tbl.appendChild(h("span",{style:"text-align:center"},""));
+    yrData.forEach(function(yo){
+      const isCur=yo.y===cy;
+      tbl.appendChild(h("span",{style:"text-align:center;color:"+(isCur?"#3b82f6":"#64748b")+";font-weight:700"},String(yo.y).slice(2)+"년"));
+    });
+    tbl.appendChild(h("span",{style:"text-align:center;color:#a855f7;font-weight:700"},"전체"));
+
+    GROUPS.forEach(function(g){
+      tbl.appendChild(h("span",{style:"text-align:center;color:"+GC[g]+";font-weight:700"},g));
+      yrData.forEach(function(yo){
+        const isCur=yo.y===cy;
+        const v=yo.recDays>0?yo.dayHrs[g]/yo.recDays:0;
+        tbl.appendChild(h("span",{style:"text-align:center;color:"+(v>=0.05?(isCur?"#e2e8f0":"#cbd5e1"):"#334155")+";background:"+(v>=0.05?(isCur?GC[g]+"40":GC[g]+"20"):"transparent")+";border-radius:2px;padding:2px 0"},fmtAvg(v)));
+      });
+      const allAvg=allRD>0?allG[g]/allRD:0;
+      tbl.appendChild(h("span",{style:"text-align:center;color:#a855f7;font-weight:700"},fmtAvg(allAvg)));
+    });
+
+    tbl.appendChild(h("span",{style:"text-align:center;color:#64748b;font-weight:700;border-top:1px solid #334155;padding-top:3px;margin-top:1px"},"합"));
+    yrData.forEach(function(yo){
+      const isCur=yo.y===cy;
+      const totAvg=yo.recDays>0?yo.total/yo.recDays:0;
+      tbl.appendChild(h("span",{style:"text-align:center;color:"+(totAvg>=0.05?(isCur?"#3b82f6":"#94a3b8"):"#334155")+";font-weight:700;border-top:1px solid #334155;padding-top:3px;margin-top:1px"},fmtAvg(totAvg)));
+    });
+    const allTot=GROUPS.reduce(function(s,g){return s+allG[g];},0);
+    const allAvgT=allRD>0?allTot/allRD:0;
+    tbl.appendChild(h("span",{style:"text-align:center;color:#a855f7;font-weight:900;border-top:1px solid #334155;padding-top:3px;margin-top:1px"},fmtAvg(allAvgT)));
+
+    tblWrap.appendChild(tbl);
+    summaryBox.appendChild(tblWrap);
+    summaryBox.appendChild(h("div",{style:"font-size:8px;color:#475569;margin-top:10px;text-align:right"},"일평균 (h/일) · 분모=기록일수 · 전체=2019~"+cy));
+    wrap.appendChild(summaryBox);
+  })();
+
+  // ── 연간 DREAM 추이 (2019 ~ cy, 일평균) ──
+  (function(){
+    var sec=h("div",{className:"chart-container"});
+    sec.appendChild(h("h3",{className:"chart-title"},"📈 DREAM 연간 일평균 추이 (h/일, 2019~"+cy+")"));
+    var wr=h("div",{className:"chart-wrap"});wr.appendChild(h("canvas",{id:"yearlyDreamChart"}));sec.appendChild(wr);
+    wrap.appendChild(sec);
+  })();
+  // ── D/R/E/A/M 세부 연간 추이 ──
+  [["D","D (신앙)"],["R","R (연구·강의)"],["E","E (자기계발)"],["A","A (관계)"],["M","M (유지)"]].forEach(function(g){
+    var sec=h("div",{className:"chart-container"});
+    sec.appendChild(h("h3",{className:"chart-title"},"📈 "+g[1]+" 세부 추이"));
+    var wr=h("div",{className:"chart-wrap"});wr.appendChild(h("canvas",{id:"yearly"+g[0]+"Chart"}));sec.appendChild(wr);
+    wrap.appendChild(sec);
+  });
+  // ── 연간 기록률 (기록일수 / 달력일수) ──
+  (function(){
+    var sec=h("div",{className:"chart-container"});
+    sec.appendChild(h("h3",{className:"chart-title"},"📊 연간 기록률 (%, 금년은 경과일 기준)"));
+    var wr=h("div",{className:"chart-wrap"});wr.appendChild(h("canvas",{id:"yearlyCoverageChart"}));sec.appendChild(wr);
+    wrap.appendChild(sec);
+  })();
+
+  // ── 독서 3년 비교 (EN/KR + 책제목) ──
+  (function(){
+    var years3=[cy,cy-1,cy-2];
+    var bookSec=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:16px;border:1px solid #1e293b"});
+    bookSec.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:8px;letter-spacing:.5px"},"📚 독서 (금년/작년/3년평균)"));
+    var bHdr=h("div",{style:"display:flex;align-items:center;margin-bottom:4px"});
+    bHdr.appendChild(h("span",{style:"flex:1"},""));
+    [cy+"년",(cy-1)+"년","3년평균"].forEach(function(lb,idx){
+      bHdr.appendChild(h("span",{style:"font-size:8px;color:"+(idx===0?"#6366f1":idx===2?"#0d9488":"#475569")+";font-family:monospace;width:40px;text-align:right;font-weight:"+(idx!==1?"700":"400")},lb));
+    });
+    bHdr.appendChild(h("span",{style:"width:30px"},""));
+    bookSec.appendChild(bHdr);
+    [["en","영어","#3b82f6"],["kr","한국어","#10b981"]].forEach(function(ti){
+      var type=ti[0],label=ti[1],color=ti[2];
+      var yearBooks=years3.map(function(y2){var all=[];for(var m=1;m<=12;m++)all=all.concat(getBooksForYearMonth(y2,m));return all.filter(function(b){return b.type===type;});});
+      var cnts=yearBooks.map(function(b){return b.length;});
+      var avg3cnt=+((cnts[0]+cnts[1]+cnts[2])/3).toFixed(1);
+      if(cnts[0]===0&&cnts[1]===0&&avg3cnt===0)return;
+      var diff=fmtDiff(cnts[0],avg3cnt);
+      var row=h("div",{style:"display:flex;align-items:center;gap:4px;padding:4px 0;border-bottom:1px solid #0f172a"});
+      row.appendChild(h("span",{style:"font-size:10px;font-weight:700;color:"+color+";flex:1"},label));
+      [cnts[0],cnts[1],avg3cnt].forEach(function(v,idx){
+        row.appendChild(h("span",{style:"font-size:12px;color:"+(idx===0?(v>0?"#e2e8f0":"#334155"):idx===2?"#0d9488":"#475569")+";font-family:monospace;width:40px;text-align:right;font-weight:"+(idx!==1?"700":"400")},v>0?v+"권":"–"));
       });
       row.appendChild(h("span",{style:"font-size:9px;color:"+diff.color+";font-family:monospace;width:30px;text-align:right;font-weight:700"},diff.txt));
-      cmpSec.appendChild(row);
+      bookSec.appendChild(row);
+      if(yearBooks[0].length>0)bookSec.appendChild(h("div",{style:"font-size:9px;color:#cbd5e1;padding:2px 0 4px 4px;line-height:1.5"},yearBooks[0].map(function(b){return b.title;}).join(" · ")));
     });
-  });
-  var totDiff=fmtDiff(grandTot0,grandAvg);
-  var totRow=h("div",{style:"display:flex;align-items:center;padding:5px 0;border-top:1px solid #334155;margin-top:2px"});
-  totRow.appendChild(h("span",{style:"font-size:10px;color:#64748b;font-weight:700;flex:1"},"합계"));
-  [grandTot0,grandTot1,grandAvg].forEach(function(v,idx){
-    totRow.appendChild(h("span",{style:"font-size:"+(idx===0?"12":"10")+"px;color:"+(idx===0?"#e2e8f0":idx===2?"#0d9488":"#94a3b8")+";font-family:monospace;width:40px;text-align:right;font-weight:"+(idx!==1?"900":"400")},fmtHday(v)));
-  });
-  totRow.appendChild(h("span",{style:"font-size:10px;color:"+totDiff.color+";font-family:monospace;width:30px;text-align:right;font-weight:700"},totDiff.txt));
-  cmpSec.appendChild(totRow);
-  cmpSec.appendChild(h("div",{style:"font-size:8px;color:#334155;margin-top:4px;text-align:right"},cy+"·"+(cy-1)+"·"+(cy-2)+"년 3년 일평균 · 기록 "+rd0+"/"+rd1+"/"+rd2+"일"));
-  wrap.appendChild(cmpSec);
+    wrap.appendChild(bookSec);
+  })();
+
+  // ── 독서 연간 추이 (2019 ~ cy, EN/KR 라인) ──
+  (function(){
+    var sec=h("div",{className:"chart-container"});
+    sec.appendChild(h("h3",{className:"chart-title"},"📈 독서 연간 추이 (권, 2019~"+cy+")"));
+    var wr=h("div",{className:"chart-wrap"});wr.appendChild(h("canvas",{id:"yearlyBookChart"}));sec.appendChild(wr);
+    wrap.appendChild(sec);
+  })();
+
+  // ── 습관 연간 달성률 (최근 5년 + 전체평균) ──
+  (function(){
+    const habits=state.goalData.habits||[];
+    if(habits.length===0)return;
+    const years5=[];for(var yi=cy-4;yi<=cy;yi++)years5.push(yi);
+
+    function calcYrPct(hb,y2){var done=0,wd=0;for(var m=1;m<=12;m++){var days=daysInMonth(y2,m);for(var d=1;d<=days;d++){if(isWeekday(y2,m,d)){wd++;if(isHabitDone(hb,y2,m,d))done++;}}}return wd>0?Math.round(done/wd*100):0;}
+
+    const habBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:14px;border:1px solid #1e293b"});
+    habBox.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:8px;letter-spacing:.5px"},"🔁 습관 연간 달성률 (최근 5년)"));
+
+    const hdrRow=h("div",{style:"display:grid;grid-template-columns:1fr repeat(5,40px) 40px;gap:4px;align-items:center;margin-bottom:4px"});
+    hdrRow.appendChild(h("div",{},""));
+    years5.forEach(function(y){
+      const isCur=y===cy;
+      hdrRow.appendChild(h("div",{style:"text-align:center;font-size:9px;color:"+(isCur?"#3b82f6":"#94a3b8")+";font-weight:"+(isCur?"700":"400")+";background:"+(isCur?"#1e3a5f":"transparent")+";border-radius:4px;padding:2px 0"},String(y).slice(2)+"년"));
+    });
+    hdrRow.appendChild(h("div",{style:"text-align:center;font-size:9px;color:#a855f7;font-weight:700"},"전체"));
+    habBox.appendChild(hdrRow);
+
+    habits.forEach(function(hb){
+      const cat=catByCode(hb.cat);
+      const hrow=h("div",{style:"display:grid;grid-template-columns:1fr repeat(5,40px) 40px;gap:4px;align-items:center;padding:5px 0;border-top:1px solid #1e293b"});
+      const nameCell=h("div",{style:"display:flex;align-items:center;gap:4px;overflow:hidden;min-width:0;cursor:pointer",
+        onClick:function(){navigateToGoal("habits",hb);}
+      });
+      nameCell.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:"+(cat?cat.color:"#94a3b8")+";font-family:monospace;flex-shrink:0;background:"+(cat?cat.color+"22":"#1e293b")+";border-radius:3px;padding:1px 4px"},hb.cat));
+      nameCell.appendChild(h("span",{style:"font-size:11px;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},hb.name));
+      hrow.appendChild(nameCell);
+
+      var allSum=0,allCnt=0;
+      years5.forEach(function(y){
+        const isCur=y===cy;
+        const pct=calcYrPct(hb,y);
+        const color=pct===100?"#0d9488":pct>=60?"#f59e0b":pct>0?"#94a3b8":"#334155";
+        hrow.appendChild(h("div",{style:"text-align:center;font-size:10px;color:"+color+";font-weight:"+(isCur?"900":"700")+";font-family:monospace;background:"+(isCur?"#1e3a5f":"transparent")+";border-radius:4px;padding:3px 0"},pct+"%"));
+      });
+      // 전체 평균 (2019~cy)
+      for(var ay=2019;ay<=cy;ay++){allSum+=calcYrPct(hb,ay);allCnt++;}
+      const allAvg=allCnt>0?Math.round(allSum/allCnt):0;
+      hrow.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#a855f7;font-weight:700;font-family:monospace"},allAvg+"%"));
+      habBox.appendChild(hrow);
+    });
+    wrap.appendChild(habBox);
+  })();
 
   // ── 금년 목표 ──
   var yGoalsBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:16px;border:1px solid #1e293b"});
@@ -3872,107 +3974,6 @@ function renderYearlyReview(){
     wrap.appendChild(doneBox);
   })();
 
-  // ── 연간 DREAM 추이 (2019 ~ cy, 일평균) ──
-  (function(){
-    var sec=h("div",{className:"chart-container"});
-    sec.appendChild(h("h3",{className:"chart-title"},"📈 DREAM 연간 일평균 추이 (h/일, 2019~"+cy+")"));
-    var wr=h("div",{className:"chart-wrap"});wr.appendChild(h("canvas",{id:"yearlyDreamChart"}));sec.appendChild(wr);
-    wrap.appendChild(sec);
-  })();
-  // ── D1/D2/D3 연간 추이 ──
-  (function(){
-    var sec=h("div",{className:"chart-container"});
-    sec.appendChild(h("h3",{className:"chart-title"},"📈 D (신앙) 세부 추이"));
-    var wr=h("div",{className:"chart-wrap"});wr.appendChild(h("canvas",{id:"yearlyDChart"}));sec.appendChild(wr);
-    wrap.appendChild(sec);
-  })();
-  // ── R1/R2/R3 연간 추이 ──
-  (function(){
-    var sec=h("div",{className:"chart-container"});
-    sec.appendChild(h("h3",{className:"chart-title"},"📈 R (연구·강의) 세부 추이"));
-    var wr=h("div",{className:"chart-wrap"});wr.appendChild(h("canvas",{id:"yearlyRChart"}));sec.appendChild(wr);
-    wrap.appendChild(sec);
-  })();
-  // ── 연간 기록률 (기록일수 / 달력일수) ──
-  (function(){
-    var sec=h("div",{className:"chart-container"});
-    sec.appendChild(h("h3",{className:"chart-title"},"📊 연간 기록률 (%, 금년은 경과일 기준)"));
-    var wr=h("div",{className:"chart-wrap"});wr.appendChild(h("canvas",{id:"yearlyCoverageChart"}));sec.appendChild(wr);
-    wrap.appendChild(sec);
-  })();
-
-  // ── 독서 3년 비교 (EN/KR + 책제목) ──
-  (function(){
-    var years3=[cy,cy-1,cy-2];
-    var bookSec=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:16px;border:1px solid #1e293b"});
-    bookSec.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:8px;letter-spacing:.5px"},"📚 독서 (금년/작년/3년평균)"));
-    var bHdr=h("div",{style:"display:flex;align-items:center;margin-bottom:4px"});
-    bHdr.appendChild(h("span",{style:"flex:1"},""));
-    [cy+"년",(cy-1)+"년","3년평균"].forEach(function(lb,idx){
-      bHdr.appendChild(h("span",{style:"font-size:8px;color:"+(idx===0?"#6366f1":idx===2?"#0d9488":"#475569")+";font-family:monospace;width:40px;text-align:right;font-weight:"+(idx!==1?"700":"400")},lb));
-    });
-    bHdr.appendChild(h("span",{style:"width:30px"},""));
-    bookSec.appendChild(bHdr);
-    [["en","영어","#3b82f6"],["kr","한국어","#10b981"]].forEach(function(ti){
-      var type=ti[0],label=ti[1],color=ti[2];
-      var yearBooks=years3.map(function(y2){var all=[];for(var m=1;m<=12;m++)all=all.concat(getBooksForYearMonth(y2,m));return all.filter(function(b){return b.type===type;});});
-      var cnts=yearBooks.map(function(b){return b.length;});
-      var avg3cnt=+((cnts[0]+cnts[1]+cnts[2])/3).toFixed(1);
-      if(cnts[0]===0&&cnts[1]===0&&avg3cnt===0)return;
-      var diff=fmtDiff(cnts[0],avg3cnt);
-      var row=h("div",{style:"display:flex;align-items:center;gap:4px;padding:4px 0;border-bottom:1px solid #0f172a"});
-      row.appendChild(h("span",{style:"font-size:10px;font-weight:700;color:"+color+";flex:1"},label));
-      [cnts[0],cnts[1],avg3cnt].forEach(function(v,idx){
-        row.appendChild(h("span",{style:"font-size:12px;color:"+(idx===0?(v>0?"#e2e8f0":"#334155"):idx===2?"#0d9488":"#475569")+";font-family:monospace;width:40px;text-align:right;font-weight:"+(idx!==1?"700":"400")},v>0?v+"권":"–"));
-      });
-      row.appendChild(h("span",{style:"font-size:9px;color:"+diff.color+";font-family:monospace;width:30px;text-align:right;font-weight:700"},diff.txt));
-      bookSec.appendChild(row);
-      if(yearBooks[0].length>0)bookSec.appendChild(h("div",{style:"font-size:9px;color:#cbd5e1;padding:2px 0 4px 4px;line-height:1.5"},yearBooks[0].map(function(b){return b.title;}).join(" · ")));
-    });
-    wrap.appendChild(bookSec);
-  })();
-
-  // ── 독서 연간 추이 (2019 ~ cy, EN/KR 라인) ──
-  (function(){
-    var sec=h("div",{className:"chart-container"});
-    sec.appendChild(h("h3",{className:"chart-title"},"📈 독서 연간 추이 (권, 2019~"+cy+")"));
-    var wr=h("div",{className:"chart-wrap"});wr.appendChild(h("canvas",{id:"yearlyBookChart"}));sec.appendChild(wr);
-    wrap.appendChild(sec);
-  })();
-
-  // ── 습관 연간 달성률 (금년/작년/3년평균) ──
-  (function(){
-    var habitsY=state.goalData.habits||[];
-    if(habitsY.length===0)return;
-    var habSec=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:16px;border:1px solid #1e293b"});
-    var habHdr=h("div",{style:"display:flex;align-items:center;margin-bottom:8px"});
-    habHdr.appendChild(h("span",{style:"font-size:10px;color:#64748b;font-weight:700;letter-spacing:.5px;flex:1"},"🔁 습관 연간 달성률"));
-    [cy+"년",(cy-1)+"년","3년평균"].forEach(function(lb,idx){
-      habHdr.appendChild(h("span",{style:"font-size:8px;color:"+(idx===0?"#6366f1":idx===2?"#0d9488":"#475569")+";font-family:monospace;width:40px;text-align:right;font-weight:"+(idx!==1?"700":"400")},lb));
-    });
-    habHdr.appendChild(h("span",{style:"font-size:8px;color:#475569;font-family:monospace;width:30px;text-align:right"},"vs평균"));
-    habSec.appendChild(habHdr);
-    habitsY.forEach(function(hb){
-      function calcYrPct(y2){var done=0,wd=0;for(var m=1;m<=12;m++){var days=daysInMonth(y2,m);for(var d=1;d<=days;d++){if(isWeekday(y2,m,d)){wd++;if(isHabitDone(hb,y2,m,d))done++;}}}return wd>0?Math.round(done/wd*100):0;}
-      var p0=calcYrPct(cy),p1=calcYrPct(cy-1),p2=calcYrPct(cy-2);
-      var pavg=Math.round((p0+p1+p2)/3);
-      var diff=fmtDiff(p0,pavg);
-      var cat=catByCode(hb.cat);
-      var row=h("div",{style:"display:flex;align-items:center;gap:4px;padding:4px 0;border-bottom:1px solid #0f172a"});
-      row.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:"+(cat?cat.color:"#94a3b8")+";font-family:monospace;width:22px;flex-shrink:0"},hb.cat));
-      row.appendChild(h("span",{style:"flex:1;font-size:11px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},hb.name));
-      var track=h("div",{style:"width:36px;height:4px;background:#1e293b;border-radius:2px;overflow:hidden;flex-shrink:0"});
-      track.appendChild(h("div",{style:"height:100%;width:"+p0+"%;background:"+(p0>=80?"#10b981":p0>=50?"#f59e0b":"#ef4444")}));
-      row.appendChild(track);
-      [p0,p1,pavg].forEach(function(p,idx){
-        row.appendChild(h("span",{style:"font-size:10px;color:"+(idx===0?(p>=80?"#10b981":p>=50?"#f59e0b":"#ef4444"):idx===2?"#0d9488":"#475569")+";font-family:monospace;width:40px;text-align:right;font-weight:"+(idx!==1?"700":"400")},p>0?p+"%":"–"));
-      });
-      row.appendChild(h("span",{style:"font-size:9px;color:"+diff.color+";font-family:monospace;width:30px;text-align:right;font-weight:700"},diff.txt));
-      habSec.appendChild(row);
-    });
-    wrap.appendChild(habSec);
-  })();
-
   // ── 목표별 투입시간 트리 ──
   var goalSec=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:16px;border:1px solid #1e293b"});
   goalSec.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},"🎯 목표별 투입시간"));
@@ -4032,7 +4033,7 @@ function renderYearlyReview(){
 function renderDashboard(){return renderReview();}  // 하위 호환용
 
 let lineChartInst=null,barChartInst=null,dashDailyChartInst=null;
-let yearlyDreamChartInst=null,yearlyDChartInst=null,yearlyRChartInst=null,yearlyBookChartInst=null,yearlyCoverageChartInst=null;
+let yearlyDreamChartInst=null,yearlyDChartInst=null,yearlyRChartInst=null,yearlyEChartInst=null,yearlyAChartInst=null,yearlyMChartInst=null,yearlyBookChartInst=null,yearlyCoverageChartInst=null;
 let monthlyBookChartInst=null;
 
 // ── 연간 추이 차트 (연간 리뷰 탭) ─────────────────────────
@@ -4040,8 +4041,8 @@ let monthlyBookChartInst=null;
 function renderYearlyCharts(){
   if(typeof Chart==='undefined')return;
   try{
-    [yearlyDreamChartInst,yearlyDChartInst,yearlyRChartInst,yearlyBookChartInst,yearlyCoverageChartInst].forEach(function(ci){try{if(ci)ci.destroy()}catch(e){}});
-    yearlyDreamChartInst=yearlyDChartInst=yearlyRChartInst=yearlyBookChartInst=yearlyCoverageChartInst=null;
+    [yearlyDreamChartInst,yearlyDChartInst,yearlyRChartInst,yearlyEChartInst,yearlyAChartInst,yearlyMChartInst,yearlyBookChartInst,yearlyCoverageChartInst].forEach(function(ci){try{if(ci)ci.destroy()}catch(e){}});
+    yearlyDreamChartInst=yearlyDChartInst=yearlyRChartInst=yearlyEChartInst=yearlyAChartInst=yearlyMChartInst=yearlyBookChartInst=yearlyCoverageChartInst=null;
     var cy=state.year;
     // 2019(시간통계 시작)부터 선택 연도까지. 미래 연도라도 전 구간 표시.
     var startY=2019;
@@ -4119,6 +4120,9 @@ function renderYearlyCharts(){
     }
     yearlyDChartInst=renderSubChart("yearlyDChart","D");
     yearlyRChartInst=renderSubChart("yearlyRChart","R");
+    yearlyEChartInst=renderSubChart("yearlyEChart","E");
+    yearlyAChartInst=renderSubChart("yearlyAChart","A");
+    yearlyMChartInst=renderSubChart("yearlyMChart","M");
 
     // 3) 연간 기록률 (커버리지)
     (function(){
@@ -4143,16 +4147,18 @@ function renderYearlyCharts(){
                   y:{beginAtZero:true,max:100,ticks:{color:"#64748b",font:{size:10},callback:function(v){return v+"%";}},grid:{color:"#1e293b"}}}}});
     })();
 
-    // 3) 독서 연간 추이 (EN/KR 권수)
+    // 3) 독서 연간 추이 (EN/KR/합계 권수)
     (function(){
       var cv=document.getElementById("yearlyBookChart");if(!cv)return;
       function bookCounts(y,type){var all=[];for(var m=1;m<=12;m++)all=all.concat(getBooksForYearMonth(y,m));return all.filter(function(b){return b.type===type}).length}
       var enData=years.map(function(y){return bookCounts(y,"en")});
       var krData=years.map(function(y){return bookCounts(y,"kr")});
+      var totData=enData.map(function(v,i){return v+krData[i]});
       yearlyBookChartInst=new Chart(cv,{type:"line",plugins:[dlPlugin],
         data:{labels:labels,datasets:[
           {label:"🇺🇸 영어",data:enData,borderColor:"#3b82f6",backgroundColor:"#3b82f630",borderWidth:2.5,pointRadius:4,pointBackgroundColor:"#3b82f6",tension:0.3,fill:false},
-          {label:"🇰🇷 국문",data:krData,borderColor:"#10b981",backgroundColor:"#10b98130",borderWidth:2.5,pointRadius:4,pointBackgroundColor:"#10b981",tension:0.3,fill:false}
+          {label:"🇰🇷 국문",data:krData,borderColor:"#10b981",backgroundColor:"#10b98130",borderWidth:2.5,pointRadius:4,pointBackgroundColor:"#10b981",tension:0.3,fill:false},
+          {label:"📚 합계",data:totData,borderColor:"#a855f7",backgroundColor:"#a855f730",borderWidth:3,borderDash:[6,3],pointRadius:5,pointBackgroundColor:"#a855f7",tension:0.3,fill:false}
         ]},
         options:{responsive:true,maintainAspectRatio:false,
           plugins:{legend:{labels:{color:"#94a3b8",font:{size:11,family:"'Noto Sans KR',sans-serif"},boxWidth:12,padding:10}},
@@ -7640,7 +7646,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-25-v83";
+  var SEED_VER="2026-04-25-v84";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

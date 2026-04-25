@@ -463,6 +463,25 @@ function isHabitAutoChecked(habit,y,m,d){
       }
     }
   }
+  // 영어뉴스 추론 — R3 슬롯의 메모 또는 연결 목표 이름에 "영어" 또는 "뉴스"가 포함되면 영어뉴스 완료로 인정
+  if(habit.name&&habit.name.indexOf("영어뉴스")>=0){
+    for(var t6 in slots){
+      if(t6==="_diary")continue;
+      var s6=slots[t6];
+      if(!s6||s6.actual!=="R3")continue;
+      var memo6=(s6.actualMemo||"").toString();
+      if(memo6.indexOf("영어")>=0||memo6.indexOf("뉴스")>=0)return true;
+      if(s6.actualGoalId){
+        try{
+          var gr6=findGoalById(s6.actualGoalId);
+          if(gr6&&gr6.goal){
+            var gn6=(gr6.goal.name||"").toString();
+            if(gn6.indexOf("영어")>=0||gn6.indexOf("뉴스")>=0)return true;
+          }
+        }catch(e){}
+      }
+    }
+  }
   return false;
 }
 // 수동+자동 통합 완료 여부
@@ -7718,7 +7737,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-25-v94";
+  var SEED_VER="2026-04-25-v95";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

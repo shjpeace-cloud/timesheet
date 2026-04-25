@@ -2887,51 +2887,80 @@ function renderReflectionBox(reviewKey,labels){
   const title=lbl.title||"✍️ 성찰";
   const nextLabel=lbl.next||"🎯 다음 한 가지";
   const nextPlaceholder=lbl.nextPh||"다음에 반드시 할 것은?";
+  // 일간은 단일 입력 (덮어쓰기), 주간/월간/연간은 누적 모드 (이전 보존 + 신규 append)
+  const isAccum=!/^daily-review-/.test(reviewKey);
+
+  function tsNow(){
+    const d=new Date();
+    const pad=function(n){return String(n).padStart(2,"0");};
+    return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())+" "+pad(d.getHours())+":"+pad(d.getMinutes());
+  }
 
   const box=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;border:1px solid #1e293b;margin-bottom:4px"});
-  box.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},title));
+  box.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},title+(isAccum?" · 누적 (기존 보존)":"")));
 
-  // 감사한 일 (첫 번째, 녹색 강조)
-  box.appendChild(h("div",{style:"font-size:11px;color:#22c55e;font-weight:700;margin-bottom:4px;margin-top:4px"},"🙏 감사한 일"));
-  const gta=h("textarea",{style:"width:100%;padding:8px;border-radius:8px;border:1px solid #14532d;background:#111827;color:#e2e8f0;font-size:12px;font-family:'Noto Sans KR',sans-serif;outline:none;resize:none;line-height:1.5;min-height:52px",placeholder:"오늘 감사한 일을 기록하세요..."});
-  gta.value=rv.gratitude||"";
-  gta.addEventListener("focus",function(){gta.style.borderColor="#22c55e"});
-  gta.addEventListener("blur",function(){gta.style.borderColor="#14532d"});
-  var gTimer=null;
-  gta.addEventListener("input",function(e){
-    rv.gratitude=e.target.value;
-    clearTimeout(gTimer);
-    gTimer=setTimeout(function(){try{localStorage.setItem(reviewKey,JSON.stringify(rv))}catch(ex){}cloudSaveReviews(yearFromReviewKey(reviewKey));},800);
-  });
-  box.appendChild(gta);
+  const pendingNew={};
 
-  // 나머지 성찰 필드
-  var reflFields=[
-    {key:"best",label:"🌟 잘 한 것",placeholder:"가장 잘 된 일은?"},
-    {key:"missed",label:"⚠️ 놓친 것",placeholder:"아쉬웠거나 못 한 일은?"},
-    {key:"next",label:nextLabel,placeholder:nextPlaceholder},
-    {key:"note",label:"📝 메모",placeholder:"자유 기록..."}
-  ];
-  reflFields.forEach(function(f){
-    box.appendChild(h("div",{style:"font-size:11px;color:#94a3b8;font-weight:700;margin-bottom:4px;margin-top:8px"},f.label));
-    const ta=h("textarea",{style:"width:100%;padding:8px;border-radius:8px;border:1px solid #334155;background:#111827;color:#e2e8f0;font-size:12px;font-family:'Noto Sans KR',sans-serif;outline:none;resize:none;line-height:1.5;min-height:52px",placeholder:f.placeholder});
-    ta.value=rv[f.key]||"";
-    var timer=null;
-    ta.addEventListener("input",function(e){
-      rv[f.key]=e.target.value;
-      clearTimeout(timer);
-      timer=setTimeout(function(){try{localStorage.setItem(reviewKey,JSON.stringify(rv))}catch(ex){}cloudSaveReviews(yearFromReviewKey(reviewKey));},800);
-    });
-    box.appendChild(ta);
-  });
+  function buildField(key,labelText,labelColor,borderActive,borderIdle,placeholder){
+    box.appendChild(h("div",{style:"font-size:11px;color:"+labelColor+";font-weight:700;margin-bottom:4px;margin-top:"+(key==="gratitude"?"4":"8")+"px"},labelText));
+    if(isAccum){
+      const prev=(rv[key]||"").trim();
+      if(prev){
+        box.appendChild(h("div",{style:"width:100%;padding:8px;border-radius:8px;border:1px solid #1e293b;background:#0a0e17;color:#94a3b8;font-size:11px;font-family:'Noto Sans KR',sans-serif;line-height:1.5;white-space:pre-wrap;max-height:200px;overflow-y:auto;margin-bottom:6px"},prev));
+      }
+      const ta=h("textarea",{style:"width:100%;padding:8px;border-radius:8px;border:1px solid "+borderIdle+";background:#111827;color:#e2e8f0;font-size:12px;font-family:'Noto Sans KR',sans-serif;outline:none;resize:none;line-height:1.5;min-height:52px",placeholder:"추가 입력... ("+placeholder+")"});
+      ta.addEventListener("focus",function(){ta.style.borderColor=borderActive});
+      ta.addEventListener("blur",function(){ta.style.borderColor=borderIdle});
+      ta.addEventListener("input",function(e){pendingNew[key]=e.target.value;});
+      box.appendChild(ta);
+    }else{
+      const ta=h("textarea",{style:"width:100%;padding:8px;border-radius:8px;border:1px solid "+borderIdle+";background:#111827;color:#e2e8f0;font-size:12px;font-family:'Noto Sans KR',sans-serif;outline:none;resize:none;line-height:1.5;min-height:52px",placeholder:placeholder});
+      ta.value=rv[key]||"";
+      ta.addEventListener("focus",function(){ta.style.borderColor=borderActive});
+      ta.addEventListener("blur",function(){ta.style.borderColor=borderIdle});
+      var timer=null;
+      ta.addEventListener("input",function(e){
+        rv[key]=e.target.value;
+        clearTimeout(timer);
+        timer=setTimeout(function(){try{localStorage.setItem(reviewKey,JSON.stringify(rv))}catch(ex){}cloudSaveReviews(yearFromReviewKey(reviewKey));},800);
+      });
+      box.appendChild(ta);
+    }
+  }
 
-  // 저장 버튼
+  buildField("gratitude","🙏 감사한 일","#22c55e","#22c55e","#14532d","오늘 감사한 일을 기록하세요...");
+  buildField("best","🌟 잘 한 것","#94a3b8","#0d9488","#334155","가장 잘 된 일은?");
+  buildField("missed","⚠️ 놓친 것","#94a3b8","#0d9488","#334155","아쉬웠거나 못 한 일은?");
+  buildField("next",nextLabel,"#94a3b8","#0d9488","#334155",nextPlaceholder);
+  buildField("note","📝 메모","#94a3b8","#0d9488","#334155","자유 기록...");
+
   const saveBtn=h("button",{style:"margin-top:10px;width:100%;padding:8px;border-radius:8px;background:#0d9488;border:none;color:#fff;font-size:13px;font-weight:700;cursor:pointer",
     onClick:function(){
-      try{localStorage.setItem(reviewKey,JSON.stringify(rv))}catch(e){}
-      cloudSaveReviews(yearFromReviewKey(reviewKey));
-      saveBtn.textContent="✅ 저장됨";
-      setTimeout(function(){saveBtn.textContent="💾 저장"},1500);
+      if(isAccum){
+        const ts=tsNow();
+        var changed=false;
+        Object.keys(pendingNew).forEach(function(k){
+          const v=(pendingNew[k]||"").trim();
+          if(v){
+            rv[k]=(rv[k]?rv[k]+"\n\n":"")+"["+ts+"]\n"+v;
+            changed=true;
+          }
+        });
+        if(changed){
+          try{localStorage.setItem(reviewKey,JSON.stringify(rv))}catch(e){}
+          cloudSaveReviews(yearFromReviewKey(reviewKey));
+        }
+        saveBtn.textContent=changed?"✅ 추가됨":"–";
+        setTimeout(function(){
+          saveBtn.textContent="💾 저장";
+          if(changed){_isAutoRender=true;render();}
+        },1200);
+      }else{
+        try{localStorage.setItem(reviewKey,JSON.stringify(rv))}catch(e){}
+        cloudSaveReviews(yearFromReviewKey(reviewKey));
+        saveBtn.textContent="✅ 저장됨";
+        setTimeout(function(){saveBtn.textContent="💾 저장"},1500);
+      }
     }
   },"💾 저장");
   box.appendChild(saveBtn);
@@ -7642,7 +7671,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-25-v81";
+  var SEED_VER="2026-04-25-v82";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

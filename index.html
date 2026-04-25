@@ -431,6 +431,22 @@ function isHabitAutoChecked(habit,y,m,d){
       if(hr>=5&&hr<7&&slots[t3]&&slots[t3].actual==="D1")return true;
     }
   }
+  // 묵상 추론 — D1 슬롯의 메모 또는 연결 목표 이름에 "묵상"이 포함되면 묵상 완료로 인정
+  if(habit.name&&habit.name.indexOf("묵상")>=0){
+    for(var t4 in slots){
+      if(t4==="_diary")continue;
+      var s4=slots[t4];
+      if(!s4||s4.actual!=="D1")continue;
+      var memo4=(s4.actualMemo||"").toString();
+      if(memo4.indexOf("묵상")>=0)return true;
+      if(s4.actualGoalId){
+        try{
+          var gr4=findGoalById(s4.actualGoalId);
+          if(gr4&&gr4.goal&&(gr4.goal.name||"").indexOf("묵상")>=0)return true;
+        }catch(e){}
+      }
+    }
+  }
   return false;
 }
 // 수동+자동 통합 완료 여부
@@ -7686,7 +7702,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-25-v92";
+  var SEED_VER="2026-04-25-v93";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

@@ -3086,9 +3086,25 @@ function renderDailyReview(){
     function fmtH(v){return v>=0.05?(v===Math.floor(v)?String(v):v.toFixed(1)):"–";}
     // 이번 주 기록일수 (월~토 중 시간 입력 있는 날 수)
     const recDaysWk=dayData.filter(function(d){return d.total>0;}).length;
-    // 이번 달 데이터
-    const mthCats=getCatHoursByMonth(state.data.entries,rm);
-    const mthRecDays=countRecordedDaysInMonth(state.data.entries,rm);
+    // 이번 달 데이터 (일요일 제외)
+    const mthCats={};CATEGORIES.forEach(function(c){mthCats[c.code]=0;});
+    var mthRecDays=0;
+    const _dimM=daysInMonth(ry,rm);
+    for(var _md=1;_md<=_dimM;_md++){
+      const _dt=new Date(ry,rm-1,_md);
+      if(_dt.getDay()===0)continue;
+      const _slots=state.data.entries[rm+"-"+_md];
+      if(!_slots)continue;
+      var _hasA=false;
+      Object.keys(_slots).forEach(function(sk){
+        if(sk==="_diary")return;
+        if(_slots[sk]&&_slots[sk].actual){
+          mthCats[_slots[sk].actual]=(mthCats[_slots[sk].actual]||0)+0.5;
+          _hasA=true;
+        }
+      });
+      if(_hasA)mthRecDays++;
+    }
 
     const tblWrap=h("div",{style:"margin-top:10px;border-top:1px solid #1e293b;padding-top:10px"});
     const tbl=h("div",{style:"display:grid;grid-template-columns:24px repeat("+NDAYS+",1fr) 36px 36px;gap:2px;font-size:9px;font-family:'JetBrains Mono',monospace"});
@@ -3131,7 +3147,7 @@ function renderDailyReview(){
     tbl.appendChild(h("span",{style:"text-align:center;color:#a855f7;font-weight:900;border-top:1px solid #334155;padding-top:3px;margin-top:1px"},fmtH(mthAvgTot)));
     tblWrap.appendChild(tbl);
     summaryBox.appendChild(tblWrap);
-    summaryBox.appendChild(h("div",{style:"font-size:8px;color:#475569;margin-top:6px;text-align:right"},"일별=h · 주/월평균=h/일 (분모=기록일수 "+recDaysWk+"/"+mthRecDays+"일)"));
+    summaryBox.appendChild(h("div",{style:"font-size:8px;color:#475569;margin-top:6px;text-align:right"},"일별=h · 주/월평균=h/일 · 일요일 제외 · 분모=기록일수 "+recDaysWk+"/"+mthRecDays+"일"));
 
     wrap.appendChild(summaryBox);
   }
@@ -7440,7 +7456,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-25-v78";
+  var SEED_VER="2026-04-25-v79";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

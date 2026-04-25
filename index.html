@@ -5205,8 +5205,26 @@ function renderWeeklyReview(){
     function fmtAvg(v){return v>=0.05?v.toFixed(1):"–";}
     // 각 주의 기록일수 (분모)
     const recDaysArr=weekData.map(function(wk){return countRecordedDaysInWeek(wk.monD);});
+    // 올해 평균
+    const cyG={};GROUPS.forEach(function(g){cyG[g]=0;});
+    for(var _mi=1;_mi<=12;_mi++){
+      const _mc=getCatHoursByMonth(state.data.entries,_mi);
+      CATEGORIES.forEach(function(c){cyG[c.group]+=(_mc[c.code]||0);});
+    }
+    const cyRD=countRecordedDaysInYear(state.year);
+    // 3년 평균 (cy-2 ~ cy)
+    const yr3G={};GROUPS.forEach(function(g){yr3G[g]=0;});
+    var yr3RD=0;
+    for(var _yi=state.year-2;_yi<=state.year;_yi++){
+      const _ye=getEntriesForYear(_yi);
+      for(var _mi2=1;_mi2<=12;_mi2++){
+        const _mc2=getCatHoursByMonth(_ye,_mi2);
+        CATEGORIES.forEach(function(c){yr3G[c.group]+=(_mc2[c.code]||0);});
+      }
+      yr3RD+=countRecordedDaysInYear(_yi);
+    }
     const tblWrap=h("div",{style:"margin-top:10px;border-top:1px solid #1e293b;padding-top:10px"});
-    const tbl=h("div",{style:"display:grid;grid-template-columns:24px repeat("+nW+",1fr) 36px;gap:2px;font-size:9px;font-family:'JetBrains Mono',monospace"});
+    const tbl=h("div",{style:"display:grid;grid-template-columns:24px repeat("+nW+",1fr) 32px 32px 32px;gap:2px;font-size:9px;font-family:'JetBrains Mono',monospace"});
     tbl.appendChild(h("span",{style:"text-align:center"},""));
     weekData.forEach(function(wk){
       const isCur=wk.monD.getTime()===monDate.getTime();
@@ -5214,7 +5232,9 @@ function renderWeeklyReview(){
       const wIdx=weekIdxOfDay(wk.monD.getFullYear(),wm,wk.monD.getDate());
       tbl.appendChild(h("span",{style:"text-align:center;color:"+(isCur?"#3b82f6":"#64748b")+";font-weight:700"},wm+"."+wIdx+"주"));
     });
-    tbl.appendChild(h("span",{style:"text-align:center;color:#64748b;font-weight:700"},"평균"));
+    tbl.appendChild(h("span",{style:"text-align:center;color:#64748b;font-weight:700"},"5주"));
+    tbl.appendChild(h("span",{style:"text-align:center;color:#0d9488;font-weight:700"},"올해"));
+    tbl.appendChild(h("span",{style:"text-align:center;color:#a855f7;font-weight:700"},"3년"));
     GROUPS.forEach(function(g){
       tbl.appendChild(h("span",{style:"text-align:center;color:"+GC[g]+";font-weight:700"},g));
       var gSumTime=0,gSumDays=0;
@@ -5227,7 +5247,11 @@ function renderWeeklyReview(){
         tbl.appendChild(h("span",{style:"text-align:center;color:"+(avg>=0.05?(isCur?"#e2e8f0":"#cbd5e1"):"#334155")+";background:"+(avg>=0.05?(isCur?GC[g]+"40":GC[g]+"20"):"transparent")+";border-radius:2px;padding:2px 0"},fmtAvg(avg)));
       });
       const gAvg=gSumDays>0?gSumTime/gSumDays:0;
+      const cyAvgG=cyRD>0?cyG[g]/cyRD:0;
+      const yr3AvgG=yr3RD>0?yr3G[g]/yr3RD:0;
       tbl.appendChild(h("span",{style:"text-align:center;color:"+GC[g]+";font-weight:700"},fmtAvg(gAvg)));
+      tbl.appendChild(h("span",{style:"text-align:center;color:#0d9488;font-weight:700"},fmtAvg(cyAvgG)));
+      tbl.appendChild(h("span",{style:"text-align:center;color:#a855f7;font-weight:700"},fmtAvg(yr3AvgG)));
     });
     tbl.appendChild(h("span",{style:"text-align:center;color:#64748b;font-weight:700;border-top:1px solid #334155;padding-top:3px;margin-top:1px"},"합"));
     var totT=0,totD=0;
@@ -5239,9 +5263,15 @@ function renderWeeklyReview(){
       tbl.appendChild(h("span",{style:"text-align:center;color:"+(avg>=0.05?(isCur?"#3b82f6":"#94a3b8"):"#334155")+";font-weight:700;border-top:1px solid #334155;padding-top:3px;margin-top:1px"},fmtAvg(avg)));
     });
     const totAvg=totD>0?totT/totD:0;
+    const cyTot=GROUPS.reduce(function(s,g){return s+cyG[g];},0);
+    const yr3Tot=GROUPS.reduce(function(s,g){return s+yr3G[g];},0);
+    const cyAvgTot=cyRD>0?cyTot/cyRD:0;
+    const yr3AvgTot=yr3RD>0?yr3Tot/yr3RD:0;
     tbl.appendChild(h("span",{style:"text-align:center;color:#e2e8f0;font-weight:900;border-top:1px solid #334155;padding-top:3px;margin-top:1px"},fmtAvg(totAvg)));
+    tbl.appendChild(h("span",{style:"text-align:center;color:#0d9488;font-weight:900;border-top:1px solid #334155;padding-top:3px;margin-top:1px"},fmtAvg(cyAvgTot)));
+    tbl.appendChild(h("span",{style:"text-align:center;color:#a855f7;font-weight:900;border-top:1px solid #334155;padding-top:3px;margin-top:1px"},fmtAvg(yr3AvgTot)));
     tblWrap.appendChild(tbl);
-    summaryBox.appendChild(h("div",{style:"font-size:8px;color:#475569;margin-top:10px;text-align:right"},"일평균 (h/일) · 분모=기록일수"));
+    summaryBox.appendChild(h("div",{style:"font-size:8px;color:#475569;margin-top:10px;text-align:right"},"일평균 (h/일) · 분모=기록일수 "+totD+"/"+cyRD+"/"+yr3RD+"일"));
     summaryBox.appendChild(tblWrap);
 
     wrap.appendChild(summaryBox);
@@ -7456,7 +7486,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-25-v79";
+  var SEED_VER="2026-04-25-v80";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

@@ -4102,18 +4102,18 @@ function renderYearlyCharts(){
     })();
 
     // 2) 세부 카테고리 비교 (D1/D2/D3 등) — 점 모양으로 시각 구분
-    var SUB_PT=['circle','rect','star'];
+    var SUB_PT=['circle','rectRot','star'];
     function renderSubChart(canvasId,groupCode,instSetter){
       var cv=document.getElementById(canvasId);if(!cv)return null;
       var cats=groupCats(groupCode);
       var datasets=cats.map(function(c,i){
         var data=tots.map(function(t,j){var rd=recDays[j];return(t[c.code]>0&&rd>0)?+(t[c.code]/rd).toFixed(2):0;});
-        return{label:c.code+" "+c.label,data:data,borderColor:c.color,backgroundColor:c.color+"30",borderWidth:2.5,pointRadius:6,pointHoverRadius:8,pointBackgroundColor:c.color,pointStyle:SUB_PT[i%SUB_PT.length],tension:0.3,fill:false};
+        return{label:c.code+" "+c.label,data:data,borderColor:c.color,backgroundColor:c.color+"30",borderWidth:2.5,pointRadius:8,pointHoverRadius:10,pointBorderWidth:2,pointBorderColor:"#0c0f1a",pointBackgroundColor:c.color,pointStyle:SUB_PT[i%SUB_PT.length],tension:0.3,fill:false};
       });
       return new Chart(cv,{type:"line",plugins:[dlPlugin],
         data:{labels:labels,datasets:datasets},
         options:{responsive:true,maintainAspectRatio:false,
-          plugins:{legend:{labels:{color:"#94a3b8",font:{size:10,family:"'Noto Sans KR',sans-serif"},boxWidth:12,padding:10,usePointStyle:true,pointStyle:SUB_PT}},
+          plugins:{legend:{labels:{color:"#94a3b8",font:{size:10,family:"'Noto Sans KR',sans-serif"},boxWidth:12,padding:10,usePointStyle:true}},
             tooltip:{backgroundColor:"#1e293b",titleColor:"#e2e8f0",bodyColor:"#cbd5e1",borderColor:"#334155",borderWidth:1,usePointStyle:true,
               callbacks:{label:function(ctx){return ctx.dataset.label+": "+ctx.parsed.y+"h/일"}}}},
           scales:{x:{ticks:{color:"#64748b",font:{size:10}},grid:{color:"#1e293b"}},
@@ -4417,7 +4417,7 @@ function renderCharts(ys){
       catAvg[c.code].push((t>0&&rd>0)?Math.round(t/rd*10)/10:0);
     });
   }
-  const SUB_POINT_STYLES=['circle','rect','star'];
+  const SUB_POINT_STYLES=['circle','rectRot','star'];
   function buildSubChart(canvasId,instKey,groupCode){
     const cv=document.getElementById(canvasId);
     if(!cv)return;
@@ -4434,8 +4434,10 @@ function renderCharts(ys){
           borderColor:c.color,
           backgroundColor:c.color+"30",
           borderWidth:2,
-          pointRadius:6,
-          pointHoverRadius:8,
+          pointRadius:8,
+          pointHoverRadius:10,
+          pointBorderWidth:2,
+          pointBorderColor:"#0c0f1a",
           pointBackgroundColor:c.color,
           pointStyle:SUB_POINT_STYLES[i%SUB_POINT_STYLES.length],
           tension:0.3,
@@ -4446,7 +4448,7 @@ function renderCharts(ys){
         responsive:true,
         maintainAspectRatio:false,
         plugins:{
-          legend:{labels:{color:"#94a3b8",font:{size:10,family:"'JetBrains Mono',monospace"},boxWidth:10,padding:8,usePointStyle:true,pointStyle:SUB_POINT_STYLES}},
+          legend:{labels:{color:"#94a3b8",font:{size:10,family:"'JetBrains Mono',monospace"},boxWidth:10,padding:8,usePointStyle:true}},
           tooltip:{backgroundColor:"#1e293b",titleColor:"#e2e8f0",bodyColor:"#cbd5e1",borderColor:"#334155",borderWidth:1,usePointStyle:true,
             callbacks:{label:function(ctx){return ctx.dataset.label+": "+ctx.parsed.y+"h/일"}}}
         },
@@ -7650,7 +7652,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-25-v85";
+  var SEED_VER="2026-04-25-v86";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

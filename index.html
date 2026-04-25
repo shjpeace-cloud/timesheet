@@ -447,6 +447,22 @@ function isHabitAutoChecked(habit,y,m,d){
       }
     }
   }
+  // 성경 읽기 추론 — D1 슬롯의 메모 또는 연결 목표 이름에 "성경"이 포함되면 성경읽기 완료로 인정
+  if(habit.name&&habit.name.indexOf("성경")>=0){
+    for(var t5 in slots){
+      if(t5==="_diary")continue;
+      var s5=slots[t5];
+      if(!s5||s5.actual!=="D1")continue;
+      var memo5=(s5.actualMemo||"").toString();
+      if(memo5.indexOf("성경")>=0)return true;
+      if(s5.actualGoalId){
+        try{
+          var gr5=findGoalById(s5.actualGoalId);
+          if(gr5&&gr5.goal&&(gr5.goal.name||"").indexOf("성경")>=0)return true;
+        }catch(e){}
+      }
+    }
+  }
   return false;
 }
 // 수동+자동 통합 완료 여부
@@ -7702,7 +7718,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-25-v93";
+  var SEED_VER="2026-04-25-v94";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

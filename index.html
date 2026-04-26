@@ -3402,57 +3402,11 @@ function renderMonthlyReview(){
 
   const cy=state.year,cm=state.dashMonth;
 
-  // ── 1a. 월간 실적 표 (현재 분기 3개월 + 전분기 + 올해 + 3년 평균) ──
+  // ── 1a. 월간 성장률 비교 (동월 YoY) + 변동성 비교 (trailing 3개월 CV YoY) ──
   const qtr=Math.ceil(cm/3);
   const qStartM=(qtr-1)*3+1;
   (function(){
-    const qMonths=[qStartM,qStartM+1,qStartM+2];
-    const monData=qMonths.map(function(mm){
-      const cats=getCatHoursByMonth(state.data.entries,mm);
-      const recDays=countRecordedDaysInMonth(state.data.entries,mm);
-      const dayHrs={};GROUPS.forEach(function(g){dayHrs[g]=0;});
-      CATEGORIES.forEach(function(c){dayHrs[c.group]+=(cats[c.code]||0);});
-      const total=Object.values(dayHrs).reduce(function(s,v){return s+v;},0);
-      return{dayHrs:dayHrs,total:total,recDays:recDays,m:mm};
-    });
-
-    // 전분기
-    const prevQ=qtr===1?4:qtr-1;
-    const prevQY=qtr===1?cy-1:cy;
-    const prevQStart=(prevQ-1)*3+1;
-    const prevQEnt=getEntriesForYear(prevQY);
-    const prevQG={};GROUPS.forEach(function(g){prevQG[g]=0;});
-    var prevQRD=0;
-    for(var _pmi=prevQStart;_pmi<prevQStart+3;_pmi++){
-      const _pc=getCatHoursByMonth(prevQEnt,_pmi);
-      prevQRD+=countRecordedDaysInMonth(prevQEnt,_pmi);
-      CATEGORIES.forEach(function(c){prevQG[c.group]+=(_pc[c.code]||0);});
-    }
-
-    // 올해
-    const cyG={};GROUPS.forEach(function(g){cyG[g]=0;});
-    for(var _mi=1;_mi<=12;_mi++){
-      const _mc=getCatHoursByMonth(state.data.entries,_mi);
-      CATEGORIES.forEach(function(c){cyG[c.group]+=(_mc[c.code]||0);});
-    }
-    const cyRD=countRecordedDaysInYear(cy);
-
-    // 5년 (직전 5년 cy-5 ~ cy-1, 진행 중 cy 제외)
-    const yr5G={};GROUPS.forEach(function(g){yr5G[g]=0;});
-    var yr5RD=0;
-    for(var _yi=cy-5;_yi<=cy-1;_yi++){
-      const _ye=getEntriesForYear(_yi);
-      for(var _mi2=1;_mi2<=12;_mi2++){
-        const _mc2=getCatHoursByMonth(_ye,_mi2);
-        CATEGORIES.forEach(function(c){yr5G[c.group]+=(_mc2[c.code]||0);});
-      }
-      yr5RD+=countRecordedDaysInYear(_yi);
-    }
-
-    const summaryBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:14px;border:1px solid #1e293b"});
-    summaryBox.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},"📊 월간 실적 ("+qtr+"분기)"));
-
-    function fmtAvg(v){return v>=0.05?v.toFixed(1):"–";}
+    // 헬퍼
     function calcCV(values){
       var v=values.filter(function(x){return x>=0;});
       if(v.length<2)return null;
@@ -3463,73 +3417,165 @@ function renderMonthlyReview(){
     }
     function fmtCV(c){return c==null?"–":c+"%";}
     function cvColor(c){if(c==null)return "#334155";if(c<=20)return "#10b981";if(c<=40)return "#f59e0b";return "#ef4444";}
-
-    // 그 해 1~12월 월별 일평균 (기록일수 있는 달만) — CV 계산용
-    const monthlyAvgsByG={};GROUPS.forEach(function(g){monthlyAvgsByG[g]=[];});
-    const monthlyTotAvgs=[];
-    for(var _mvi=1;_mvi<=12;_mvi++){
-      const _mvc=getCatHoursByMonth(state.data.entries,_mvi);
-      const _mvrd=countRecordedDaysInMonth(state.data.entries,_mvi);
-      if(_mvrd<=0)continue;
-      var _tsum=0;
-      GROUPS.forEach(function(g){
-        const s=groupCats(g).reduce(function(a,c){return a+(_mvc[c.code]||0);},0);
-        monthlyAvgsByG[g].push(s/_mvrd);
-        _tsum+=s;
-      });
-      monthlyTotAvgs.push(_tsum/_mvrd);
+    function fmtHday(v){return v>=0.05?v.toFixed(2)+"h":"–";}
+    function fmtDiffPP(c, base){
+      if(c==null||base==null)return{txt:"–",color:"#334155"};
+      var d=c-base;
+      var color=d<=-2?"#10b981":d>=2?"#ef4444":"#64748b";
+      return{txt:(d>0?"+":"")+d+"%p",color:color};
+    }
+    function avgVals(arr){
+      var v=arr.filter(function(x){return x!=null;});
+      return v.length>0?v.reduce(function(s,x){return s+x;},0)/v.length:null;
+    }
+    function avgCVs(arr){
+      var v=arr.filter(function(x){return x!=null;});
+      return v.length>0?Math.round(v.reduce(function(s,x){return s+x;},0)/v.length):null;
     }
 
-    const tblWrap=h("div",{});
-    const tbl=h("div",{style:"display:grid;grid-template-columns:24px repeat(3,1fr) 36px 36px 36px 36px;gap:2px;font-size:9px;font-family:'JetBrains Mono',monospace"});
-    tbl.appendChild(h("span",{style:"text-align:center"},""));
-    monData.forEach(function(mo){
-      const isCur=mo.m===cm;
-      tbl.appendChild(h("span",{style:"text-align:center;color:"+(isCur?"#3b82f6":"#64748b")+";font-weight:700"},mo.m+"월"));
-    });
-    tbl.appendChild(h("span",{style:"text-align:center;color:#94a3b8;font-weight:700"},"전분기"));
-    tbl.appendChild(h("span",{style:"text-align:center;color:#0d9488;font-weight:700"},"올해"));
-    tbl.appendChild(h("span",{style:"text-align:center;color:#a855f7;font-weight:700"},"5년"));
-    tbl.appendChild(h("span",{style:"text-align:center;color:#64748b;font-weight:700"},"CV"));
+    // (year, month) → {rd, byG, tot} 캐시
+    var monthCache={};
+    function getMonth(year,month){
+      var key=year+"-"+month;
+      if(!monthCache[key]){
+        var ent=getEntriesForYear(year);
+        var rd=countRecordedDaysInMonth(ent,month);
+        var entry={rd:rd, byG:{}, tot:null};
+        if(rd>0){
+          var mc=getCatHoursByMonth(ent,month);
+          var totH=0;
+          GROUPS.forEach(function(g){
+            var s=groupCats(g).reduce(function(a,c){return a+(mc[c.code]||0);},0);
+            entry.byG[g]=s/rd;
+            totH+=s;
+          });
+          entry.tot=totH/rd;
+        }
+        monthCache[key]=entry;
+      }
+      return monthCache[key];
+    }
+    // 단일 월의 그룹 일평균 (없으면 null)
+    function monAvgG(year,month,group){
+      var m=getMonth(year,month);
+      if(m.rd<=0)return null;
+      return group==="_TOT_"?m.tot:m.byG[group];
+    }
+    // (year, month) 기준 trailing 3개월 CV — 해당 월부터 직전 2개월까지
+    function trailing3CV(year, month, group){
+      var arr=[];
+      for(var i=2;i>=0;i--){
+        var ty=year, tm=month-i;
+        while(tm<=0){tm+=12;ty-=1;}
+        var v=monAvgG(ty,tm,group);
+        if(v!=null)arr.push(v);
+      }
+      return calcCV(arr);
+    }
 
+    // ── 데이터: 성장률 (동월 YoY) ──
+    var cur={}, last={};
     GROUPS.forEach(function(g){
-      tbl.appendChild(h("span",{style:"text-align:center;color:"+GC[g]+";font-weight:700"},g));
-      monData.forEach(function(mo){
-        const isCur=mo.m===cm;
-        const v=mo.recDays>0?mo.dayHrs[g]/mo.recDays:0;
-        tbl.appendChild(h("span",{style:"text-align:center;color:"+(v>=0.05?(isCur?"#e2e8f0":"#cbd5e1"):"#334155")+";background:"+(v>=0.05?(isCur?GC[g]+"40":GC[g]+"20"):"transparent")+";border-radius:2px;padding:2px 0"},fmtAvg(v)));
-      });
-      const prevQAvg=prevQRD>0?prevQG[g]/prevQRD:0;
-      const cyAvgG=cyRD>0?cyG[g]/cyRD:0;
-      const yr5AvgG=yr5RD>0?yr5G[g]/yr5RD:0;
-      const gCV=calcCV(monthlyAvgsByG[g]);
-      tbl.appendChild(h("span",{style:"text-align:center;color:#94a3b8;font-weight:700"},fmtAvg(prevQAvg)));
-      tbl.appendChild(h("span",{style:"text-align:center;color:#0d9488;font-weight:700"},fmtAvg(cyAvgG)));
-      tbl.appendChild(h("span",{style:"text-align:center;color:#a855f7;font-weight:700"},fmtAvg(yr5AvgG)));
-      tbl.appendChild(h("span",{style:"text-align:center;color:"+cvColor(gCV)+";font-weight:700"},fmtCV(gCV)));
+      cur[g]=monAvgG(cy,cm,g)||0;
+      last[g]=monAvgG(cy-1,cm,g)||0;
     });
+    var past5={}, past5N=0;
+    GROUPS.forEach(function(g){past5[g]=0;});
+    for(var py=cy-1;py>=cy-5;py--){
+      if(getMonth(py,cm).rd>0){past5N++;GROUPS.forEach(function(g){past5[g]+=monAvgG(py,cm,g);});}
+    }
+    GROUPS.forEach(function(g){past5[g]=past5N>0?past5[g]/past5N:0;});
 
-    tbl.appendChild(h("span",{style:"text-align:center;color:#64748b;font-weight:700;border-top:1px solid #334155;padding-top:3px;margin-top:1px"},"합"));
-    monData.forEach(function(mo){
-      const isCur=mo.m===cm;
-      const totAvg=mo.recDays>0?mo.total/mo.recDays:0;
-      tbl.appendChild(h("span",{style:"text-align:center;color:"+(totAvg>=0.05?(isCur?"#3b82f6":"#94a3b8"):"#334155")+";font-weight:700;border-top:1px solid #334155;padding-top:3px;margin-top:1px"},fmtAvg(totAvg)));
+    // ── 표 1: 성장률 비교 ──
+    var growSec=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:14px;border:1px solid #1e293b"});
+    growSec.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},"📈 성장률 비교 ("+cm+"월 일평균)"));
+    var growGrid=h("div",{style:"display:grid;grid-template-columns:24px 1fr 1fr 1fr 1fr 1fr;gap:2px;font-family:'JetBrains Mono',monospace"});
+    growGrid.appendChild(h("div",{},""));
+    growGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#3b82f6;font-weight:700;padding-top:4px"},cm+"월"));
+    growGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#94a3b8;font-weight:700;padding-top:4px"},"'"+String(cy-1).slice(2)+" "+cm+"월"));
+    growGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#64748b;font-weight:700;padding-top:4px"},"vs작년"));
+    growGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#0d9488;font-weight:700;padding-top:4px"},"5년평균"));
+    growGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#0d9488;font-weight:700;padding-top:4px"},"vs5년"));
+    var grandCur=0,grandLast=0,grandP5=0;
+    GROUPS.forEach(function(g){
+      var c=cur[g]||0,l=last[g]||0,p=past5[g]||0;
+      grandCur+=c;grandLast+=l;grandP5+=p;
+      var dL=fmtDiff(c,l), dP=fmtDiff(c,p);
+      growGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:"+GC[g]+";font-weight:700;padding-top:6px"},g));
+      growGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+(c>=0.05?"#e2e8f0":"#334155")+";font-weight:700;padding:4px 0;background:"+(c>=0.05?GC[g]+"30":"transparent")+";border-radius:2px"},fmtHday(c)));
+      growGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+(l>=0.05?"#94a3b8":"#334155")+";font-weight:700;padding-top:6px"},fmtHday(l)));
+      growGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:"+dL.color+";font-weight:700;padding-top:6px"},dL.txt));
+      growGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+(p>=0.05?"#0d9488":"#334155")+";font-weight:700;padding-top:6px"},fmtHday(p)));
+      growGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:"+dP.color+";font-weight:700;padding-top:6px"},dP.txt));
     });
-    const prevQTot=GROUPS.reduce(function(s,g){return s+prevQG[g];},0);
-    const cyTot=GROUPS.reduce(function(s,g){return s+cyG[g];},0);
-    const yr5Tot=GROUPS.reduce(function(s,g){return s+yr5G[g];},0);
-    const prevQAvgT=prevQRD>0?prevQTot/prevQRD:0;
-    const cyAvgT=cyRD>0?cyTot/cyRD:0;
-    const yr5AvgT=yr5RD>0?yr5Tot/yr5RD:0;
-    const totCV=calcCV(monthlyTotAvgs);
-    tbl.appendChild(h("span",{style:"text-align:center;color:#94a3b8;font-weight:900;border-top:1px solid #334155;padding-top:3px;margin-top:1px"},fmtAvg(prevQAvgT)));
-    tbl.appendChild(h("span",{style:"text-align:center;color:#0d9488;font-weight:900;border-top:1px solid #334155;padding-top:3px;margin-top:1px"},fmtAvg(cyAvgT)));
-    tbl.appendChild(h("span",{style:"text-align:center;color:#a855f7;font-weight:900;border-top:1px solid #334155;padding-top:3px;margin-top:1px"},fmtAvg(yr5AvgT)));
-    tbl.appendChild(h("span",{style:"text-align:center;color:"+cvColor(totCV)+";font-weight:900;border-top:1px solid #334155;padding-top:3px;margin-top:1px"},fmtCV(totCV)));
-    tblWrap.appendChild(tbl);
-    summaryBox.appendChild(tblWrap);
-    summaryBox.appendChild(h("div",{style:"font-size:8px;color:#475569;margin-top:10px;text-align:right"},"일평균 (h/일) · 분모=기록일수 · 전분기 "+(qtr===1?(cy-1)+"-":"")+prevQ+"Q · CV=올해 1~"+monthlyTotAvgs.length+"월 변동계수(σ/μ%)"));
-    wrap.appendChild(summaryBox);
+    var totDL=fmtDiff(grandCur,grandLast), totDP=fmtDiff(grandCur,grandP5);
+    growGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#64748b;font-weight:700;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},"합"));
+    growGrid.appendChild(h("div",{style:"text-align:center;font-size:12px;color:#3b82f6;font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},fmtHday(grandCur)));
+    growGrid.appendChild(h("div",{style:"text-align:center;font-size:12px;color:#94a3b8;font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},fmtHday(grandLast)));
+    growGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+totDL.color+";font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},totDL.txt));
+    growGrid.appendChild(h("div",{style:"text-align:center;font-size:12px;color:#0d9488;font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},fmtHday(grandP5)));
+    growGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+totDP.color+";font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},totDP.txt));
+    growSec.appendChild(growGrid);
+    growSec.appendChild(h("div",{style:"font-size:8px;color:#475569;margin-top:8px;text-align:right;line-height:1.4"},"일평균 (h/일) · 분모="+cm+"월 기록일수 · 5년평균=직전5년("+(cy-5)+"~"+(cy-1)+") "+cm+"월 "+past5N+"개년 평균"));
+    wrap.appendChild(growSec);
+
+    // ── 데이터: 변동성 (trailing 3개월 CV YoY) ──
+    var cvCurG={}, cvHistG={}, cvPast5G={};
+    GROUPS.forEach(function(g){
+      cvCurG[g]=trailing3CV(cy,cm,g);
+      cvHistG[g]={};
+      var arr=[];
+      for(var hy=cy-5;hy<=cy-1;hy++){
+        var v=trailing3CV(hy,cm,g);
+        cvHistG[g][hy]=v;
+        if(v!=null)arr.push(v);
+      }
+      cvPast5G[g]=avgCVs(arr);
+    });
+    var cvCurTot=trailing3CV(cy,cm,"_TOT_");
+    var cvHistTot={}, cvPast5TotArr=[];
+    for(var hy2=cy-5;hy2<=cy-1;hy2++){
+      cvHistTot[hy2]=trailing3CV(hy2,cm,"_TOT_");
+      if(cvHistTot[hy2]!=null)cvPast5TotArr.push(cvHistTot[hy2]);
+    }
+    var cvPast5Tot=avgCVs(cvPast5TotArr);
+
+    // ── 표 2: 변동성 비교 (trailing 3개월 CV YoY) ──
+    var cvSec=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:14px;border:1px solid #1e293b"});
+    cvSec.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},"📊 변동성 비교 (trailing 3개월 CV %, ↓안정)"));
+    var cvGrid=h("div",{style:"display:grid;grid-template-columns:22px repeat(5,1fr) 1.1fr 1.1fr 1fr;gap:2px;font-family:'JetBrains Mono',monospace"});
+    cvGrid.appendChild(h("div",{},""));
+    var histYears=[];
+    for(var hy3=cy-5;hy3<=cy-1;hy3++)histYears.push(hy3);
+    histYears.forEach(function(y){
+      cvGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#94a3b8;font-weight:700;padding-top:4px"},"'"+String(y).slice(2)));
+    });
+    cvGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#3b82f6;font-weight:700;padding-top:4px"},"이번"));
+    cvGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#0d9488;font-weight:700;padding-top:4px"},"5년평균"));
+    cvGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#64748b;font-weight:700;padding-top:4px"},"차이"));
+    GROUPS.forEach(function(g){
+      var diff=fmtDiffPP(cvCurG[g],cvPast5G[g]);
+      cvGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:"+GC[g]+";font-weight:700;padding-top:6px"},g));
+      histYears.forEach(function(y){
+        var v=cvHistG[g][y];
+        cvGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:"+cvColor(v)+";font-weight:700;padding:4px 0"},fmtCV(v)));
+      });
+      cvGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+cvColor(cvCurG[g])+";font-weight:700;padding:4px 0;background:"+(cvCurG[g]!=null?GC[g]+"30":"transparent")+";border-radius:2px"},fmtCV(cvCurG[g])));
+      cvGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+cvColor(cvPast5G[g])+";font-weight:700;padding:4px 0"},fmtCV(cvPast5G[g])));
+      cvGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:"+diff.color+";font-weight:700;padding:4px 0"},diff.txt));
+    });
+    var totDiff=fmtDiffPP(cvCurTot,cvPast5Tot);
+    cvGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#64748b;font-weight:700;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},"합"));
+    histYears.forEach(function(y){
+      var v=cvHistTot[y];
+      cvGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+cvColor(v)+";font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},fmtCV(v)));
+    });
+    cvGrid.appendChild(h("div",{style:"text-align:center;font-size:12px;color:"+cvColor(cvCurTot)+";font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},fmtCV(cvCurTot)));
+    cvGrid.appendChild(h("div",{style:"text-align:center;font-size:12px;color:"+cvColor(cvPast5Tot)+";font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},fmtCV(cvPast5Tot)));
+    cvGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+totDiff.color+";font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},totDiff.txt));
+    cvSec.appendChild(cvGrid);
+    cvSec.appendChild(h("div",{style:"font-size:8px;color:#475569;margin-top:8px;text-align:right;line-height:1.4"},"각 셀 = 해당 연도 "+cm+"월 포함 직전 3개월의 월간 일평균 σ/μ · 5년평균=직전5년("+(cy-5)+"~"+(cy-1)+") trailing CV들의 평균 · 차이=이번−5년평균 (음수=개선) · ≤20% 안정"));
+    wrap.appendChild(cvSec);
   })();
   // ── 1b. 연간 추이 차트 (1~12월 라인) — DREAM 5그룹 + 각 그룹 세부 ──
   var lineSec=h("div",{className:"chart-container"});
@@ -7864,7 +7910,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-26-v105";
+  var SEED_VER="2026-04-26-v106";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

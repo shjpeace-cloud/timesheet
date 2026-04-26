@@ -3951,48 +3951,48 @@ function renderYearlyReview(){
     function cvAchieved(g,cur){var t=cvTarget(g);if(t==null||cur==null)return null;return cur<=t;}
     function cvTargetTot(){var s=simResults._TOT_;return s?s.p25_cv:null;}
     function cvAchievedTot(cur){var t=cvTargetTot();if(t==null||cur==null)return null;return cur<=t;}
-    // 목표 셀 빌더 — 시간/CV 값 + 보조 % 또는 %p, 달성 시 ✓ + 녹색
+    // 목표 셀 빌더 — target 값 + (보조 %/%p) inline, 달성 시 ✓ + 녹색
     function growthTargetCell(target, curVal, achieved, isTotal){
-      var c=h("div",{style:"text-align:center;"+(isTotal?"border-top:1px solid #334155;padding:5px 0 1px;margin-top:1px;":"padding:3px 0;")});
-      if(target==null){c.appendChild(h("div",{style:"font-size:11px;color:#475569"},"—"));return c;}
+      var c=h("div",{style:"text-align:center;"+(isTotal?"border-top:1px solid #334155;padding:6px 0 2px;margin-top:1px;":"padding:5px 0;")});
+      if(target==null){c.appendChild(h("div",{style:"font-size:13px;color:#475569"},"—"));return c;}
       var ach=achieved===true;
       c.style.background=ach?"#10b98122":"transparent";
       c.style.borderRadius="2px";
-      var topColor=ach?"#10b981":"#a855f7";
+      var color=ach?"#10b981":"#a855f7";
       var pct=curVal>0.01?Math.round((target-curVal)/curVal*100):null;
-      var pctTxt=pct==null?"":((pct>0?"+":"")+pct+"%");
-      c.appendChild(h("div",{style:"font-size:11px;color:"+topColor+";font-weight:"+(isTotal?"900":"700")+";line-height:1.1"},(ach?fmtHday(target)+" ✓":fmtHday(target))));
-      if(pctTxt)c.appendChild(h("div",{style:"font-size:8px;color:"+(ach?"#10b981":"#94a3b8")+";font-weight:600;line-height:1.1;margin-top:1px"},pctTxt));
+      var pctStr=pct==null?"":" ("+(pct>0?"+":"")+pct+"%)";
+      var checkStr=ach?" ✓":"";
+      c.appendChild(h("div",{style:"font-size:"+(isTotal?"14":"13")+"px;color:"+color+";font-weight:"+(isTotal?"900":"700")+";line-height:1.2"},fmtHday(target)+pctStr+checkStr));
       return c;
     }
     function cvTargetCell(target, curVal, achieved, isTotal){
-      var c=h("div",{style:"text-align:center;"+(isTotal?"border-top:1px solid #334155;padding:5px 0 1px;margin-top:1px;":"padding:3px 0;")});
-      if(target==null){c.appendChild(h("div",{style:"font-size:11px;color:#475569"},"—"));return c;}
+      var c=h("div",{style:"text-align:center;"+(isTotal?"border-top:1px solid #334155;padding:6px 0 2px;margin-top:1px;":"padding:5px 0;")});
+      if(target==null){c.appendChild(h("div",{style:"font-size:13px;color:#475569"},"—"));return c;}
       var ach=achieved===true;
       c.style.background=ach?"#10b98122":"transparent";
       c.style.borderRadius="2px";
-      var topColor=ach?"#10b981":"#a855f7";
+      var color=ach?"#10b981":"#a855f7";
       var diffP=curVal!=null?(curVal-target):null;
-      var diffTxt=diffP==null?"":((diffP>0?"+":"")+diffP+"%p");
-      c.appendChild(h("div",{style:"font-size:11px;color:"+topColor+";font-weight:"+(isTotal?"900":"700")+";line-height:1.1"},(ach?fmtCV(target)+" ✓":fmtCV(target))));
-      if(diffTxt)c.appendChild(h("div",{style:"font-size:8px;color:"+(ach?"#10b981":"#94a3b8")+";font-weight:600;line-height:1.1;margin-top:1px"},diffTxt));
+      var diffStr=diffP==null?"":" ("+(diffP>0?"+":"")+diffP+"%p)";
+      var checkStr=ach?" ✓":"";
+      c.appendChild(h("div",{style:"font-size:"+(isTotal?"14":"13")+"px;color:"+color+";font-weight:"+(isTotal?"900":"700")+";line-height:1.2"},fmtCV(target)+diffStr+checkStr));
       return c;
     }
 
     // ── 통합 표: 성장률 + 변동성 (각 2컬럼: 2026 + 🎯목표) ──
-    var box=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:14px;border:1px solid #1e293b"});
-    box.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},"📊 "+cy+"년 KPI 종합"));
-    var grid=h("div",{style:"display:grid;grid-template-columns:24px 1fr 1.3fr 1fr 1.3fr;gap:2px;font-family:'JetBrains Mono',monospace"});
+    var box=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:14px;margin-bottom:14px;border:1px solid #1e293b"});
+    box.appendChild(h("div",{style:"font-size:14px;color:#cbd5e1;font-weight:700;margin-bottom:12px;letter-spacing:.3px"},"🎯 "+cy+"년 영역별 KPI — 성과 vs 시뮬 목표"));
+    var grid=h("div",{style:"display:grid;grid-template-columns:28px 1fr 1.6fr 1fr 1.6fr;gap:3px;font-family:'JetBrains Mono',monospace"});
     // Row 1: 그룹 헤더 (성장률 / 변동성)
     grid.appendChild(h("div",{},""));
-    grid.appendChild(h("div",{style:"text-align:center;font-size:9px;color:#94a3b8;font-weight:700;padding:2px 0;grid-column:span 2;border-bottom:1px solid #1e293b"},"📈 성장률 (h/일)"));
-    grid.appendChild(h("div",{style:"text-align:center;font-size:9px;color:#94a3b8;font-weight:700;padding:2px 0;grid-column:span 2;border-bottom:1px solid #1e293b"},"📊 변동성 (CV %)"));
+    grid.appendChild(h("div",{style:"text-align:center;font-size:13px;color:#cbd5e1;font-weight:700;padding:4px 0;grid-column:span 2;border-bottom:1px solid #334155"},"📈 성장률 (h/일)"));
+    grid.appendChild(h("div",{style:"text-align:center;font-size:13px;color:#cbd5e1;font-weight:700;padding:4px 0;grid-column:span 2;border-bottom:1px solid #334155"},"📊 변동성 (CV %)"));
     // Row 2: 서브 헤더
     grid.appendChild(h("div",{},""));
-    grid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#3b82f6;font-weight:700;padding-top:4px"},cy+"년"));
-    grid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#a855f7;font-weight:700;padding-top:4px"},"🎯목표"));
-    grid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#3b82f6;font-weight:700;padding-top:4px"},cy+"년"));
-    grid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#a855f7;font-weight:700;padding-top:4px"},"🎯목표"));
+    grid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:#3b82f6;font-weight:700;padding-top:5px"},cy+"년"));
+    grid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:#a855f7;font-weight:700;padding-top:5px"},"🎯목표"));
+    grid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:#3b82f6;font-weight:700;padding-top:5px"},cy+"년"));
+    grid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:#a855f7;font-weight:700;padding-top:5px"},"🎯목표"));
     // 그룹 행
     var grandCur=0;
     GROUPS.forEach(function(g){
@@ -4001,24 +4001,24 @@ function renderYearlyReview(){
       var mt=meanTarget(g);
       var cvCur=yearInYrCV[cy]?yearInYrCV[cy][g]:null;
       var ct=cvTarget(g);
-      grid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:"+GC[g]+";font-weight:700;padding-top:6px"},g));
-      grid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+(c>=0.05?"#e2e8f0":"#334155")+";font-weight:700;padding:4px 0;background:"+(c>=0.05?GC[g]+"30":"transparent")+";border-radius:2px"},fmtHday(c)));
+      grid.appendChild(h("div",{style:"text-align:center;font-size:12px;color:"+GC[g]+";font-weight:700;padding-top:7px"},g));
+      grid.appendChild(h("div",{style:"text-align:center;font-size:13px;color:"+(c>=0.05?"#e2e8f0":"#334155")+";font-weight:700;padding:5px 0;background:"+(c>=0.05?GC[g]+"30":"transparent")+";border-radius:2px"},fmtHday(c)));
       grid.appendChild(growthTargetCell(mt, c, meanAchieved(g,c), false));
-      grid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+cvColor(cvCur)+";font-weight:700;padding:4px 0;background:"+(cvCur!=null?GC[g]+"30":"transparent")+";border-radius:2px"},fmtCV(cvCur)));
+      grid.appendChild(h("div",{style:"text-align:center;font-size:13px;color:"+cvColor(cvCur)+";font-weight:700;padding:5px 0;background:"+(cvCur!=null?GC[g]+"30":"transparent")+";border-radius:2px"},fmtCV(cvCur)));
       grid.appendChild(cvTargetCell(ct, cvCur, cvAchieved(g,cvCur), false));
     });
     // 합 행
     var totMT=meanTargetTot();
     var curTotCV=yearInYrCV[cy]?yearInYrCV[cy].tot:null;
     var totCT=cvTargetTot();
-    grid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#64748b;font-weight:700;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},"합"));
-    grid.appendChild(h("div",{style:"text-align:center;font-size:12px;color:#3b82f6;font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},fmtHday(grandCur)));
+    grid.appendChild(h("div",{style:"text-align:center;font-size:12px;color:#64748b;font-weight:700;border-top:1px solid #334155;padding-top:6px;margin-top:1px"},"합"));
+    grid.appendChild(h("div",{style:"text-align:center;font-size:14px;color:#3b82f6;font-weight:900;border-top:1px solid #334155;padding-top:6px;margin-top:1px"},fmtHday(grandCur)));
     grid.appendChild(growthTargetCell(totMT, grandCur, meanAchievedTot(grandCur), true));
-    grid.appendChild(h("div",{style:"text-align:center;font-size:12px;color:"+cvColor(curTotCV)+";font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},fmtCV(curTotCV)));
+    grid.appendChild(h("div",{style:"text-align:center;font-size:14px;color:"+cvColor(curTotCV)+";font-weight:900;border-top:1px solid #334155;padding-top:6px;margin-top:1px"},fmtCV(curTotCV)));
     grid.appendChild(cvTargetCell(totCT, curTotCV, cvAchievedTot(curTotCV), true));
     box.appendChild(grid);
     var simPoolLabel=simPoolYears.length>0?simPoolYears[0]+"~'"+String(simPoolYears[simPoolYears.length-1]).slice(2)+" "+simPoolYears.length+"개년":"부족";
-    box.appendChild(h("div",{style:"font-size:8px;color:#475569;margin-top:8px;text-align:right;line-height:1.4"},"성장률: 일평균 h/일 · 🎯=풀 P75 (M은 P25) · 보조=현재→목표 증가율 · 변동성: 12개월 σ/μ % · 🎯=P25 CV · 보조=현재−목표 %p · 모집단=기록률≥70% ("+simPoolLabel+")"));
+    box.appendChild(h("div",{style:"font-size:9px;color:#64748b;margin-top:10px;text-align:right;line-height:1.5"},"성장률 일평균 h/일 · 🎯=풀 P75 (M은 P25) · 괄호=현재→목표 증가율 · 변동성 12개월 σ/μ % · 🎯=P25 CV · 괄호=현재−목표 %p · 모집단=기록률≥70% ("+simPoolLabel+")"));
     wrap.appendChild(box);
   })();
 
@@ -7992,7 +7992,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-26-v111";
+  var SEED_VER="2026-04-26-v112";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

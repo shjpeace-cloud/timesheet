@@ -3981,7 +3981,7 @@ function renderYearlyReview(){
 
     // ── 통합 표: 성장률 + 변동성 (각 2컬럼: 2026 + 🎯목표) ──
     var box=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:14px;margin-bottom:14px;border:1px solid #1e293b"});
-    box.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},"📊 연간 실적과 목표"));
+    box.appendChild(h("h3",{className:"chart-title"},"📊 연간 실적과 목표"));
     var grid=h("div",{style:"display:grid;grid-template-columns:28px 1fr 1.6fr 1fr 1.6fr;gap:3px;font-family:'JetBrains Mono',monospace"});
     // Row 1: 그룹 헤더 (성장률 / 변동성)
     grid.appendChild(h("div",{},""));
@@ -7992,7 +7992,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-26-v113";
+  var SEED_VER="2026-04-26-v114";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

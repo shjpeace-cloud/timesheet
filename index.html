@@ -3879,10 +3879,16 @@ function renderYearlyReview(){
     for(var py3=cy-1;py3>=cy-5;py3--){if(yearInYrCV[py3])past5AvgTotArr.push(yearInYrCV[py3].tot);}
     var past5AvgTot=avgCVs(past5AvgTotArr);
 
-    // ── 시뮬레이션: 2020~2024 월간 풀 부트스트랩 (2019·2025 기록률 낮음 제외) ──
+    // ── 시뮬레이션 모집단: 2019~cy-1 중 연 기록률 ≥70%인 해 (cy 제외) ──
+    var simPoolYears=[];
+    for(var psy=2019;psy<=cy-1;psy++){
+      var psyRD=countRecordedDaysInYear(psy);
+      var psyTotal=((psy%4===0&&psy%100!==0)||psy%400===0)?366:365;
+      if(psyRD/psyTotal>=0.7)simPoolYears.push(psy);
+    }
     function buildSimPool(group){
       var pool=[];
-      for(var sy=2020;sy<=2024;sy++){
+      simPoolYears.forEach(function(sy){
         var sent=getEntriesForYear(sy);
         for(var sm=1;sm<=12;sm++){
           var srd=countRecordedDaysInMonth(sent,sm);
@@ -3893,7 +3899,7 @@ function renderYearlyReview(){
             : groupCats(group).reduce(function(a,c){return a+(smc[c.code]||0);},0);
           pool.push(s/srd);
         }
-      }
+      });
       return pool;
     }
     function makeRng(seed){
@@ -4011,7 +4017,8 @@ function renderYearlyReview(){
     grid.appendChild(h("div",{style:"text-align:center;font-size:12px;color:"+cvColor(curTotCV)+";font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},fmtCV(curTotCV)));
     grid.appendChild(cvTargetCell(totCT, curTotCV, cvAchievedTot(curTotCV), true));
     box.appendChild(grid);
-    box.appendChild(h("div",{style:"font-size:8px;color:#475569;margin-top:8px;text-align:right;line-height:1.4"},"성장률: 일평균 h/일 · 🎯=2020~'24 풀 P75 (M은 P25) · 보조=현재→목표 증가율 · 변동성: 12개월 σ/μ % · 🎯=P25 CV · 보조=현재−목표 %p"));
+    var simPoolLabel=simPoolYears.length>0?simPoolYears[0]+"~'"+String(simPoolYears[simPoolYears.length-1]).slice(2)+" "+simPoolYears.length+"개년":"부족";
+    box.appendChild(h("div",{style:"font-size:8px;color:#475569;margin-top:8px;text-align:right;line-height:1.4"},"성장률: 일평균 h/일 · 🎯=풀 P75 (M은 P25) · 보조=현재→목표 증가율 · 변동성: 12개월 σ/μ % · 🎯=P25 CV · 보조=현재−목표 %p · 모집단=기록률≥70% ("+simPoolLabel+")"));
     wrap.appendChild(box);
   })();
 
@@ -7985,7 +7992,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-26-v110";
+  var SEED_VER="2026-04-26-v111";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

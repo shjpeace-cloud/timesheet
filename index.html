@@ -3945,92 +3945,74 @@ function renderYearlyReview(){
     function cvAchieved(g,cur){var t=cvTarget(g);if(t==null||cur==null)return null;return cur<=t;}
     function cvTargetTot(){var s=simResults._TOT_;return s?s.p25_cv:null;}
     function cvAchievedTot(cur){var t=cvTargetTot();if(t==null||cur==null)return null;return cur<=t;}
-    // 시뮬 셀 빌더 — target 값, 달성 시에만 ✓ + 녹색 배경
-    function simCell(targetTxt, achieved, valColor, isTotal){
+    // 목표 셀 빌더 — 시간/CV 값 + 보조 % 또는 %p, 달성 시 ✓ + 녹색
+    function growthTargetCell(target, curVal, achieved, isTotal){
+      var c=h("div",{style:"text-align:center;"+(isTotal?"border-top:1px solid #334155;padding:5px 0 1px;margin-top:1px;":"padding:3px 0;")});
+      if(target==null){c.appendChild(h("div",{style:"font-size:11px;color:#475569"},"—"));return c;}
       var ach=achieved===true;
-      var color=ach?"#10b981":(valColor||"#a855f7");
-      var bg=ach?"#10b98122":"transparent";
-      var txt=ach?targetTxt+" ✓":targetTxt;
-      var c=h("div",{style:"text-align:center;background:"+bg+";border-radius:2px;"+(isTotal?"border-top:1px solid #334155;padding:5px 0 1px;margin-top:1px;":"padding:3px 0;")});
-      c.appendChild(h("div",{style:"font-size:11px;color:"+color+";font-weight:"+(isTotal?"900":"700")+";line-height:1.1"},txt));
+      c.style.background=ach?"#10b98122":"transparent";
+      c.style.borderRadius="2px";
+      var topColor=ach?"#10b981":"#a855f7";
+      var pct=curVal>0.01?Math.round((target-curVal)/curVal*100):null;
+      var pctTxt=pct==null?"":((pct>0?"+":"")+pct+"%");
+      c.appendChild(h("div",{style:"font-size:11px;color:"+topColor+";font-weight:"+(isTotal?"900":"700")+";line-height:1.1"},(ach?fmtHday(target)+" ✓":fmtHday(target))));
+      if(pctTxt)c.appendChild(h("div",{style:"font-size:8px;color:"+(ach?"#10b981":"#94a3b8")+";font-weight:600;line-height:1.1;margin-top:1px"},pctTxt));
+      return c;
+    }
+    function cvTargetCell(target, curVal, achieved, isTotal){
+      var c=h("div",{style:"text-align:center;"+(isTotal?"border-top:1px solid #334155;padding:5px 0 1px;margin-top:1px;":"padding:3px 0;")});
+      if(target==null){c.appendChild(h("div",{style:"font-size:11px;color:#475569"},"—"));return c;}
+      var ach=achieved===true;
+      c.style.background=ach?"#10b98122":"transparent";
+      c.style.borderRadius="2px";
+      var topColor=ach?"#10b981":"#a855f7";
+      var diffP=curVal!=null?(curVal-target):null;
+      var diffTxt=diffP==null?"":((diffP>0?"+":"")+diffP+"%p");
+      c.appendChild(h("div",{style:"font-size:11px;color:"+topColor+";font-weight:"+(isTotal?"900":"700")+";line-height:1.1"},(ach?fmtCV(target)+" ✓":fmtCV(target))));
+      if(diffTxt)c.appendChild(h("div",{style:"font-size:8px;color:"+(ach?"#10b981":"#94a3b8")+";font-weight:600;line-height:1.1;margin-top:1px"},diffTxt));
       return c;
     }
 
-    // ── 표 1: 성장률 비교 ──
-    var growSec=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:14px;border:1px solid #1e293b"});
-    growSec.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},"📈 성장률 비교 ("+cy+"년 일평균)"));
-    var growGrid=h("div",{style:"display:grid;grid-template-columns:24px 1fr 1fr 1fr 1fr 1fr 1.2fr;gap:2px;font-family:'JetBrains Mono',monospace"});
-    growGrid.appendChild(h("div",{},""));
-    growGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#3b82f6;font-weight:700;padding-top:4px"},cy+"년"));
-    growGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#94a3b8;font-weight:700;padding-top:4px"},(cy-1)+"년"));
-    growGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#64748b;font-weight:700;padding-top:4px"},"vs작년"));
-    growGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#0d9488;font-weight:700;padding-top:4px"},"5년평균"));
-    growGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#0d9488;font-weight:700;padding-top:4px"},"vs5년"));
-    growGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#a855f7;font-weight:700;padding-top:4px"},"🎯목표"));
-    var grandCur=0,grandLast=0,grandP5=0;
+    // ── 통합 표: 성장률 + 변동성 (각 2컬럼: 2026 + 🎯목표) ──
+    var box=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:14px;border:1px solid #1e293b"});
+    box.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},"📊 "+cy+"년 KPI 종합"));
+    var grid=h("div",{style:"display:grid;grid-template-columns:24px 1fr 1.3fr 1fr 1.3fr;gap:2px;font-family:'JetBrains Mono',monospace"});
+    // Row 1: 그룹 헤더 (성장률 / 변동성)
+    grid.appendChild(h("div",{},""));
+    grid.appendChild(h("div",{style:"text-align:center;font-size:9px;color:#94a3b8;font-weight:700;padding:2px 0;grid-column:span 2;border-bottom:1px solid #1e293b"},"📈 성장률 (h/일)"));
+    grid.appendChild(h("div",{style:"text-align:center;font-size:9px;color:#94a3b8;font-weight:700;padding:2px 0;grid-column:span 2;border-bottom:1px solid #1e293b"},"📊 변동성 (CV %)"));
+    // Row 2: 서브 헤더
+    grid.appendChild(h("div",{},""));
+    grid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#3b82f6;font-weight:700;padding-top:4px"},cy+"년"));
+    grid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#a855f7;font-weight:700;padding-top:4px"},"🎯목표"));
+    grid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#3b82f6;font-weight:700;padding-top:4px"},cy+"년"));
+    grid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#a855f7;font-weight:700;padding-top:4px"},"🎯목표"));
+    // 그룹 행
+    var grandCur=0;
     GROUPS.forEach(function(g){
-      var c=cur[g]||0,l=last[g]||0,p=past5[g]||0;
-      grandCur+=c;grandLast+=l;grandP5+=p;
-      var dL=fmtDiff(c,l), dP=fmtDiff(c,p);
-      growGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:"+GC[g]+";font-weight:700;padding-top:6px"},g));
-      growGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+(c>=0.05?"#e2e8f0":"#334155")+";font-weight:700;padding:4px 0;background:"+(c>=0.05?GC[g]+"30":"transparent")+";border-radius:2px"},fmtHday(c)));
-      growGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+(l>=0.05?"#94a3b8":"#334155")+";font-weight:700;padding-top:6px"},fmtHday(l)));
-      growGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:"+dL.color+";font-weight:700;padding-top:6px"},dL.txt));
-      growGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+(p>=0.05?"#0d9488":"#334155")+";font-weight:700;padding-top:6px"},fmtHday(p)));
-      growGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:"+dP.color+";font-weight:700;padding-top:6px"},dP.txt));
+      var c=cur[g]||0;
+      grandCur+=c;
       var mt=meanTarget(g);
-      growGrid.appendChild(simCell(mt!=null?fmtHday(mt):"—",meanAchieved(g,c),"#a855f7",false));
-    });
-    var totDL=fmtDiff(grandCur,grandLast), totDP=fmtDiff(grandCur,grandP5);
-    growGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#64748b;font-weight:700;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},"합"));
-    growGrid.appendChild(h("div",{style:"text-align:center;font-size:12px;color:#3b82f6;font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},fmtHday(grandCur)));
-    growGrid.appendChild(h("div",{style:"text-align:center;font-size:12px;color:#94a3b8;font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},fmtHday(grandLast)));
-    growGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+totDL.color+";font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},totDL.txt));
-    growGrid.appendChild(h("div",{style:"text-align:center;font-size:12px;color:#0d9488;font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},fmtHday(grandP5)));
-    growGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+totDP.color+";font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},totDP.txt));
-    var totMT=meanTargetTot();
-    growGrid.appendChild(simCell(totMT!=null?fmtHday(totMT):"—",meanAchievedTot(grandCur),"#a855f7",true));
-    growSec.appendChild(growGrid);
-    growSec.appendChild(h("div",{style:"font-size:8px;color:#475569;margin-top:8px;text-align:right;line-height:1.4"},"일평균 (h/일) · 분모=기록일수 · 직전5년="+(cy-5)+"~"+(cy-1)+" "+past5N+"개년 평균 · 🎯목표=2020~'24 풀 부트스트랩 P75 (M은 P25)"));
-    wrap.appendChild(growSec);
-
-    // ── 표 2: 변동성 비교 (연도내 CV %, ↓안정) ──
-    var cvSec=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:14px;border:1px solid #1e293b"});
-    cvSec.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},"📊 변동성 비교 (연도내 CV %, ↓안정)"));
-    // 6컬럼 (성장률표와 동일 구조): label + 2026 + 2025 + 5년평균 + 차이 + 목표
-    var cvGrid=h("div",{style:"display:grid;grid-template-columns:24px 1fr 1fr 1fr 1fr 1.2fr;gap:2px;font-family:'JetBrains Mono',monospace"});
-    cvGrid.appendChild(h("div",{},""));
-    cvGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#3b82f6;font-weight:700;padding-top:4px"},cy+"년"));
-    cvGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#94a3b8;font-weight:700;padding-top:4px"},(cy-1)+"년"));
-    cvGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#0d9488;font-weight:700;padding-top:4px"},"5년평균"));
-    cvGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#64748b;font-weight:700;padding-top:4px"},"차이"));
-    cvGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#a855f7;font-weight:700;padding-top:4px"},"🎯목표"));
-    GROUPS.forEach(function(g){
       var cvCur=yearInYrCV[cy]?yearInYrCV[cy][g]:null;
-      var cvLast=yearInYrCV[cy-1]?yearInYrCV[cy-1][g]:null;
-      var cvP5=past5AvgG[g];
-      var diff=fmtDiffPP(cvCur,cvP5);
-      cvGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:"+GC[g]+";font-weight:700;padding-top:6px"},g));
-      cvGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+cvColor(cvCur)+";font-weight:700;padding:4px 0;background:"+(cvCur!=null?GC[g]+"30":"transparent")+";border-radius:2px"},fmtCV(cvCur)));
-      cvGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+cvColor(cvLast)+";font-weight:700;padding:4px 0"},fmtCV(cvLast)));
-      cvGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+cvColor(cvP5)+";font-weight:700;padding:4px 0"},fmtCV(cvP5)));
-      cvGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:"+diff.color+";font-weight:700;padding:4px 0"},diff.txt));
       var ct=cvTarget(g);
-      cvGrid.appendChild(simCell(ct!=null?fmtCV(ct):"—",cvAchieved(g,cvCur),"#a855f7",false));
+      grid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:"+GC[g]+";font-weight:700;padding-top:6px"},g));
+      grid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+(c>=0.05?"#e2e8f0":"#334155")+";font-weight:700;padding:4px 0;background:"+(c>=0.05?GC[g]+"30":"transparent")+";border-radius:2px"},fmtHday(c)));
+      grid.appendChild(growthTargetCell(mt, c, meanAchieved(g,c), false));
+      grid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+cvColor(cvCur)+";font-weight:700;padding:4px 0;background:"+(cvCur!=null?GC[g]+"30":"transparent")+";border-radius:2px"},fmtCV(cvCur)));
+      grid.appendChild(cvTargetCell(ct, cvCur, cvAchieved(g,cvCur), false));
     });
+    // 합 행
+    var totMT=meanTargetTot();
     var curTotCV=yearInYrCV[cy]?yearInYrCV[cy].tot:null;
-    var lastTotCV=yearInYrCV[cy-1]?yearInYrCV[cy-1].tot:null;
-    var totDiff=fmtDiffPP(curTotCV, past5AvgTot);
-    cvGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#64748b;font-weight:700;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},"합"));
-    cvGrid.appendChild(h("div",{style:"text-align:center;font-size:12px;color:"+cvColor(curTotCV)+";font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},fmtCV(curTotCV)));
-    cvGrid.appendChild(h("div",{style:"text-align:center;font-size:12px;color:"+cvColor(lastTotCV)+";font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},fmtCV(lastTotCV)));
-    cvGrid.appendChild(h("div",{style:"text-align:center;font-size:12px;color:"+cvColor(past5AvgTot)+";font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},fmtCV(past5AvgTot)));
-    cvGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+totDiff.color+";font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},totDiff.txt));
     var totCT=cvTargetTot();
-    cvGrid.appendChild(simCell(totCT!=null?fmtCV(totCT):"—",cvAchievedTot(curTotCV),"#a855f7",true));
-    cvSec.appendChild(cvGrid);
-    cvSec.appendChild(h("div",{style:"font-size:8px;color:#475569;margin-top:8px;text-align:right;line-height:1.4"},"연도내 CV (12개월 σ/μ) · 5년평균=직전5년("+(cy-5)+"~"+(cy-1)+") · 차이="+cy+"−5년평균 %p (음수=개선) · 🎯목표=2020~'24 풀 부트스트랩 P25"));
-    wrap.appendChild(cvSec);
+    grid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#64748b;font-weight:700;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},"합"));
+    grid.appendChild(h("div",{style:"text-align:center;font-size:12px;color:#3b82f6;font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},fmtHday(grandCur)));
+    grid.appendChild(growthTargetCell(totMT, grandCur, meanAchievedTot(grandCur), true));
+    grid.appendChild(h("div",{style:"text-align:center;font-size:12px;color:"+cvColor(curTotCV)+";font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},fmtCV(curTotCV)));
+    grid.appendChild(cvTargetCell(totCT, curTotCV, cvAchievedTot(curTotCV), true));
+    box.appendChild(grid);
+    box.appendChild(h("div",{style:"font-size:8px;color:#475569;margin-top:8px;text-align:right;line-height:1.4"},"성장률: 일평균 h/일 · 🎯=2020~'24 풀 P75 (M은 P25) · 보조=현재→목표 증가율 · 변동성: 12개월 σ/μ % · 🎯=P25 CV · 보조=현재−목표 %p"));
+    wrap.appendChild(box);
   })();
 
   // ── 연간 DREAM 추이 (2019 ~ cy, 일평균) ──
@@ -8003,7 +7985,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-26-v109";
+  var SEED_VER="2026-04-26-v110";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

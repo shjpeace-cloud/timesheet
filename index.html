@@ -3545,12 +3545,25 @@ function renderMonthlyReview(){
     cvSec.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},"📊 변동성 비교 (trailing 3개월 CV %, ↓안정)"));
     var cvGrid=h("div",{style:"display:grid;grid-template-columns:22px repeat(5,1fr) 1.1fr 1.1fr 1fr;gap:2px;font-family:'JetBrains Mono',monospace"});
     cvGrid.appendChild(h("div",{},""));
+    // 두 줄 헤더 빌더 — 위: 라벨, 아래: trailing 월 범위
+    function trailingRangeStr(month){
+      var startM=month-2;
+      while(startM<=0)startM+=12;
+      return startM+"~"+month+"월";
+    }
+    function twoLineHdr(top,topColor,bottom){
+      var c=h("div",{style:"text-align:center;padding-top:2px"});
+      c.appendChild(h("div",{style:"font-size:10px;color:"+topColor+";font-weight:700;line-height:1.1"},top));
+      c.appendChild(h("div",{style:"font-size:8px;color:#475569;font-weight:600;line-height:1.1;margin-top:1px"},bottom));
+      return c;
+    }
     var histYears=[];
     for(var hy3=cy-5;hy3<=cy-1;hy3++)histYears.push(hy3);
+    var rangeStr=trailingRangeStr(cm);
     histYears.forEach(function(y){
-      cvGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#94a3b8;font-weight:700;padding-top:4px"},"'"+String(y).slice(2)));
+      cvGrid.appendChild(twoLineHdr("'"+String(y).slice(2),"#94a3b8",rangeStr));
     });
-    cvGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#3b82f6;font-weight:700;padding-top:4px"},"이번"));
+    cvGrid.appendChild(twoLineHdr("이번","#3b82f6",cy+"·"+rangeStr.replace("월","")));
     cvGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#0d9488;font-weight:700;padding-top:4px"},"5년평균"));
     cvGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#64748b;font-weight:700;padding-top:4px"},"차이"));
     GROUPS.forEach(function(g){
@@ -7910,7 +7923,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-26-v106";
+  var SEED_VER="2026-04-26-v107";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

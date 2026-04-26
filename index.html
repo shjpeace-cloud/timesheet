@@ -3807,12 +3807,47 @@ function renderYearlyReview(){
     function cvColor(c){if(c==null)return "#334155";if(c<=20)return "#10b981";if(c<=40)return "#f59e0b";return "#ef4444";}
     function fmtHday(v){return v>=0.05?v.toFixed(2)+"h":"–";}
 
+    // 직전 5년 (cy-1..cy-5) 각 해의 연도내 CV 계산 후 평균 — 변동성 표 baseline
+    var past5InYrG={}, past5InYrTot=null;
+    GROUPS.forEach(function(g){past5InYrG[g]=null;});
+    (function(){
+      var sumsG={}, cntsG={}, sumT=0, cntT=0;
+      GROUPS.forEach(function(g){sumsG[g]=0;cntsG[g]=0;});
+      for(var py=cy-1;py>=cy-5;py--){
+        if(!ydata[py]||ydata[py].rd<=0)continue;
+        var pent=ydata[py].ent;
+        var pMonG={};GROUPS.forEach(function(g){pMonG[g]=[];});
+        var pMonT=[];
+        for(var pm=1;pm<=12;pm++){
+          var pmrd=countRecordedDaysInMonth(pent,pm);
+          if(pmrd<=0)continue;
+          var pmc=getCatHoursByMonth(pent,pm);
+          var pts=0;
+          GROUPS.forEach(function(g){
+            var s=groupCats(g).reduce(function(a,c){return a+(pmc[c.code]||0);},0);
+            pMonG[g].push(s/pmrd);
+            pts+=s;
+          });
+          pMonT.push(pts/pmrd);
+        }
+        GROUPS.forEach(function(g){
+          var cv=calcCV(pMonG[g]);
+          if(cv!=null){sumsG[g]+=cv;cntsG[g]++;}
+        });
+        var cvT=calcCV(pMonT);
+        if(cvT!=null){sumT+=cvT;cntT++;}
+      }
+      GROUPS.forEach(function(g){past5InYrG[g]=cntsG[g]>0?Math.round(sumsG[g]/cntsG[g]):null;});
+      past5InYrTot=cntT>0?Math.round(sumT/cntT):null;
+    })();
+
     // ── 표 1: 성장률 비교 ──
     var growSec=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:14px;border:1px solid #1e293b"});
     growSec.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},"📈 성장률 비교 ("+cy+"년 일평균)"));
-    var growGrid=h("div",{style:"display:grid;grid-template-columns:32px 1fr 1fr 1fr;gap:2px;font-family:'JetBrains Mono',monospace"});
+    var growGrid=h("div",{style:"display:grid;grid-template-columns:28px 1fr 1fr 1fr 1fr;gap:2px;font-family:'JetBrains Mono',monospace"});
     growGrid.appendChild(h("div",{},""));
     growGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#3b82f6;font-weight:700;padding-top:4px"},cy+"년"));
+    growGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#0d9488;font-weight:700;padding-top:4px"},"5년평균"));
     growGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#64748b;font-weight:700;padding-top:4px"},"vs작년"));
     growGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#0d9488;font-weight:700;padding-top:4px"},"vs5년평균"));
     var grandCur=0,grandLast=0,grandP5=0;
@@ -3822,12 +3857,14 @@ function renderYearlyReview(){
       var dL=fmtDiff(c,l), dP=fmtDiff(c,p);
       growGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:"+GC[g]+";font-weight:700;padding-top:6px"},g));
       growGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+(c>=0.05?"#e2e8f0":"#334155")+";font-weight:700;padding:4px 0;background:"+(c>=0.05?GC[g]+"30":"transparent")+";border-radius:2px"},fmtHday(c)));
+      growGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+(p>=0.05?"#0d9488":"#334155")+";font-weight:700;padding-top:6px"},fmtHday(p)));
       growGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:"+dL.color+";font-weight:700;padding-top:6px"},dL.txt));
       growGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:"+dP.color+";font-weight:700;padding-top:6px"},dP.txt));
     });
     var totDL=fmtDiff(grandCur,grandLast), totDP=fmtDiff(grandCur,grandP5);
     growGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#64748b;font-weight:700;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},"합"));
     growGrid.appendChild(h("div",{style:"text-align:center;font-size:12px;color:#3b82f6;font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},fmtHday(grandCur)));
+    growGrid.appendChild(h("div",{style:"text-align:center;font-size:12px;color:#0d9488;font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},fmtHday(grandP5)));
     growGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+totDL.color+";font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},totDL.txt));
     growGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+totDP.color+";font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},totDP.txt));
     growSec.appendChild(growGrid);
@@ -3837,27 +3874,31 @@ function renderYearlyReview(){
     // ── 표 2: 변동성 비교 (CV) ──
     var cvSec=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:14px;border:1px solid #1e293b"});
     cvSec.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},"📊 변동성 비교 (CV %, ↓안정)"));
-    var cvGrid=h("div",{style:"display:grid;grid-template-columns:32px 1fr 1fr 1fr;gap:2px;font-family:'JetBrains Mono',monospace"});
+    var cvGrid=h("div",{style:"display:grid;grid-template-columns:28px 1fr 1fr 1fr 1fr;gap:2px;font-family:'JetBrains Mono',monospace"});
     cvGrid.appendChild(h("div",{},""));
-    cvGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#64748b;font-weight:700;padding-top:4px"},"연도내"));
-    cvGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#64748b;font-weight:700;padding-top:4px"},"3년"));
-    cvGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#64748b;font-weight:700;padding-top:4px"},"5년"));
+    cvGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#3b82f6;font-weight:700;padding-top:4px"},cy+"연도내"));
+    cvGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#0d9488;font-weight:700;padding-top:4px"},"5년 연도내"));
+    cvGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#64748b;font-weight:700;padding-top:4px"},"3년 연도간"));
+    cvGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#0d9488;font-weight:700;padding-top:4px"},"5년 연도간"));
     GROUPS.forEach(function(g){
       var cvIn=calcCV(monthlyByG[g]);
+      var cvP5=past5InYrG[g];
       var cv3=calcCV(yearlyByG[g].y3);
       var cv5=calcCV(yearlyByG[g].y5);
       cvGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:"+GC[g]+";font-weight:700;padding-top:6px"},g));
       cvGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+cvColor(cvIn)+";font-weight:700;padding:4px 0"},fmtCV(cvIn)));
+      cvGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+cvColor(cvP5)+";font-weight:700;padding:4px 0"},fmtCV(cvP5)));
       cvGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+cvColor(cv3)+";font-weight:700;padding:4px 0"},fmtCV(cv3)));
       cvGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+cvColor(cv5)+";font-weight:700;padding:4px 0"},fmtCV(cv5)));
     });
     var allIn=calcCV(monthlyTot), all3=calcCV(yearlyTot.y3), all5=calcCV(yearlyTot.y5);
     cvGrid.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#64748b;font-weight:700;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},"합"));
     cvGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+cvColor(allIn)+";font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},fmtCV(allIn)));
+    cvGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+cvColor(past5InYrTot)+";font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},fmtCV(past5InYrTot)));
     cvGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+cvColor(all3)+";font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},fmtCV(all3)));
     cvGrid.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+cvColor(all5)+";font-weight:900;border-top:1px solid #334155;padding-top:5px;margin-top:1px"},fmtCV(all5)));
     cvSec.appendChild(cvGrid);
-    cvSec.appendChild(h("div",{style:"font-size:8px;color:#475569;margin-top:8px;text-align:right;line-height:1.4"},"연도내="+cy+"년 12개월 일평균 σ/μ · 3년="+(cy-2)+"~"+cy+" · 5년="+(cy-4)+"~"+cy+" · ≤20% 안정"));
+    cvSec.appendChild(h("div",{style:"font-size:8px;color:#475569;margin-top:8px;text-align:right;line-height:1.4"},"연도내="+cy+"년 12개월 σ/μ · 5년 연도내=직전5년 각 해 연도내 CV의 평균 · 연도간 3년="+(cy-2)+"~"+cy+" · 5년="+(cy-4)+"~"+cy+" · ≤20% 안정"));
     wrap.appendChild(cvSec);
   })();
 
@@ -7831,7 +7872,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-26-v102";
+  var SEED_VER="2026-04-26-v103";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

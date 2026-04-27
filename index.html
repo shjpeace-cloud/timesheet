@@ -3248,7 +3248,7 @@ function renderDailyReview(){
       c.style.background=ach?"#10b98122":"transparent";
       c.style.borderRadius="2px";
       var color=ach?"#10b981":"#a855f7";
-      var pct=curVal>0.01?Math.round((target-curVal)/curVal*100):null;
+      var pct=target>0.01?Math.round((curVal-target)/target*100):null;
       var pctStr=pct==null?"":" ("+(pct>0?"+":"")+pct+"%)";
       var checkStr=ach?" ✓":"";
       c.appendChild(h("div",{style:"font-size:"+(isTotal?"14":"13")+"px;color:"+color+";font-weight:"+(isTotal?"900":"700")+";line-height:1.2"},fmtHday(target)+pctStr+checkStr));
@@ -3709,7 +3709,7 @@ function renderMonthlyReview(){
       c.style.background=ach?"#10b98122":"transparent";
       c.style.borderRadius="2px";
       var color=ach?"#10b981":"#a855f7";
-      var pct=curVal>0.01?Math.round((target-curVal)/curVal*100):null;
+      var pct=target>0.01?Math.round((curVal-target)/target*100):null;
       var pctStr=pct==null?"":" ("+(pct>0?"+":"")+pct+"%)";
       var checkStr=ach?" ✓":"";
       c.appendChild(h("div",{style:"font-size:"+(isTotal?"14":"13")+"px;color:"+color+";font-weight:"+(isTotal?"900":"700")+";line-height:1.2"},fmtHday(target)+pctStr+checkStr));
@@ -3768,7 +3768,7 @@ function renderMonthlyReview(){
 
     box.appendChild(grid);
     var simPoolLabel=simPoolYears.length>0?simPoolYears[0]+"~'"+String(simPoolYears[simPoolYears.length-1]).slice(2)+" "+simPoolYears.length+"개년":"부족";
-    box.appendChild(h("div",{style:"font-size:9px;color:#64748b;margin-top:10px;text-align:right;line-height:1.5"},"성장률="+cm+"월 일평균 h/일 · 🎯=잔여 페이스(연간 P50 catch-up) · 괄호=현재→목표 증가율 · 변동성=trailing 3개월("+trailRange+") σ/μ % · 🎯=동기간 P25 · 모집단=기록 있는 전 연도 ("+simPoolLabel+")"));
+    box.appendChild(h("div",{style:"font-size:9px;color:#64748b;margin-top:10px;text-align:right;line-height:1.5"},"성장률="+cm+"월 일평균 h/일 · 🎯=잔여 페이스(연간 P50 catch-up) · 괄호=목표 대비 차이 · 변동성=trailing 3개월("+trailRange+") σ/μ % · 🎯=동기간 P25 · 모집단=기록 있는 전 연도 ("+simPoolLabel+")"));
     wrap.appendChild(box);
   })();
   // ── 1b. 연간 추이 차트 (1~12월 라인) — DREAM 5그룹 + 각 그룹 세부 ──
@@ -4140,7 +4140,7 @@ function renderYearlyReview(){
       c.style.background=ach?"#10b98122":"transparent";
       c.style.borderRadius="2px";
       var color=ach?"#10b981":"#a855f7";
-      var pct=curVal>0.01?Math.round((target-curVal)/curVal*100):null;
+      var pct=target>0.01?Math.round((curVal-target)/target*100):null;
       var pctStr=pct==null?"":" ("+(pct>0?"+":"")+pct+"%)";
       var checkStr=ach?" ✓":"";
       c.appendChild(h("div",{style:"font-size:"+(isTotal?"14":"13")+"px;color:"+color+";font-weight:"+(isTotal?"900":"700")+";line-height:1.2"},fmtHday(target)+pctStr+checkStr));
@@ -4199,7 +4199,7 @@ function renderYearlyReview(){
     grid.appendChild(cvTargetCell(totCT, curTotCV, cvAchievedTot(curTotCV), true));
     box.appendChild(grid);
     var simPoolLabel=simPoolYears.length>0?simPoolYears[0]+"~'"+String(simPoolYears[simPoolYears.length-1]).slice(2)+" "+simPoolYears.length+"개년":"부족";
-    box.appendChild(h("div",{style:"font-size:9px;color:#64748b;margin-top:10px;text-align:right;line-height:1.5"},"성장률 일평균 h/일 · 🎯=풀 P50 (중앙값) · 괄호=현재→목표 증가율 · 변동성 12개월 σ/μ % · 🎯=P25 CV · 괄호=현재−목표 %p · 모집단=기록 있는 전 연도 ("+simPoolLabel+")"));
+    box.appendChild(h("div",{style:"font-size:9px;color:#64748b;margin-top:10px;text-align:right;line-height:1.5"},"성장률 일평균 h/일 · 🎯=풀 P50 (중앙값) · 괄호=목표 대비 차이 · 변동성 12개월 σ/μ % · 🎯=P25 CV · 괄호=현재−목표 %p · 모집단=기록 있는 전 연도 ("+simPoolLabel+")"));
     wrap.appendChild(box);
   })();
 
@@ -8246,7 +8246,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-27-v121";
+  var SEED_VER="2026-04-27-v122";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

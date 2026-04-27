@@ -492,10 +492,10 @@ function calcHabitWeeklyPct(habit,monDate){
   return Math.round(count/total*100);
 }
 // 장기 전체 진도: (수동 completions + 자동체크) 합집합 날짜 수 / HABIT_TOTAL_DAYS * 100
+// HABIT_TOTAL_DAYS = 2400 = 14년(2026.3 ~ 2040.2) 평일의 약 70%
+// 즉 평일 70% 실행 = 100% 달성 (자가 친화적 기준). 주말 실행은 보너스로 분자에 포함.
 function calcHabitLongtermPct(habit){
-  var manualKeys=new Set(Object.keys(habit.completions||{}));
-  var entries=state.data.entries||{};
-  var autoKeys=new Set();
+  var manualKeys=new Set(Object.keys(habit.completions||{})); // "y-m-d" 형식
   // 하위 목표 ID 수집
   var descIds=new Set();
   function collectDesc(gid){
@@ -504,16 +504,31 @@ function calcHabitLongtermPct(habit){
     });
   }
   collectDesc(habit.id);
-  for(var dk in entries){
-    var slots=entries[dk];
-    for(var t in slots){
-      if(t==="_diary")continue;
-      var gid=slots[t].actualGoalId;
-      if(gid===habit.id||descIds.has(gid)){autoKeys.add(dk);break;}
+  // 모든 연도 entries 스캔 (HABIT_START_DATE 이후) — current year 한정 버그 수정
+  var autoKeys=new Set();
+  var startY=parseInt((HABIT_START_DATE||"2026-3-1").split("-")[0]);
+  var endY=Math.min(parseInt((HABIT_END_DATE||"2040-2-29").split("-")[0]),state.year);
+  for(var y=startY;y<=endY;y++){
+    var ent=getEntriesForYear(y);
+    for(var dk in ent){
+      if(dk==="_diary"||dk==="_lastEdited")continue;
+      var slots=ent[dk];
+      for(var t in slots){
+        if(t==="_diary")continue;
+        var gid=slots[t]&&slots[t].actualGoalId;
+        if(gid===habit.id||descIds.has(gid)){
+          // 연도 prefix로 manualKeys와 동일 형식 (y-m-d)
+          autoKeys.add(y+"-"+dk);
+          break;
+        }
+      }
     }
   }
-  var total=manualKeys.size+autoKeys.size;
-  return Math.min(100,Math.round(total/HABIT_TOTAL_DAYS*100));
+  // 합집합 (수동 + 자동 동일 날짜는 1번만 카운트)
+  var union=new Set();
+  manualKeys.forEach(function(k){union.add(k);});
+  autoKeys.forEach(function(k){union.add(k);});
+  return Math.min(100,Math.round(union.size/HABIT_TOTAL_DAYS*100));
 }
 // Christian liturgical calendar (부활절 기반 계산)
 function computeEaster(y){
@@ -4275,19 +4290,20 @@ function renderYearlyReview(){
     const habBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:14px;border:1px solid #1e293b"});
     habBox.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:8px;letter-spacing:.5px"},"🔁 습관 연간 달성률 (최근 5년 · 올해는 입력일 기준)"));
 
-    const hdrRow=h("div",{style:"display:grid;grid-template-columns:1fr repeat(5,40px) 40px 40px;gap:4px;align-items:center;margin-bottom:4px"});
+    const hdrRow=h("div",{style:"display:grid;grid-template-columns:1fr repeat(5,34px) 36px 36px 36px;gap:3px;align-items:center;margin-bottom:4px"});
     hdrRow.appendChild(h("div",{},""));
     years5.forEach(function(y){
       const isCur=y===cy;
       hdrRow.appendChild(h("div",{style:"text-align:center;font-size:9px;color:"+(isCur?"#3b82f6":"#94a3b8")+";font-weight:"+(isCur?"700":"400")+";background:"+(isCur?"#1e3a5f":"transparent")+";border-radius:4px;padding:2px 0"},String(y).slice(2)+"년"));
     });
     hdrRow.appendChild(h("div",{style:"text-align:center;font-size:9px;color:#0d9488;font-weight:700"},"5년"));
-    hdrRow.appendChild(h("div",{style:"text-align:center;font-size:9px;color:#a855f7;font-weight:700"},"전체"));
+    hdrRow.appendChild(h("div",{style:"text-align:center;font-size:9px;color:#a855f7;font-weight:700"},"연도"));
+    hdrRow.appendChild(h("div",{style:"text-align:center;font-size:9px;color:#f59e0b;font-weight:700"},"장기"));
     habBox.appendChild(hdrRow);
 
     habits.forEach(function(hb){
       const cat=catByCode(hb.cat);
-      const hrow=h("div",{style:"display:grid;grid-template-columns:1fr repeat(5,40px) 40px 40px;gap:4px;align-items:center;padding:5px 0;border-top:1px solid #1e293b"});
+      const hrow=h("div",{style:"display:grid;grid-template-columns:1fr repeat(5,34px) 36px 36px 36px;gap:3px;align-items:center;padding:5px 0;border-top:1px solid #1e293b"});
       const nameCell=h("div",{style:"display:flex;align-items:center;gap:4px;overflow:hidden;min-width:0;cursor:pointer",
         onClick:function(){navigateToGoal("habits",hb);}
       });
@@ -4305,12 +4321,15 @@ function renderYearlyReview(){
       var fySum=0;
       prev5.forEach(function(y){fySum+=calcYrPct(hb,y);});
       const fyAvg=prev5.length>0?Math.round(fySum/prev5.length):0;
-      // 전체 평균 (2019~cy-1, cy 제외)
+      // 연도 평균 (2019~cy-1, cy 제외)
       var allSum=0,allCnt=0;
       for(var ay=2019;ay<=cy-1;ay++){allSum+=calcYrPct(hb,ay);allCnt++;}
       const allAvg=allCnt>0?Math.round(allSum/allCnt):0;
+      // 장기 평균 (2,400일 기준 = HABIT_START_DATE~현재 누적, 분모 2400)
+      const ltPct=calcHabitLongtermPct(hb);
       hrow.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#0d9488;font-weight:700;font-family:monospace"},fyAvg+"%"));
       hrow.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#a855f7;font-weight:700;font-family:monospace"},allAvg+"%"));
+      hrow.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#f59e0b;font-weight:700;font-family:monospace"},ltPct+"%"));
       habBox.appendChild(hrow);
     });
     wrap.appendChild(habBox);
@@ -8220,7 +8239,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-27-v119";
+  var SEED_VER="2026-04-27-v120";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

@@ -3498,11 +3498,18 @@ function renderDailyReview(){
       habits.forEach(function(hb){
         const cat2=catByCode(hb.cat);
         const hrow=h("div",{style:"display:grid;grid-template-columns:1fr repeat(5,32px) 24px;gap:4px;align-items:center;padding:5px 0;border-top:1px solid #1e293b"});
-        const nameCell2=h("div",{style:"display:flex;align-items:center;gap:4px;overflow:hidden;min-width:0;cursor:pointer",
-          onClick:function(){navigateToGoal("habits",hb);}
-        });
-        nameCell2.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:"+(cat2?cat2.color:"#94a3b8")+";font-family:monospace;flex-shrink:0;background:"+(cat2?cat2.color+"22":"#1e293b")+";border-radius:3px;padding:1px 4px"},hb.cat));
-        nameCell2.appendChild(h("span",{style:"font-size:11px;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},hb.name));
+        const nameCell2=h("div",{style:"display:flex;align-items:center;gap:4px;overflow:hidden;min-width:0"});
+        const navTarget=function(){navigateToGoal("habits",hb);};
+        const badge2=h("span",{style:"font-size:9px;font-weight:700;color:"+(cat2?cat2.color:"#94a3b8")+";font-family:monospace;flex-shrink:0;background:"+(cat2?cat2.color+"22":"#1e293b")+";border-radius:3px;padding:1px 4px;cursor:pointer",onClick:navTarget},hb.cat);
+        const nameEl2=h("span",{style:"flex:1;font-size:11px;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer",onClick:navTarget},hb.name);
+        const delBtn2=h("button",{
+          style:"font-size:10px;color:#64748b;background:transparent;border:none;cursor:pointer;padding:0 4px;flex-shrink:0;line-height:1",
+          title:"습관 삭제",
+          onClick:function(e){e.stopPropagation();removeHabit(hb.id);}
+        },"×");
+        nameCell2.appendChild(badge2);
+        nameCell2.appendChild(nameEl2);
+        nameCell2.appendChild(delBtn2);
         hrow.appendChild(nameCell2);
         weekDays2.forEach(function(wd3){
           const autoChecked2=isHabitAutoChecked(hb,wd3.y,wd3.m,wd3.d);
@@ -8239,7 +8246,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-27-v120";
+  var SEED_VER="2026-04-27-v121";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){
@@ -8276,6 +8283,10 @@ function renderConflictModal(){
       var seed=(SEED_GOALS.habits||[]).find(function(h){return h.id===id});
       return seed?seed:null;
     }).filter(Boolean);
+    // 사용자 추가 습관 (non-HIDS) 보존
+    (gObj.habits||[]).forEach(function(h){
+      if(HIDS.indexOf(h.id)===-1)normalized.push(h);
+    });
     // 개수 불일치 또는 순서 불일치 시 정규화
     var curIds=(gObj.habits||[]).map(function(h){return h.id}).join(',');
     var wantIds=normalized.map(function(h){return h.id}).join(',');

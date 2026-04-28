@@ -802,7 +802,7 @@ function loadBooks(){
 function loadGoals(){
   try{
     const r=localStorage.getItem(goalStorageKey());
-    if(!r)return{daily:{},weekly:[],monthly:[],longterm:[],habits:[]};
+    if(!r)return{daily:{},weekly:[],monthly:[],longterm:[],habits:[],_tombstones:{weekly:[],monthly:[],longterm:[],habits:[],readingGoals:[]}};
     const p=JSON.parse(r);
     var habits=p.habits||[];
     var longterm=p.longterm||[];
@@ -828,10 +828,38 @@ function loadGoals(){
       seenIds[h.id]=true;return true;
     });
     if(deduped.length<habits.length){habits=deduped;migrated=true;}
-    var result={daily:p.daily||{},weekly:sortByDream(p.weekly||[]),monthly:sortByDream(p.monthly||[]),longterm:sortByDream(longterm),habits:habits,readingGoals:p.readingGoals||[],_lastEdited:p._lastEdited||0};
+    // tombstones: 삭제된 항목 id 목록 (클라우드 union merge로 부활하는 것 방지)
+    var tomb=p._tombstones||{};
+    var tombstones={
+      weekly:tomb.weekly||[],
+      monthly:tomb.monthly||[],
+      longterm:tomb.longterm||[],
+      habits:tomb.habits||[],
+      readingGoals:tomb.readingGoals||[]
+    };
+    // 부활 방지: 로드 시점에도 tombstone에 있는 id는 제거 (과거 sync로 부활한 데이터 정리)
+    function _filterTomb(arr,scope){
+      var ts=tombstones[scope]; if(!ts||ts.length===0)return arr;
+      var before=arr.length;
+      var out=arr.filter(function(g){return ts.indexOf(g&&g.id)===-1;});
+      if(out.length<before)migrated=true;
+      return out;
+    }
+    habits=_filterTomb(habits,"habits");
+    longterm=_filterTomb(longterm,"longterm");
+    var weekly=_filterTomb(p.weekly||[],"weekly");
+    var monthly=_filterTomb(p.monthly||[],"monthly");
+    var readingGoals=_filterTomb(p.readingGoals||[],"readingGoals");
+    var result={daily:p.daily||{},weekly:sortByDream(weekly),monthly:sortByDream(monthly),longterm:sortByDream(longterm),habits:habits,readingGoals:readingGoals,_tombstones:tombstones,_lastEdited:p._lastEdited||0};
     if(migrated)try{localStorage.setItem(goalStorageKey(),JSON.stringify(result))}catch(e){}
     return result;
-  }catch(e){return{daily:{},weekly:[],monthly:[],longterm:[],habits:[],readingGoals:[],_lastEdited:0}}
+  }catch(e){return{daily:{},weekly:[],monthly:[],longterm:[],habits:[],readingGoals:[],_tombstones:{weekly:[],monthly:[],longterm:[],habits:[],readingGoals:[]},_lastEdited:0}}
+}
+// tombstone에 id 추가 (삭제 시 호출). 클라우드 union merge가 부활시키지 못하도록 표시.
+function _addTombstone(scope,id){
+  if(!state.goalData._tombstones)state.goalData._tombstones={};
+  if(!state.goalData._tombstones[scope])state.goalData._tombstones[scope]=[];
+  if(state.goalData._tombstones[scope].indexOf(id)===-1)state.goalData._tombstones[scope].push(id);
 }
 // 습관 대상 longterm ID 목록 (D1새벽기도, D1묵상, D1성경읽기, D3성가대, R3영어뉴스스터디)
 var HABIT_LONGTERM_IDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
@@ -1217,12 +1245,12 @@ function cloudLoadCurrent(){
         var hIds=cloudHabits.map(function(h){return h.longtermId}).filter(Boolean);
         cloudLongterm=cloudLongterm.filter(function(g0){return hIds.indexOf(g0.id)===-1});
       }
-      var cloudGoals={daily:inc.daily||{},weekly:inc.weekly||[],monthly:inc.monthly||[],longterm:cloudLongterm,habits:cloudHabits,readingGoals:inc.readingGoals||[]};
+      var cloudGoals={daily:inc.daily||{},weekly:inc.weekly||[],monthly:inc.monthly||[],longterm:cloudLongterm,habits:cloudHabits,readingGoals:inc.readingGoals||[],_tombstones:inc._tombstones||{}};
       var mergeG=_mergeGoals(state.goalData||{},cloudGoals);
       if(mergeG.hasTrueConflict&&_hasPendingFor('goals',y)){
         _enqueueConflict('goals',y,cloudGoals,state.goalData);
       }else if(mergeG.changed){
-        state.goalData={daily:mergeG.data.daily,weekly:sortByDream(mergeG.data.weekly),monthly:sortByDream(mergeG.data.monthly),longterm:sortByDream(mergeG.data.longterm),habits:mergeG.data.habits,readingGoals:mergeG.data.readingGoals};
+        state.goalData={daily:mergeG.data.daily,weekly:sortByDream(mergeG.data.weekly),monthly:sortByDream(mergeG.data.monthly),longterm:sortByDream(mergeG.data.longterm),habits:mergeG.data.habits,readingGoals:mergeG.data.readingGoals,_tombstones:mergeG.data._tombstones};
         localStorage.setItem(goalStorageKey(),JSON.stringify(state.goalData));
         changed=true;
         if(mergeG.localOnlyCount>0)pushGoals=true;
@@ -1328,13 +1356,16 @@ function _mergeBooks(local,cloud){
   return {data:merged,localOnlyCount:localOnlyCount,hasTrueConflict:hasTrueConflict,changed:changed};
 }
 
-function _mergeGoalArr(localArr,cloudArr){
+function _mergeGoalArr(localArr,cloudArr,tombstoneIds){
   // id 기준 union. 양쪽에 같은 id가 있으면 progress 높은 쪽 (또는 더 많은 필드).
+  // tombstoneIds에 있는 id는 양쪽에서 모두 제외 (삭제 부활 방지).
+  var tombSet={};
+  (tombstoneIds||[]).forEach(function(id){tombSet[id]=1;});
   var byId={};
   var result=[];
   var localOnly=0,trueConflict=false,changed=false;
-  (localArr||[]).forEach(function(it){var id=it&&it.id;if(id!=null)byId[id]={local:it};});
-  (cloudArr||[]).forEach(function(it){var id=it&&it.id;if(id!=null){if(byId[id])byId[id].cloud=it;else byId[id]={cloud:it};}});
+  (localArr||[]).forEach(function(it){var id=it&&it.id;if(id!=null&&!tombSet[id])byId[id]={local:it};});
+  (cloudArr||[]).forEach(function(it){var id=it&&it.id;if(id!=null&&!tombSet[id]){if(byId[id])byId[id].cloud=it;else byId[id]={cloud:it};}});
   Object.keys(byId).forEach(function(id){
     var e=byId[id];
     if(e.local&&!e.cloud){result.push(e.local);localOnly++;changed=true;return;}
@@ -1357,7 +1388,18 @@ function _mergeGoalArr(localArr,cloudArr){
 function _mergeGoals(local,cloud){
   var out={};
   var localOnlyCount=0,hasTrueConflict=false,changed=false;
-  // daily: {M-D: [goals]}
+  // tombstones 합집합 (삭제는 한쪽이라도 있으면 영구 표시)
+  var localTomb=local._tombstones||{};
+  var cloudTomb=cloud._tombstones||{};
+  var mergedTomb={};
+  ['weekly','monthly','longterm','habits','readingGoals'].forEach(function(sc){
+    var seen={};
+    (localTomb[sc]||[]).forEach(function(id){seen[id]=1;});
+    (cloudTomb[sc]||[]).forEach(function(id){seen[id]=1;});
+    mergedTomb[sc]=Object.keys(seen).map(function(s){var n=Number(s);return isNaN(n)?s:n;});
+  });
+  out._tombstones=mergedTomb;
+  // daily: {M-D: [goals]}  (tombstone 미적용 — daily는 날짜키로 격리됨)
   var dailyMerged={};
   var dKeys={};
   Object.keys(local.daily||{}).forEach(function(k){dKeys[k]=1;});
@@ -1370,9 +1412,9 @@ function _mergeGoals(local,cloud){
     if(m.changed)changed=true;
   });
   out.daily=dailyMerged;
-  // 배열 scope들
+  // 배열 scope들 — tombstone 적용
   ['weekly','monthly','longterm','habits','readingGoals'].forEach(function(sc){
-    var m=_mergeGoalArr(local[sc]||[],cloud[sc]||[]);
+    var m=_mergeGoalArr(local[sc]||[],cloud[sc]||[],mergedTomb[sc]);
     out[sc]=m.arr;
     localOnlyCount+=m.localOnly;
     if(m.trueConflict)hasTrueConflict=true;
@@ -5055,6 +5097,7 @@ function addReadingGoal(){
 }
 function removeReadingGoal(id){
   state.goalData.readingGoals=(state.goalData.readingGoals||[]).filter(function(r){return r.id!==id});
+  _addTombstone("readingGoals",id);
   saveGoalData();cloudSaveGoals();_isAutoRender=true;render();
 }
 
@@ -5286,6 +5329,7 @@ function updateGoalProgress(scope,id,progress){
 }
 function removePeriodGoal(scope,id){
   state.goalData[scope]=state.goalData[scope].filter(x=>x.id!==id);
+  _addTombstone(scope,id);
   saveGoalData();render(true);
 }
 // Subtask functions
@@ -5822,6 +5866,7 @@ function addHabit(){
 function removeHabit(id){
   if(!confirm("습관을 삭제하면 모든 체크 기록도 삭제됩니다. 삭제할까요?"))return;
   state.goalData.habits=(state.goalData.habits||[]).filter(function(h){return h.id!==id});
+  _addTombstone("habits",id);
   saveGoalData();cloudSaveGoals();_isAutoRender=true;render();
 }
 function renderWeeklyReview(){

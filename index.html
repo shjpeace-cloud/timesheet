@@ -2689,12 +2689,13 @@ function showDiaryModal(text,month,day,year){
   const closeBtn=document.createElement("button");
   closeBtn.style="background:#1e293b;border:1px solid #334155;color:#94a3b8;width:36px;height:36px;border-radius:10px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center";
   closeBtn.textContent="✕";
-  closeBtn.addEventListener("click",function(){ov.remove()});
+  closeBtn.addEventListener("click",function(){flushSave();ov.remove();if(isEditMode)render(true)});
   hdr.appendChild(closeBtn);
   sheet.appendChild(hdr);
 
   // 탭 (읽기/편집)
   var isEditMode=false;
+  var flushSave=function(){}; // renderEdit에서 채워짐 — 모달 닫기 전 미저장분 플러시
   const tabBar=document.createElement("div");
   tabBar.style="display:flex;gap:2px;padding:8px 16px;flex-shrink:0;background:#0c0f1a";
   const readTab=document.createElement("button");
@@ -2745,24 +2746,37 @@ function showDiaryModal(text,month,day,year){
     editArea.placeholder="오늘 하루를 기록하세요...";
     editArea.maxLength=2000;
     var saveT=null;
+    var pendingVal=null;
+    function doSave(val){
+      if(isArchiveMode())return;
+      var dk2=state.month+"-"+state.day;
+      if(!state.data.entries[dk2])state.data.entries[dk2]={};
+      state.data.entries[dk2]._diary=val;
+      try{localStorage.setItem(storageKey(),JSON.stringify(state.data))}catch(ex){}
+      if(CLOUD_URL)enqueueWrite('time',state.year,function(){return state.data;});
+    }
     editArea.addEventListener("input",function(e){
       var val=e.target.value;
       text=val;
+      pendingVal=val;
       if(isArchiveMode())return;
       clearTimeout(saveT);
       saveT=setTimeout(function(){
-        var dk2=state.month+"-"+state.day;
-        if(!state.data.entries[dk2])state.data.entries[dk2]={};
-        state.data.entries[dk2]._diary=val;
-        try{localStorage.setItem(storageKey(),JSON.stringify(state.data))}catch(ex){}
-        if(CLOUD_URL)enqueueWrite('time',state.year,function(){return state.data;});
+        doSave(val);
+        pendingVal=null;
       },800);
     });
+    // 모달 닫기 직전 호출 — 미저장(디바운스 대기 중) 변경분 즉시 저장
+    flushSave=function(){
+      if(saveT){clearTimeout(saveT);saveT=null;}
+      if(pendingVal!==null){doSave(pendingVal);pendingVal=null;}
+    };
     body.appendChild(editArea);
     setTimeout(function(){editArea.focus();editArea.selectionStart=editArea.selectionEnd=editArea.value.length},50);
   }
 
   readTab.addEventListener("click",function(){
+    flushSave();
     isEditMode=false;
     readTab.style.background="#1e293b";readTab.style.color="#e2e8f0";
     editTab.style.background="transparent";editTab.style.color="#64748b";
@@ -2777,7 +2791,7 @@ function showDiaryModal(text,month,day,year){
 
   renderRead();
   sheet.appendChild(body);
-  ov.addEventListener("click",function(e){if(e.target===ov){if(isEditMode)render(true);ov.remove()}});
+  ov.addEventListener("click",function(e){if(e.target===ov){flushSave();if(isEditMode)render(true);ov.remove()}});
   ov.appendChild(sheet);
   document.body.appendChild(ov);
   // 슬라이드업 애니메이션
@@ -8353,7 +8367,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-04-29-v123";
+  var SEED_VER="2026-04-30-v124";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

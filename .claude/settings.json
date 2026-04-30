@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f .claude/last-push.txt ] && echo \"[auto-push] $(cat .claude/last-push.txt)\" || true"
+          }
+        ]
+      }
+    ]
+  }
+}

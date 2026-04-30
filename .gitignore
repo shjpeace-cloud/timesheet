@@ -1,1 +1,27 @@
+# Personal docs (privacy)
 CLAUDE.md
+
+# Backend (deployed separately to Google Apps Script)
+Code.gs
+
+# Time data files
+*.xlsx
+timesheet*.json
+timesheet_backup*.json
+
+# JUNG variants (co-author / partner local files)
+*-JUNG.*
+*.JUNG.*
+
+# Claude Code runtime cache
+.claude/auto-push.log
+.claude/auto-push-JUNG.log
+.claude/smoke.log
+.claude/smoke-JUNG.log
+.claude/last-push*.txt
+.claude/tmp/
+.claude/migrate/
+
+# Local settings (machine-specific)
+.claude/settings.local.json
+.claude/settings.local-JUNG.json

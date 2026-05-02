@@ -3646,19 +3646,43 @@ function renderDailyReview(){
   }
   wrap.appendChild(goalBox);
 
-  // ── 메모 ──
-  const diaryText=(state.data.entries[rdk]&&state.data.entries[rdk]._diary)||"";
-  if(diaryText.trim()){
-    const diaryBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:12px;border:1px solid #1e293b;cursor:pointer",onClick:function(){showDiaryModal(diaryText,rm,rd,ry);}});
-    diaryBox.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:8px;letter-spacing:.5px"},"📓 메모"));
-    const preview=diaryText.split("\n")[0].slice(0,80)+(diaryText.length>80?"…":"");
-    diaryBox.appendChild(h("div",{style:"font-size:13px;color:#94a3b8;line-height:1.6"},preview));
-    diaryBox.appendChild(h("div",{style:"font-size:10px;color:#6366f1;margin-top:6px;text-align:right"},"📖 전체 보기"));
+  // ── 메모 (인라인 편집) ──
+  {
+    const isCurYear=(ry===state.year);
+    const ent=isCurYear?state.data.entries:getEntriesForYear(ry);
+    const diaryText=(ent[rdk]&&ent[rdk]._diary)||"";
+    const diaryBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:12px;border:1px solid #1e293b"});
+    const diaryHdr=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"});
+    diaryHdr.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;letter-spacing:.5px"},"📓 메모"));
+    const charCount=h("span",{style:"font-size:10px;color:#475569"},diaryText.length+"/2000");
+    diaryHdr.appendChild(charCount);
+    diaryBox.appendChild(diaryHdr);
+    const ta=h("textarea",{
+      style:"width:100%;min-height:160px;padding:12px;border-radius:10px;border:1px solid #334155;background:#0c0f1a;color:#e2e8f0;font-size:13px;font-family:'Noto Sans KR',sans-serif;outline:none;resize:vertical;line-height:1.7"+(isCurYear?"":";opacity:.7;cursor:not-allowed"),
+      placeholder:isCurYear?"메모를 기록하세요...":"(과거 연도 — 읽기 전용)",
+      maxlength:"2000"
+    });
+    ta.value=diaryText;
+    if(!isCurYear){
+      ta.readOnly=true;
+    }else{
+      let diaryTimer=null;
+      ta.addEventListener("input",function(e){
+        const val=e.target.value.slice(0,2000);
+        e.target.value=val;
+        charCount.textContent=val.length+"/2000";
+        clearTimeout(diaryTimer);
+        diaryTimer=setTimeout(function(){
+          if(!state.data.entries[rdk])state.data.entries[rdk]={};
+          state.data.entries[rdk]._diary=val;
+          try{localStorage.setItem(storageKey(),JSON.stringify(state.data))}catch(ex){}
+          if(CLOUD_URL)enqueueWrite('time',state.year,function(){return state.data;});
+        },1000);
+      });
+    }
+    diaryBox.appendChild(ta);
     wrap.appendChild(diaryBox);
   }
-
-  // ── 일간 성찰 ──
-  wrap.appendChild(renderReflectionBox("daily-review-"+ry+"-"+rm+"-"+rd,{title:"✍️ 오늘 성찰",next:"🎯 내일 한 가지",nextPh:"내일 반드시 할 것은?"}));
 
   return wrap;
 }

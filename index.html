@@ -2744,7 +2744,7 @@ function showDiaryModal(text,month,day,year){
     ].join("");
     editArea.value=text;
     editArea.placeholder="오늘 하루를 기록하세요...";
-    editArea.maxLength=2000;
+    editArea.maxLength=5000;
     var saveT=null;
     var pendingVal=null;
     function doSave(val){
@@ -2919,7 +2919,7 @@ function renderInput(){
   const diaryHdr=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"});
   diaryHdr.appendChild(h("h3",{style:"font-size:14px;font-weight:700;color:#94a3b8"},"📝 메모"));
   const diaryHdrRight=h("div",{style:"display:flex;align-items:center;gap:8px"});
-  const charCount=h("span",{style:"font-size:10px;color:#475569"},currentDiary.length+"/2000");
+  const charCount=h("span",{style:"font-size:10px;color:#475569"},currentDiary.length+"/5000");
   diaryHdrRight.appendChild(charCount);
   // 보기 버튼 — 항상 표시
   const viewBtn=h("button",{
@@ -2929,13 +2929,13 @@ function renderInput(){
   diaryHdrRight.appendChild(viewBtn);
   diaryHdr.appendChild(diaryHdrRight);
   diary.appendChild(diaryHdr);
-  const ta=h("textarea",{style:"width:100%;min-height:90px;padding:12px;border-radius:10px;border:1px solid #334155;background:#0c0f1a;color:#e2e8f0;font-size:13px;font-family:'Noto Sans KR',sans-serif;outline:none;resize:vertical;line-height:1.6",placeholder:"메모를 기록하세요...",maxlength:"2000"});
+  const ta=h("textarea",{style:"width:100%;min-height:90px;padding:12px;border-radius:10px;border:1px solid #334155;background:#0c0f1a;color:#e2e8f0;font-size:13px;font-family:'Noto Sans KR',sans-serif;outline:none;resize:vertical;line-height:1.6",placeholder:"메모를 기록하세요...",maxlength:"5000"});
   ta.value=currentDiary;
   let diaryTimer=null;
   ta.addEventListener("input",e=>{
-    const val=e.target.value.slice(0,2000);
+    const val=e.target.value.slice(0,5000);
     e.target.value=val;
-    charCount.textContent=val.length+"/2000";
+    charCount.textContent=val.length+"/5000";
     if(isArchiveMode())return; // 아카이브 모드: 일기 편집 저장 금지
     clearTimeout(diaryTimer);
     diaryTimer=setTimeout(()=>{
@@ -3148,21 +3148,30 @@ function renderReflectionBox(reviewKey,labels){
   }
 
   const box=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;border:1px solid #1e293b;margin-bottom:4px"});
-  box.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},title+(isAccum?" · 누적 기록":"")));
+  const hdr=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"});
+  hdr.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;letter-spacing:.5px"},title+(isAccum?" · 누적 기록":"")));
+  const charCount=h("span",{style:"font-size:10px;color:#475569"},"0/5000");
+  hdr.appendChild(charCount);
+  box.appendChild(hdr);
 
   if(isAccum){
     const history=buildHistory();
     if(history){
       box.appendChild(h("div",{style:"width:100%;padding:10px;border-radius:8px;border:1px solid #1e293b;background:#0a0e17;color:#94a3b8;font-size:12px;font-family:'Noto Sans KR',sans-serif;line-height:1.65;white-space:pre-wrap;max-height:320px;overflow-y:auto;margin-bottom:10px"},history));
     }
-    const ta=h("textarea",{style:"width:100%;padding:10px;border-radius:8px;border:1px solid #334155;background:#111827;color:#e2e8f0;font-size:13px;font-family:'Noto Sans KR',sans-serif;outline:none;resize:vertical;line-height:1.7;min-height:100px",placeholder:"새 기록 추가..."});
+    const ta=h("textarea",{style:"width:100%;padding:10px;border-radius:8px;border:1px solid #334155;background:#111827;color:#e2e8f0;font-size:13px;font-family:'Noto Sans KR',sans-serif;outline:none;resize:vertical;line-height:1.7;min-height:100px",placeholder:"새 기록 추가...",maxlength:"5000"});
     ta.addEventListener("focus",function(){ta.style.borderColor="#0d9488"});
     ta.addEventListener("blur",function(){ta.style.borderColor="#334155"});
+    ta.addEventListener("input",function(e){
+      const val=e.target.value.slice(0,5000);
+      e.target.value=val;
+      charCount.textContent=val.length+"/5000";
+    });
     box.appendChild(ta);
 
     const saveBtn=h("button",{style:"margin-top:10px;width:100%;padding:8px;border-radius:8px;background:#0d9488;border:none;color:#fff;font-size:13px;font-weight:700;cursor:pointer",
       onClick:function(){
-        const v=(ta.value||"").trim();
+        const v=(ta.value||"").slice(0,5000).trim();
         if(!v){
           saveBtn.textContent="–";
           setTimeout(function(){saveBtn.textContent="💾 추가"},900);
@@ -3652,13 +3661,13 @@ function renderDailyReview(){
     const diaryBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:12px;border:1px solid #1e293b"});
     const diaryHdr=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"});
     diaryHdr.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;letter-spacing:.5px"},"📓 메모"));
-    const charCount=h("span",{style:"font-size:10px;color:#475569"},diaryText.length+"/2000");
+    const charCount=h("span",{style:"font-size:10px;color:#475569"},diaryText.length+"/5000");
     diaryHdr.appendChild(charCount);
     diaryBox.appendChild(diaryHdr);
     const ta=h("textarea",{
       style:"width:100%;min-height:160px;padding:12px;border-radius:10px;border:1px solid #334155;background:#0c0f1a;color:#e2e8f0;font-size:13px;font-family:'Noto Sans KR',sans-serif;outline:none;resize:vertical;line-height:1.7"+(isCurYear?"":";opacity:.7;cursor:not-allowed"),
       placeholder:isCurYear?"메모를 기록하세요...":"(과거 연도 — 읽기 전용)",
-      maxlength:"2000"
+      maxlength:"5000"
     });
     ta.value=diaryText;
     if(!isCurYear){
@@ -3666,9 +3675,9 @@ function renderDailyReview(){
     }else{
       let diaryTimer=null;
       ta.addEventListener("input",function(e){
-        const val=e.target.value.slice(0,2000);
+        const val=e.target.value.slice(0,5000);
         e.target.value=val;
-        charCount.textContent=val.length+"/2000";
+        charCount.textContent=val.length+"/5000";
         clearTimeout(diaryTimer);
         diaryTimer=setTimeout(function(){
           if(!state.data.entries[rdk])state.data.entries[rdk]={};

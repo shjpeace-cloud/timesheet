@@ -6023,13 +6023,14 @@ function renderWeeklyReview(){
     wrap.appendChild(box);
   })();
 
-  // ─ 주간 실적 (그 달의 모든 주 + 이번달/지난달/연평균 표) ─
+  // ─ 주간 실적 (그 달의 완전한 일~토 주만 + 이번달/지난달/연평균 표) ─
   (function(){
     const baseY=sunDate.getFullYear();
     const baseM=sunDate.getMonth()+1;
     const sundays=[];
     const dim=daysInMonth(baseY,baseM);
-    for(var d=1;d<=dim;d++){
+    // 일요일~토요일 7일이 모두 그 달에 속하는 주만 포함 (부분 주는 통계 비교가 무의미하므로 제외)
+    for(var d=1;d+6<=dim;d++){
       const dt=new Date(baseY,baseM-1,d);
       if(dt.getDay()===0)sundays.push(dt);
     }
@@ -6041,7 +6042,6 @@ function renderWeeklyReview(){
       for(var di=0;di<7;di++){
         const dd=new Date(sunD);dd.setDate(sunD.getDate()+di);
         const dy=dd.getFullYear(),dm=dd.getMonth()+1,dd2=dd.getDate();
-        if(dy!==baseY||dm!==baseM)continue; // 같은 달 일자만 집계 (말일 일요일 → 다음 달 합산 방지)
         const ent=getEntriesForYear(dy);
         const slots=ent[dm+"-"+dd2]||{};
         var hasA=false;
@@ -6128,7 +6128,7 @@ function renderWeeklyReview(){
     wrap.appendChild(summaryBox);
   })();
 
-  // ── 주간 습관 달성률 (그 달의 모든 주 + 이번달/지난달/연평균) ──
+  // ── 주간 습관 달성률 (그 달의 완전한 일~토 주만 + 이번달/지난달/연평균) ──
   (function(){
     const habits=state.goalData.habits||[];
     if(habits.length===0)return;
@@ -6136,7 +6136,8 @@ function renderWeeklyReview(){
     const baseM=sunDate.getMonth()+1;
     const sundays=[];
     const dim=daysInMonth(baseY,baseM);
-    for(var d=1;d<=dim;d++){
+    // 일요일~토요일 7일이 모두 그 달에 속하는 주만 포함
+    for(var d=1;d+6<=dim;d++){
       const dt=new Date(baseY,baseM-1,d);
       if(dt.getDay()===0)sundays.push(dt);
     }
@@ -6146,17 +6147,6 @@ function renderWeeklyReview(){
     const lmY=lmDt.getFullYear(),lmM=lmDt.getMonth()+1;
 
     function calcYrPct(hb){var done=0,wd=0;for(var m=1;m<=12;m++){var days=daysInMonth(state.year,m);for(var d=1;d<=days;d++){if(isWeekday(state.year,m,d)){wd++;if(isHabitDone(hb,state.year,m,d))done++;}}}return wd>0?Math.round(done/wd*100):0;}
-    // 일~토 7일 중 baseY/baseM에 속한 평일만 집계 (말일 일요일이 다음달 평일까지 끌어오는 문제 방지)
-    function calcWkPctClip(hb,sunD){
-      var done=0,wd=0;
-      for(var i=0;i<7;i++){
-        var dd=new Date(sunD);dd.setDate(sunD.getDate()+i);
-        var yy=dd.getFullYear(),mm=dd.getMonth()+1,day=dd.getDate();
-        if(yy!==baseY||mm!==baseM)continue;
-        if(isWeekday(yy,mm,day)){wd++;if(isHabitDone(hb,yy,mm,day))done++;}
-      }
-      return wd>0?Math.round(done/wd*100):0;
-    }
 
     const habBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:14px;border:1px solid #1e293b"});
     habBox.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:8px;letter-spacing:.5px"},"🔁 주간 습관 달성률 ("+baseM+"월)"));
@@ -6188,7 +6178,7 @@ function renderWeeklyReview(){
 
       sundays.forEach(function(sunD){
         const isCur=sunD.getTime()===sunDate.getTime();
-        const pct=calcWkPctClip(hb,sunD);
+        const pct=calcHabitWeeklyPct(hb,sunD);
         const color=pct===100?"#0d9488":pct>=60?"#f59e0b":pct>0?"#94a3b8":"#334155";
         hrow.appendChild(h("div",{style:"text-align:center;font-size:10px;color:"+color+";font-weight:"+(isCur?"900":"700")+";font-family:monospace;background:"+(isCur?"#1e3a5f":"transparent")+";border-radius:4px;padding:3px 0"},pct+"%"));
       });
@@ -6206,7 +6196,7 @@ function renderWeeklyReview(){
     sundays.forEach(function(sunD){
       const isCur=sunD.getTime()===sunDate.getTime();
       var sum=0;
-      habits.forEach(function(hb){sum+=calcWkPctClip(hb,sunD);});
+      habits.forEach(function(hb){sum+=calcHabitWeeklyPct(hb,sunD);});
       const wkAvg=Math.round(sum/habits.length);
       const color=wkAvg===100?"#0d9488":wkAvg>=60?"#f59e0b":wkAvg>0?"#94a3b8":"#334155";
       sumRow.appendChild(h("div",{style:"text-align:center;font-size:10px;color:"+color+";font-weight:"+(isCur?"900":"700")+";font-family:monospace"},wkAvg+"%"));

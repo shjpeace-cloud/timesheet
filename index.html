@@ -5939,8 +5939,26 @@ function renderWeeklyReview(){
   sunDate.setDate(today.getDate()+diffToSun+state.weeklyReviewOffset*7);
   const satDate=new Date(sunDate);satDate.setDate(sunDate.getDate()+6);
   const fmt=function(d){return (d.getMonth()+1)+"/"+d.getDate()};
-  const y=sunDate.getFullYear(),m=sunDate.getMonth()+1;
-  const wIdx=weekIdxOfDay(y,m,sunDate.getDate());
+  // 다수결: 그 주(일~토)의 수요일이 속한 달이 곧 다수 달 (4일↑). 부분 주는 다수 달 쪽에만 1회 등장.
+  function majorityMonth(sun){var w=new Date(sun);w.setDate(sun.getDate()+3);return{y:w.getFullYear(),m:w.getMonth()+1};}
+  function buildMonthSundays(by,bm){
+    var first=new Date(by,bm-1,1);
+    var startSun=new Date(first);startSun.setDate(first.getDate()-first.getDay());
+    var arr=[];
+    for(var i=0;i<6;i++){
+      var s=new Date(startSun);s.setDate(startSun.getDate()+i*7);
+      var mm=majorityMonth(s);
+      if(mm.y===by&&mm.m===bm)arr.push(s);
+    }
+    return arr;
+  }
+  const _mm=majorityMonth(sunDate);
+  const y=_mm.y, m=_mm.m;
+  const _navSundays=buildMonthSundays(y,m);
+  var wIdx=1;
+  for(var _wi=0;_wi<_navSundays.length;_wi++){
+    if(_navSundays[_wi].getTime()===sunDate.getTime()){wIdx=_wi+1;break;}
+  }
   const isThisWeek=state.weeklyReviewOffset===0;
 
   const nav=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:14px"});
@@ -6023,20 +6041,13 @@ function renderWeeklyReview(){
     wrap.appendChild(box);
   })();
 
-  // ─ 주간 실적 (그 달의 완전한 일~토 주만 + 이번달/지난달/연평균 표) ─
+  // ─ 주간 실적 (다수결로 이 달에 속한 주만, 1~N주 재번호) ─
   (function(){
-    const baseY=sunDate.getFullYear();
-    const baseM=sunDate.getMonth()+1;
-    const sundays=[];
-    const dim=daysInMonth(baseY,baseM);
-    // 일요일~토요일 7일이 모두 그 달에 속하는 주만 포함 (부분 주는 통계 비교가 무의미하므로 제외)
-    for(var d=1;d+6<=dim;d++){
-      const dt=new Date(baseY,baseM-1,d);
-      if(dt.getDay()===0)sundays.push(dt);
-    }
+    const baseY=y, baseM=m;
+    const sundays=buildMonthSundays(baseY,baseM);
     if(sundays.length===0)return;
 
-    const weekData=sundays.map(function(sunD){
+    const weekData=sundays.map(function(sunD,_idx){
       const dayHrs={};GROUPS.forEach(function(g){dayHrs[g]=0;});
       var weekTot=0,recDays=0;
       for(var di=0;di<7;di++){
@@ -6052,7 +6063,7 @@ function renderWeeklyReview(){
         });
         if(hasA)recDays++;
       }
-      return{dayHrs:dayHrs,total:weekTot,recDays:recDays,sunD:sunD,wIdx:weekIdxOfDay(sunD.getFullYear(),sunD.getMonth()+1,sunD.getDate())};
+      return{dayHrs:dayHrs,total:weekTot,recDays:recDays,sunD:sunD,wIdx:_idx+1};
     });
 
     const cmEnt=getEntriesForYear(baseY);
@@ -6128,19 +6139,12 @@ function renderWeeklyReview(){
     wrap.appendChild(summaryBox);
   })();
 
-  // ── 주간 습관 달성률 (그 달의 완전한 일~토 주만 + 이번달/지난달/연평균) ──
+  // ── 주간 습관 달성률 (다수결로 이 달에 속한 주만, 1~N주 재번호) ──
   (function(){
     const habits=state.goalData.habits||[];
     if(habits.length===0)return;
-    const baseY=sunDate.getFullYear();
-    const baseM=sunDate.getMonth()+1;
-    const sundays=[];
-    const dim=daysInMonth(baseY,baseM);
-    // 일요일~토요일 7일이 모두 그 달에 속하는 주만 포함
-    for(var d=1;d+6<=dim;d++){
-      const dt=new Date(baseY,baseM-1,d);
-      if(dt.getDay()===0)sundays.push(dt);
-    }
+    const baseY=y, baseM=m;
+    const sundays=buildMonthSundays(baseY,baseM);
     if(sundays.length===0)return;
 
     const lmDt=new Date(baseY,baseM-2,1);
@@ -6156,10 +6160,9 @@ function renderWeeklyReview(){
 
     const hdrRow=h("div",{style:"display:grid;grid-template-columns:"+tplCols+";gap:4px;align-items:center;margin-bottom:4px"});
     hdrRow.appendChild(h("div",{},""));
-    sundays.forEach(function(sunD){
+    sundays.forEach(function(sunD,_idx){
       const isCur=sunD.getTime()===sunDate.getTime();
-      const wIdx=weekIdxOfDay(sunD.getFullYear(),sunD.getMonth()+1,sunD.getDate());
-      hdrRow.appendChild(h("div",{style:"text-align:center;font-size:9px;color:"+(isCur?"#3b82f6":"#94a3b8")+";font-weight:"+(isCur?"700":"400")+";background:"+(isCur?"#1e3a5f":"transparent")+";border-radius:4px;padding:2px 0"},wIdx+"주"));
+      hdrRow.appendChild(h("div",{style:"text-align:center;font-size:9px;color:"+(isCur?"#3b82f6":"#94a3b8")+";font-weight:"+(isCur?"700":"400")+";background:"+(isCur?"#1e3a5f":"transparent")+";border-radius:4px;padding:2px 0"},(_idx+1)+"주"));
     });
     hdrRow.appendChild(h("div",{style:"text-align:center;font-size:9px;color:#0d9488;font-weight:700"},"이번달"));
     hdrRow.appendChild(h("div",{style:"text-align:center;font-size:9px;color:#94a3b8;font-weight:700"},"지난달"));

@@ -1313,18 +1313,43 @@ function _mergeTimeEntries(localE,cloudE){
         mday[s]=la.length>=ca.length?ls:cs;
         changed=true;return;
       }
-      // 슬롯 오브젝트: 필드 풍부한 쪽 선택
+      // 슬롯 오브젝트: 필드별 머지 — actual만 진짜 충돌로 간주, 나머지는 silent merge.
+      // (plan/메모는 한쪽이 비어있으면 채우고, 둘 다 있으면 메모는 긴 쪽, plan은 local 유지.)
       if(JSON.stringify(ls)===JSON.stringify(cs)){mday[s]=ls;return;}
-      var lf=Object.keys(ls||{}).filter(function(k){return ls[k]!=null&&ls[k]!=='';}).length;
-      var cf=Object.keys(cs||{}).filter(function(k){return cs[k]!=null&&cs[k]!=='';}).length;
-      if(lf===cf){hasTrueConflict=true;} // 필드 수 동일인데 내용 다름 → 진짜 충돌
-      mday[s]=lf>=cf?ls:cs;
-      if(lf>cf)localRicher++;
+      var sm=_mergeSlot(ls||{},cs||{});
+      if(sm.conflict)hasTrueConflict=true;
+      mday[s]=sm.merged;
+      if(sm.localRicher)localRicher++;
       changed=true;
     });
     merged[d]=mday;
   });
   return {entries:merged,localOnlyCount:localOnlyCount,localRicher:localRicher,hasTrueConflict:hasTrueConflict,changed:changed};
+}
+
+// 슬롯 필드별 머지: actual만 진짜 충돌. plan/메모/actualGoalId는 무손실 자동 머지.
+function _mergeSlot(ls,cs){
+  var keys=['plan','actual','planMemo','actualMemo','actualGoalId'];
+  var out={},conflict=false,localRicher=false;
+  function nonEmpty(v){return v!=null&&v!=='';}
+  keys.forEach(function(k){
+    var lv=ls[k],cv=cs[k];
+    if(lv===cv){if(nonEmpty(lv))out[k]=lv;return;}
+    if(!nonEmpty(lv)){if(nonEmpty(cv))out[k]=cv;return;}
+    if(!nonEmpty(cv)){out[k]=lv;localRicher=true;return;}
+    // 둘 다 값이 있고 다름
+    if(k==='actual'){
+      // 진짜 충돌 — 일단 local 유지, 모달에서 사용자 결정
+      conflict=true;out[k]=lv;
+    }else if(k==='planMemo'||k==='actualMemo'){
+      // 메모는 긴 쪽 자동 선택
+      out[k]=String(lv).length>=String(cv).length?lv:cv;
+    }else{
+      // plan / actualGoalId — local 유지 (사용자가 마지막에 본 화면 기준)
+      out[k]=lv;
+    }
+  });
+  return {merged:out,conflict:conflict,localRicher:localRicher};
 }
 
 function _mergeBooks(local,cloud){
@@ -8640,13 +8665,52 @@ var _cleanup=cleanupLegacyBookTargets();
 if((_mig||_cleanup>0)&&typeof cloudSaveGoals==="function"&&CLOUD_URL){cloudSaveGoals();}
 // 1단계: 캐시(localStorage) 데이터로 즉시 첫 paint
 render();
+// ── 부팅 블로커: cloudBootstrap이 끝날 때까지 입력 차단 (부팅-레이스 충돌 방지) ──
+function _showBootBlocker(){
+  if(document.getElementById('boot-blocker'))return;
+  var ov=document.createElement('div');
+  ov.id='boot-blocker';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(12,15,26,.78);backdrop-filter:blur(2px);z-index:500;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;font-family:"Noto Sans KR",sans-serif;color:#cbd5e1';
+  var sp=document.createElement('div');
+  sp.style.cssText='width:38px;height:38px;border-radius:50%;border:3px solid #1e293b;border-top-color:#6366f1;animation:bootSpin 1s linear infinite';
+  var st=document.createElement('style');
+  st.textContent='@keyframes bootSpin{to{transform:rotate(360deg)}}';
+  document.head.appendChild(st);
+  ov.appendChild(sp);
+  var lbl=document.createElement('div');
+  lbl.style.cssText='font-size:13px;font-weight:700;letter-spacing:.5px;color:#94a3b8';
+  lbl.textContent='클라우드 동기화 중...';
+  ov.appendChild(lbl);
+  document.body.appendChild(ov);
+}
+function _hideBootBlocker(){
+  var ov=document.getElementById('boot-blocker');
+  if(ov)ov.remove();
+}
+function _showOfflineBanner(){
+  if(document.getElementById('offline-banner'))return;
+  var bn=document.createElement('div');
+  bn.id='offline-banner';
+  bn.style.cssText='position:fixed;top:8px;left:50%;transform:translateX(-50%);background:#7c2d12;color:#fed7aa;padding:6px 14px;border-radius:6px;font-size:11px;font-weight:700;z-index:200;box-shadow:0 4px 14px rgba(0,0,0,.4)';
+  bn.textContent='⚠ 오프라인 — 캐시 사용 중 (다기기 동기화 보류)';
+  document.body.appendChild(bn);
+  setTimeout(function(){bn.style.transition='opacity .6s';bn.style.opacity='0';setTimeout(function(){bn.remove();},700);},4000);
+}
 // 2단계: 클라우드에서 최신 데이터 가져와 state 동기화 (충돌 시 모달)
 if(CLOUD_URL){
-  cloudBootstrap().then(function(){
+  _showBootBlocker();
+  var _bootFinalized=false;
+  function _finalizeBoot(timedOut){
+    if(_bootFinalized)return;
+    _bootFinalized=true;
+    _hideBootBlocker();
     _bootDone=true;
     _refreshSyncBadge();
+    if(timedOut)_showOfflineBanner();
     if(state._conflictQueue&&state._conflictQueue.length>0){_isAutoRender=true;render();}
-  });
+  }
+  cloudBootstrap().then(function(){_finalizeBoot(false);});
+  setTimeout(function(){_finalizeBoot(true);},3000);
 }else{
   _bootDone=true;
   state.syncStatus='offline';
@@ -8659,11 +8723,13 @@ window.addEventListener('pagehide',flushQueueNow);
 window.addEventListener('beforeunload',flushQueueNow);
 
 // ── 탭 재포커스 시 재-pull (다기기 동시 사용 대응) ──
-// 30초 스로틀 — 충돌 모달이 열려있으면 일시 정지 (사용자 결정 대기)
+// 30초 스로틀 — 충돌 모달이 열려있거나, 미푸시 변경분이 큐에 남아있으면 일시 정지
 function _maybeRepull(){
   if(!CLOUD_URL||isArchiveMode())return;
+  if(!_bootDone)return; // 부팅 중엔 pull 정지 (이미 cloudBootstrap이 진행 중)
   if(document.visibilityState!=='visible')return;
   if(state._conflictQueue&&state._conflictQueue.length>0)return; // 충돌 미해결 시 pull 정지
+  if(_writeQueue.length>0||_writeInFlight)return; // 미푸시 변경이 있으면 먼저 push 완료까지 대기
   var now=Date.now();
   if(now-_lastCloudPullAt<SYNC_REPULL_INTERVAL)return;
   _lastCloudPullAt=now;

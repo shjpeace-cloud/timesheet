@@ -7022,6 +7022,15 @@ function renderInlineAddForm(af,catDef,indentPx){
   },"추가"));
   formBox.appendChild(nameRow);
 
+  // ── 빠른 추가 (상위목표의 +버튼 경로): 이름 한 줄 + 힌트만 ──
+  if(af._quickAdd&&(af.scope==="daily"||af.scope==="weekly"||af.scope==="monthly")){
+    formBox.appendChild(h("div",{style:"font-size:10px;color:#64748b;line-height:1.5"},
+      "Enter로 추가 · 기간은 자동 설정됨 · 변경/메모는 추가 후 목표를 펼쳐서"));
+    wrap.appendChild(formBox);
+    setTimeout(function(){nameInp.focus();},50);
+    return wrap;
+  }
+
   // 기간 설정
   {
     var periodRow=h("div",{style:"display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px"});
@@ -7809,11 +7818,11 @@ function renderGoals(){
         childScopes=[{s:"daily",l:"일간"}];
       }
       if(childScopes.length>0){
-        const childBtnRow=h("div",{style:"display:flex;justify-content:flex-end;gap:3px;padding:2px 6px 4px"});
+        const childBtnRow=h("div",{style:"display:flex;justify-content:flex-end;gap:5px;padding:4px 8px 6px"});
         childScopes.forEach(function(cs){
           const isAct=state._addForm&&state._addForm._parentGoalId===g.id&&state._addForm.scope===cs.s;
           childBtnRow.appendChild(h("button",{
-            style:"font-size:8px;color:"+(isAct?"#fff":vis.color)+";background:"+(isAct?vis.color:vis.color+"18")+";border:1px solid "+vis.color+(isAct?"":"40")+";border-radius:3px;padding:1px 5px;cursor:pointer",
+            style:"font-size:11px;color:"+(isAct?"#fff":vis.color)+";background:"+(isAct?vis.color:vis.color+"22")+";border:1px solid "+vis.color+(isAct?"":"60")+";border-radius:5px;padding:3px 10px;cursor:pointer;font-weight:700;letter-spacing:.2px",
             onClick:function(e){
               e.stopPropagation();
               if(isAct){state._addForm=null;}
@@ -7823,15 +7832,35 @@ function renderGoals(){
                 else if(scope==="readingGoals")pids.readingGoals=g.id;
                 else if(scope==="monthly")pids.monthly=g.id;
                 else if(scope==="weekly")pids.weekly=g.id;
+                // 부모 메타 기반 기본 기간 — 오늘이 부모 활동기간 안이면 오늘, 아니면 부모 시작점
+                var tdY=today2.getFullYear(),tdM=today2.getMonth()+1,tdD=today2.getDate();
+                var inParent=goalIncludesDate(g,scope,tdY,tdM,tdD);
+                // 자식 scope 별 기본 기간
+                var defM,defD,defSm,defEm,defSd,defEd;
+                if(cs.s==="daily"){
+                  defM=inParent?tdM:(g.startMonth||g.month||tdM);
+                  defD=inParent?tdD:(g.startDay||1);
+                }else if(cs.s==="weekly"){
+                  // 주간: 시작일=오늘(or 부모 시작), 종료일=시작일+6 (월 경계 캡)
+                  var wsM=inParent?tdM:(g.startMonth||g.month||tdM);
+                  var wsD=inParent?tdD:(g.startDay||1);
+                  defM=wsM;defSm=wsM;defEm=wsM;
+                  defSd=wsD;defEd=Math.min(wsD+6,daysInMonth(state.year,wsM));
+                }else if(cs.s==="monthly"){
+                  // 월간: 단월(시작=종료), 1일~말일
+                  var msM=inParent?tdM:(g.startMonth||g.month||tdM);
+                  defM=msM;defSm=msM;defEm=msM;
+                  defSd=1;defEd=daysInMonth(state.year,msM);
+                }
                 state._addForm={cat:catDef.code,scope:cs.s,name:"",memo:"",
-                  month:calM,startDay:today2.getDate(),endDay:Math.min(today2.getDate()+6,daysInMonth(calY,calM)),
-                  day:today2.getDate(),startMonth:calM,endMonth:calM,
-                  startYear:calY,endYear:calY+1,
-                  parentIds:pids,_parentGoalId:g.id};
+                  month:defM,startDay:defSd,endDay:defEd,
+                  day:defD,startMonth:defSm,endMonth:defEm,
+                  startYear:state.year,endYear:state.year,
+                  parentIds:pids,_parentGoalId:g.id,_quickAdd:true};
               }
               render();
             }
-          },"+"+(isAct?"취소":cs.l)));
+          },(isAct?"✕ ":"+ ")+(isAct?"취소":cs.l)));
         });
         pillWrap.appendChild(childBtnRow);
       }

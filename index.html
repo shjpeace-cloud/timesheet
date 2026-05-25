@@ -5513,9 +5513,11 @@ function markGoalDone(g,done){
   else delete g.completedAt;
   _autoLogBookFromGoal(g,!!done);
 }
-// E2(독서) + language 태그가 있는 목표 완료 시 자동으로 독서기록(state.bookData)에 추가/제거
+// E2(독서) 목표 완료 시 자동으로 독서기록(state.bookData)에 추가/제거
+// language 태그가 없으면 "kr" 기본값 (사용자 주 독서 패턴 한국어)
 function _autoLogBookFromGoal(g,done){
-  if(!g||g.cat!=="E2"||!g.language||!g.name)return;
+  if(!g||g.cat!=="E2"||!g.name)return;
+  var bookType=g.language||"kr";
   if(done){
     var dateStr=g.completedAt||new Date().toISOString().slice(0,10);
     var parts=dateStr.split("-");
@@ -5527,7 +5529,7 @@ function _autoLogBookFromGoal(g,done){
     if(state.bookData[mk].some(function(b){return b.id===g.id;}))return;
     var now=new Date();
     var mmdd=(now.getMonth()+1)+"/"+now.getDate();
-    state.bookData[mk].push({id:g.id,type:g.language,title:g.name,memo:"",date:mmdd,_autoFromGoal:true});
+    state.bookData[mk].push({id:g.id,type:bookType,title:g.name,memo:"",date:mmdd,_autoFromGoal:true});
     saveBookData();
   }else{
     var changed=false;
@@ -5539,6 +5541,35 @@ function _autoLogBookFromGoal(g,done){
     });
     if(changed)saveBookData();
   }
+}
+// 부팅 시 1회 백필: 이미 완료된 E2 목표(모든 scope)를 스캔해서 누락된 독서기록 자동 등록
+function _backfillBooksFromCompletedGoals(){
+  if(!state.goalData||!state.bookData)return;
+  var scopes=["daily","weekly","monthly","longterm"];
+  scopes.forEach(function(sc){
+    if(sc==="daily"){
+      var dks=Object.keys(state.goalData.daily||{});
+      dks.forEach(function(dk){
+        (state.goalData.daily[dk]||[]).forEach(function(g){
+          if(g.cat==="E2"&&g.name&&g.done){
+            if(!g.completedAt){
+              var p=dk.split("-");
+              g.completedAt=state.year+"-"+String(p[0]).padStart(2,"0")+"-"+String(p[1]).padStart(2,"0");
+            }
+            _autoLogBookFromGoal(g,true);
+          }
+        });
+      });
+    }else{
+      (state.goalData[sc]||[]).forEach(function(g){
+        var isDone=g.done===true||(g.progress||0)>=100;
+        if(g.cat==="E2"&&g.name&&isDone){
+          if(!g.completedAt)g.completedAt=new Date().toISOString().slice(0,10);
+          _autoLogBookFromGoal(g,true);
+        }
+      });
+    }
+  });
 }
 function toggleDailyGoal(id){
   const k=state.month+"-"+state.day;
@@ -8644,7 +8675,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-05-25-v126";
+  var SEED_VER="2026-05-25-v127";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){
@@ -8723,6 +8754,8 @@ if((state.goalData.habits||[]).length===0&&(state.goalData.longterm||[]).length=
 var _mig=migrateReadingGoals();
 var _cleanup=cleanupLegacyBookTargets();
 if((_mig||_cleanup>0)&&typeof cloudSaveGoals==="function"&&CLOUD_URL){cloudSaveGoals();}
+// 완료된 E2 목표 → 독서기록 백필 (v126 도입 이전 완료분 포함)
+try{_backfillBooksFromCompletedGoals();}catch(e){console.error("book backfill failed:",e);}
 // 1단계: 캐시(localStorage) 데이터로 즉시 첫 paint
 render();
 // ── 부팅 블로커: cloudBootstrap이 끝날 때까지 입력 차단 (부팅-레이스 충돌 방지) ──
@@ -8766,6 +8799,7 @@ if(CLOUD_URL){
     _hideBootBlocker();
     _bootDone=true;
     _refreshSyncBadge();
+    try{_backfillBooksFromCompletedGoals();}catch(e){console.error("book backfill (post-cloud) failed:",e);}
     if(timedOut)_showOfflineBanner();
     if(state._conflictQueue&&state._conflictQueue.length>0){_isAutoRender=true;render();}
   }

@@ -5511,6 +5511,34 @@ function markGoalDone(g,done){
   g.done=!!done;
   if(done)g.completedAt=new Date().toISOString().slice(0,10);
   else delete g.completedAt;
+  _autoLogBookFromGoal(g,!!done);
+}
+// E2(독서) + language 태그가 있는 목표 완료 시 자동으로 독서기록(state.bookData)에 추가/제거
+function _autoLogBookFromGoal(g,done){
+  if(!g||g.cat!=="E2"||!g.language||!g.name)return;
+  if(done){
+    var dateStr=g.completedAt||new Date().toISOString().slice(0,10);
+    var parts=dateStr.split("-");
+    var bookYear=parseInt(parts[0]);
+    var bookMonth=parseInt(parts[1]);
+    if(bookYear!==state.year)return;
+    var mk=String(bookMonth);
+    if(!state.bookData[mk])state.bookData[mk]=[];
+    if(state.bookData[mk].some(function(b){return b.id===g.id;}))return;
+    var now=new Date();
+    var mmdd=(now.getMonth()+1)+"/"+now.getDate();
+    state.bookData[mk].push({id:g.id,type:g.language,title:g.name,memo:"",date:mmdd,_autoFromGoal:true});
+    saveBookData();
+  }else{
+    var changed=false;
+    Object.keys(state.bookData||{}).forEach(function(mk2){
+      if(mk2.charAt(0)==="_")return;
+      var arr=state.bookData[mk2]||[];
+      var i=arr.findIndex(function(b){return b.id===g.id&&b._autoFromGoal;});
+      if(i!==-1){arr.splice(i,1);changed=true;if(arr.length===0)delete state.bookData[mk2];}
+    });
+    if(changed)saveBookData();
+  }
 }
 function toggleDailyGoal(id){
   const k=state.month+"-"+state.day;
@@ -5603,12 +5631,15 @@ function recomputeProgress(scope,goalId){
   g.subtasks.forEach(s=>{if(s.done)done+=(s.weight||0)});
   const prev=g.progress||0;
   g.progress=Math.min(100,done);
-  if(g.progress>=100&&prev<100&&!g.completedAt)g.completedAt=new Date().toISOString().slice(0,10);
-  if(g.progress<100)delete g.completedAt;
+  const wasDone=prev>=100;
+  const isDone=g.progress>=100;
+  if(isDone&&!wasDone&&!g.completedAt)g.completedAt=new Date().toISOString().slice(0,10);
+  if(!isDone)delete g.completedAt;
   // weekly도 g.done 동기화 (체크박스 반영)
   if(scope==="weekly"||scope==="monthly"||scope==="longterm"){
-    g.done=g.progress>=100;
+    g.done=isDone;
   }
+  if(isDone!==wasDone)_autoLogBookFromGoal(g,isDone);
 }
 function toggleGoalExpand(scope,goalId){
   const key=scope+"-"+goalId;
@@ -6798,7 +6829,7 @@ function renderGoalDetailPanel(g,scope,catDef,dk){
     progSec.appendChild(progHdr);
     if(!hasSub){
       const slider=h("input",{type:"range",min:"0",max:"100",step:"5",value:String(pct),style:"width:100%;accent-color:"+catDef.color});
-      slider.addEventListener("input",function(e){var v=parseInt(e.target.value);pctLabel.textContent=v+"%";g.progress=v;if(v>=100&&!g.completedAt)g.completedAt=new Date().toISOString().slice(0,10);if(v<100){delete g.completedAt;g.done=false;}saveGoalData();});
+      slider.addEventListener("input",function(e){var v=parseInt(e.target.value);pctLabel.textContent=v+"%";var prevP=g.progress||0;g.progress=v;var wasD=prevP>=100,isD=v>=100;if(isD&&!g.completedAt)g.completedAt=new Date().toISOString().slice(0,10);if(!isD){delete g.completedAt;g.done=false;}if(isD)g.done=true;if(isD!==wasD)_autoLogBookFromGoal(g,isD);saveGoalData();});
       slider.addEventListener("change",function(){cloudSaveGoals();_isAutoRender=true;render();});
       progSec.appendChild(slider);
     }else{
@@ -8613,7 +8644,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-05-12-v125";
+  var SEED_VER="2026-05-25-v126";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

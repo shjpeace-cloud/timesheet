@@ -8599,6 +8599,9 @@ function render(force){
   try{if(window._eSubChartInst){window._eSubChartInst.destroy();window._eSubChartInst=null}}catch(e){}
   try{if(window._aSubChartInst){window._aSubChartInst.destroy();window._aSubChartInst=null}}catch(e){}
   try{if(window._mSubChartInst){window._mSubChartInst.destroy();window._mSubChartInst=null}}catch(e){}
+  // 연간/월간독서 차트 — DOM 교체 전 파괴 (이전에 누락 → orphan Chart 인스턴스 누적)
+  try{[yearlyDreamChartInst,yearlyDChartInst,yearlyRChartInst,yearlyEChartInst,yearlyAChartInst,yearlyMChartInst,yearlyBookChartInst,yearlyCoverageChartInst].forEach(function(ci){if(ci)ci.destroy()});yearlyDreamChartInst=yearlyDChartInst=yearlyRChartInst=yearlyEChartInst=yearlyAChartInst=yearlyMChartInst=yearlyBookChartInst=yearlyCoverageChartInst=null;}catch(e){}
+  try{if(monthlyBookChartInst){monthlyBookChartInst.destroy();monthlyBookChartInst=null}}catch(e){}
   const app=document.getElementById("app");
   app.innerHTML="";
   app.appendChild(renderHeader());
@@ -8675,7 +8678,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-05-25-v127";
+  var SEED_VER="2026-05-27-v128";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){
@@ -8763,7 +8766,10 @@ function _showBootBlocker(){
   if(document.getElementById('boot-blocker'))return;
   var ov=document.createElement('div');
   ov.id='boot-blocker';
-  ov.style.cssText='position:fixed;inset:0;background:rgba(12,15,26,.78);backdrop-filter:blur(2px);z-index:500;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;font-family:"Noto Sans KR",sans-serif;color:#cbd5e1';
+  // pointer-events:none — 스피너는 보이되 클릭/입력을 절대 가로채지 않음.
+  // (이전: 오버레이가 안 사라지면 화면 전체가 먹통 → 새로고침해야만 풀림. 2026-05-27)
+  // 부팅-레이스는 cloudLoadCurrent의 union-merge + 충돌 모달이 이미 처리하므로 하드 차단 불필요.
+  ov.style.cssText='position:fixed;inset:0;background:rgba(12,15,26,.78);backdrop-filter:blur(2px);z-index:500;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;font-family:"Noto Sans KR",sans-serif;color:#cbd5e1;pointer-events:none';
   var sp=document.createElement('div');
   sp.style.cssText='width:38px;height:38px;border-radius:50%;border:3px solid #1e293b;border-top-color:#6366f1;animation:bootSpin 1s linear infinite';
   var st=document.createElement('style');

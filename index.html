@@ -647,6 +647,7 @@ let state={
   habitWeekOffset:0,  // 0=이번주, -1=지난주, +1=다음주
   habitNewCat:"D1",
   habitNewName:"",
+  habitEditingId:null,  // 인라인 이름 편집 중인 습관 id (더블클릭 진입)
   // Reading goals form
   showReadingGoalForm:false,
   rgNewName:"",rgNewCat:"E2",rgNewType:"cumulative",rgNewBookType:"en",rgNewTarget:100,
@@ -3760,7 +3761,37 @@ function renderDailyReview(){
         const nameCell2=h("div",{style:"display:flex;align-items:center;gap:4px;overflow:hidden;min-width:0"});
         const navTarget=function(){navigateToGoal("habits",hb);};
         const badge2=h("span",{style:"font-size:9px;font-weight:700;color:"+(cat2?cat2.color:"#94a3b8")+";font-family:monospace;flex-shrink:0;background:"+(cat2?cat2.color+"22":"#1e293b")+";border-radius:3px;padding:1px 4px;cursor:pointer",onClick:navTarget},hb.cat);
-        const nameEl2=h("span",{style:"flex:1;font-size:11px;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer",onClick:navTarget},hb.name);
+        let nameEl2;
+        if(state.habitEditingId===hb.id){
+          nameEl2=h("input",{type:"text",value:hb.name,style:"flex:1;font-size:11px;color:#e2e8f0;background:#0c0f1a;border:1px solid #7c3aed;border-radius:3px;padding:2px 4px;outline:none;min-width:0;font-family:inherit"});
+          var commitEdit=function(){
+            var newName=nameEl2.value.trim();
+            if(newName&&newName!==hb.name){
+              hb.name=newName;
+              saveGoalData();cloudSaveGoals();
+            }
+            state.habitEditingId=null;_isAutoRender=true;render();
+          };
+          var cancelEdit=function(){
+            state.habitEditingId=null;_isAutoRender=true;render();
+          };
+          nameEl2.addEventListener("keydown",function(e){
+            if(e.key==="Enter"){e.preventDefault();commitEdit();}
+            else if(e.key==="Escape"){e.preventDefault();cancelEdit();}
+          });
+          nameEl2.addEventListener("blur",commitEdit);
+          setTimeout(function(){nameEl2.focus();nameEl2.select();},0);
+        } else {
+          nameEl2=h("span",{
+            style:"flex:1;font-size:11px;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer",
+            title:"클릭: 목표 이동 · 더블클릭: 이름 편집",
+            onClick:navTarget
+          },hb.name);
+          nameEl2.addEventListener("dblclick",function(e){
+            e.stopPropagation();e.preventDefault();
+            state.habitEditingId=hb.id;_isAutoRender=true;render();
+          });
+        }
         const delBtn2=h("button",{
           style:"font-size:10px;color:#64748b;background:transparent;border:none;cursor:pointer;padding:0 4px;flex-shrink:0;line-height:1",
           title:"습관 삭제",
@@ -8678,7 +8709,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-05-27-v128";
+  var SEED_VER="2026-09-13-v129";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

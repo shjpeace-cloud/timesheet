@@ -3784,10 +3784,9 @@ function renderDailyReview(){
         } else {
           nameEl2=h("span",{
             style:"flex:1;font-size:11px;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer",
-            title:"클릭: 목표 이동 · 더블클릭: 이름 편집",
-            onClick:navTarget
+            title:"클릭: 이름 편집 · 뱃지: 목표 이동"
           },hb.name);
-          nameEl2.addEventListener("dblclick",function(e){
+          nameEl2.addEventListener("click",function(e){
             e.stopPropagation();e.preventDefault();
             state.habitEditingId=hb.id;_isAutoRender=true;render();
           });
@@ -8709,7 +8708,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-09-13-v129";
+  var SEED_VER="2026-09-14-v130";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

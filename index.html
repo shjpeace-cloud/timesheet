@@ -1007,6 +1007,7 @@ function forceDeleteGoalById(gid){
     var arr=state.goalData[sc]||[];
     var before=arr.length;
     state.goalData[sc]=arr.filter(function(x){return x.id!==gid;});
+    if(state.goalData[sc].length<before)_addTombstone(sc,gid); // 없으면 클라우드 union merge가 부활시킴
     removed+=before-state.goalData[sc].length;
   });
   Object.keys(state.goalData.daily||{}).forEach(function(k){
@@ -8708,7 +8709,7 @@ function renderConflictModal(){
 
 // ── 백업 데이터 시드 (2026-04-12) ──
 (function(){
-  var SEED_VER="2026-09-14-v130";
+  var SEED_VER="2026-09-22-v131";
   var HIDS=[1775891208109,1775891225514,1775892309708,1775893771920,1775895969162];
   function makeHabits(longterm){
     return (longterm||[]).filter(function(g){return HIDS.indexOf(g.id)!==-1}).map(function(g){

@@ -1945,18 +1945,22 @@ function getAnnualSimTargets(){
     means.sort(function(a,b){return a-b;});
     return {p25:+means[250].toFixed(2),p50:+means[500].toFixed(2),p75:+means[750].toFixed(2)};
   }
-  var result={_poolYears:poolYears};
+  var result={_poolYears:poolYears, _p25:{}, _p75:{}};
   GROUPS.forEach(function(g){
     var sim=bootstrap(buildPool(g));
     result[g]=sim?sim.p50:null;
+    result._p25[g]=sim?sim.p25:null; result._p75[g]=sim?sim.p75:null;
   });
   var simTot=bootstrap(buildPool("_TOT_"));
   result._TOT_=simTot?simTot.p50:null;
+  result._p25._TOT_=simTot?simTot.p25:null; result._p75._TOT_=simTot?simTot.p75:null;
   _simTargetsCache=result;
   _simTargetsCacheKey=cacheKey;
   return result;
 }
-// 잔여 페이스 — 연간 목표를 채우기 위해 남은 일수 동안 매일 해야 할 양
+// 잔여 페이스 — 연간 목표(기록일 기준 일평균 P50)를 채우기 위해 남은 일수 동안 매일 해야 할 양
+// 분모는 기록일수: 기록 없는 날을 0시간으로 쳐서 부족분을 부풀리지 않는다 (2026-11-25)
+// 결과는 [P25, P75]로 제한: 연말에 부족분이 남은 일수에 몰려 달성 불가능한 목표가 나오는 것을 막는다
 function getCatchupRates(){
   var targets=getAnnualSimTargets();
   var cy=state.year;
@@ -1974,17 +1978,19 @@ function getCatchupRates(){
     });
     CATEGORIES.forEach(function(c){ytd._TOT_+=(mc[c.code]||0);});
   }
-  var rates={_meta:{poolYears:targets._poolYears, ytd:ytd, remaining:remaining, elapsed:elapsed, totalDays:totalDays, targets:targets}};
-  GROUPS.forEach(function(g){
+  var recDays=countRecordedDaysInYear(cy);
+  var rates={_meta:{poolYears:targets._poolYears, ytd:ytd, remaining:remaining, elapsed:elapsed, totalDays:totalDays, recDays:recDays, targets:targets}};
+  function pace(g){
     var t=targets[g];
-    if(t==null||remaining<=0){rates[g]=null;return;}
-    rates[g]=+((t*totalDays-ytd[g])/remaining).toFixed(2);
-  });
-  if(targets._TOT_!=null&&remaining>0){
-    rates._TOT_=+((targets._TOT_*totalDays-ytd._TOT_)/remaining).toFixed(2);
-  }else{
-    rates._TOT_=null;
+    if(t==null||remaining<=0)return null;
+    var raw=(t*(recDays+remaining)-ytd[g])/remaining;
+    var lo=targets._p25[g], hi=targets._p75[g];
+    if(lo!=null&&raw<lo)raw=lo;
+    if(hi!=null&&raw>hi)raw=hi;
+    return +raw.toFixed(2);
   }
+  GROUPS.forEach(function(g){rates[g]=pace(g);});
+  rates._TOT_=pace("_TOT_");
   return rates;
 }
 
@@ -3537,7 +3543,7 @@ function renderDailyReview(){
     box.appendChild(grid);
     var simPoolLabel=poolYears.length>0?poolYears[0]+"~'"+String(poolYears[poolYears.length-1]).slice(2)+" "+poolYears.length+"개년":"부족";
     var meta=catchup._meta;
-    box.appendChild(h("div",{style:"font-size:9px;color:#64748b;margin-top:10px;text-align:right;line-height:1.5"},"오늘 실적 · 이번주 페이스 (일~오늘 일평균) vs 🎯잔여 페이스 (연간 P50 catch-up) · 잔여 "+meta.remaining+"일 · 모집단=기록 있는 전 연도 ("+simPoolLabel+")"));
+    box.appendChild(h("div",{style:"font-size:9px;color:#64748b;margin-top:10px;text-align:right;line-height:1.5"},"오늘 실적 · 이번주 페이스 (일~오늘 일평균) vs 🎯잔여 페이스 (연간 P50 catch-up, 기록일 기준, P25–P75 범위) · 잔여 "+meta.remaining+"일 · 모집단=기록 있는 전 연도 ("+simPoolLabel+")"));
     wrap.appendChild(box);
   })();
 
@@ -3946,7 +3952,7 @@ function renderMonthlyReview(){
 
     // 시뮬레이션 모집단 (기록 있는 직전 연도들, cy 제외)
     var simPoolYears=getSimPoolYears();
-    var catchup=getCatchupRates();
+    var monTargets=getAnnualSimTargets();
 
     // (year, month) → {rd, byG, tot} 캐시
     var monthCache={};
@@ -3986,16 +3992,16 @@ function renderMonthlyReview(){
       return calcCV(arr);
     }
 
-    // ── 목표: 잔여 페이스 (연간 catch-up rate) ──
-    function meanTargetMon(g){return catchup[g];}
+    // ── 목표: 풀 P50 고정 (2026-11-25, catch-up 폐지 — 연말에 달성 불가능한 값이 나와 목표 기능 상실) ──
+    function meanTargetMon(g){return monTargets[g];}
     function meanAchievedMon(g, curV){
-      var t=catchup[g];
+      var t=monTargets[g];
       if(t==null||curV==null)return null;
       return curV>=t;
     }
-    function meanTargetMonTot(){return catchup._TOT_;}
+    function meanTargetMonTot(){return monTargets._TOT_;}
     function meanAchievedMonTot(curV){
-      var t=catchup._TOT_;
+      var t=monTargets._TOT_;
       if(t==null||curV==null)return null;
       return curV>=t;
     }
@@ -4088,7 +4094,7 @@ function renderMonthlyReview(){
 
     box.appendChild(grid);
     var simPoolLabel=simPoolYears.length>0?simPoolYears[0]+"~'"+String(simPoolYears[simPoolYears.length-1]).slice(2)+" "+simPoolYears.length+"개년":"부족";
-    box.appendChild(h("div",{style:"font-size:9px;color:#64748b;margin-top:10px;text-align:right;line-height:1.5"},"성장률="+cm+"월 일평균 h/일 · 🎯=잔여 페이스(연간 P50 catch-up) · 괄호=목표 대비 차이 · 변동성=trailing 3개월("+trailRange+") σ/μ % · 🎯=동기간 P25 · 모집단=기록 있는 전 연도 ("+simPoolLabel+")"));
+    box.appendChild(h("div",{style:"font-size:9px;color:#64748b;margin-top:10px;text-align:right;line-height:1.5"},"성장률="+cm+"월 일평균 h/일 · 🎯=풀 P50 (월 일평균 중앙값) · 괄호=목표 대비 차이 · 변동성=trailing 3개월("+trailRange+") σ/μ % · 🎯=동기간 P25 · 모집단=기록 있는 전 연도 ("+simPoolLabel+")"));
     wrap.appendChild(box);
   })();
   // ── 1b. 연간 추이 차트 (1~12월 라인) — DREAM 5그룹 + 각 그룹 세부 ──

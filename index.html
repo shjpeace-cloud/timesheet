@@ -4621,34 +4621,34 @@ function renderYearlyReview(){
     }
 
     const habBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:14px;border:1px solid #1e293b"});
-    habBox.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:8px;letter-spacing:.5px"},"🔁 습관 연간 달성률 (최근 5년 · 올해는 입력일 기준)"));
+    habBox.appendChild(h("div",{style:"font-size:13px;color:#64748b;font-weight:700;margin-bottom:8px;letter-spacing:.5px"},"🔁 습관 연간 달성률 (최근 5년 · 올해는 입력일 기준)"));
 
-    const hdrRow=h("div",{style:"display:grid;grid-template-columns:1fr repeat(5,34px) 36px 36px 36px;gap:3px;align-items:center;margin-bottom:4px"});
+    const hdrRow=h("div",{style:"display:grid;grid-template-columns:1fr repeat(5,38px) 42px 42px 42px;gap:3px;align-items:center;margin-bottom:4px"});
     hdrRow.appendChild(h("div",{},""));
     years5.forEach(function(y){
       const isCur=y===cy;
-      hdrRow.appendChild(h("div",{style:"text-align:center;font-size:9px;color:"+(isCur?"#3b82f6":"#94a3b8")+";font-weight:"+(isCur?"700":"400")+";background:"+(isCur?"#1e3a5f":"transparent")+";border-radius:4px;padding:2px 0"},String(y).slice(2)+"년"));
+      hdrRow.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+(isCur?"#3b82f6":"#94a3b8")+";font-weight:"+(isCur?"700":"400")+";background:"+(isCur?"#1e3a5f":"transparent")+";border-radius:4px;padding:2px 0"},String(y).slice(2)+"년"));
     });
-    hdrRow.appendChild(h("div",{style:"text-align:center;font-size:9px;color:#0d9488;font-weight:700"},"5년"));
-    hdrRow.appendChild(h("div",{style:"text-align:center;font-size:9px;color:#a855f7;font-weight:700"},"연도"));
-    hdrRow.appendChild(h("div",{style:"text-align:center;font-size:9px;color:#f59e0b;font-weight:700"},"장기"));
+    hdrRow.appendChild(h("div",{style:"text-align:center;font-size:11px;color:#0d9488;font-weight:700"},"5년"));
+    hdrRow.appendChild(h("div",{style:"text-align:center;font-size:11px;color:#a855f7;font-weight:700"},"연도"));
+    hdrRow.appendChild(h("div",{style:"text-align:center;font-size:11px;color:#f59e0b;font-weight:700"},"장기"));
     habBox.appendChild(hdrRow);
 
     habits.forEach(function(hb){
       const cat=catByCode(hb.cat);
-      const hrow=h("div",{style:"display:grid;grid-template-columns:1fr repeat(5,34px) 36px 36px 36px;gap:3px;align-items:center;padding:5px 0;border-top:1px solid #1e293b"});
+      const hrow=h("div",{style:"display:grid;grid-template-columns:1fr repeat(5,38px) 42px 42px 42px;gap:3px;align-items:center;padding:5px 0;border-top:1px solid #1e293b"});
       const nameCell=h("div",{style:"display:flex;align-items:center;gap:4px;overflow:hidden;min-width:0;cursor:pointer",
         onClick:function(){navigateToGoal("habits",hb);}
       });
-      nameCell.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:"+(cat?cat.color:"#94a3b8")+";font-family:monospace;flex-shrink:0;background:"+(cat?cat.color+"22":"#1e293b")+";border-radius:3px;padding:1px 4px"},hb.cat));
-      nameCell.appendChild(h("span",{style:"font-size:11px;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},hb.name));
+      nameCell.appendChild(h("span",{style:"font-size:11px;font-weight:700;color:"+(cat?cat.color:"#94a3b8")+";font-family:monospace;flex-shrink:0;background:"+(cat?cat.color+"22":"#1e293b")+";border-radius:3px;padding:1px 4px"},hb.cat));
+      nameCell.appendChild(h("span",{style:"font-size:13px;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},hb.name));
       hrow.appendChild(nameCell);
 
       years5.forEach(function(y){
         const isCur=y===cy;
         const pct=calcYrPct(hb,y);
         const color=pct===100?"#0d9488":pct>=60?"#f59e0b":pct>0?"#94a3b8":"#334155";
-        hrow.appendChild(h("div",{style:"text-align:center;font-size:10px;color:"+color+";font-weight:"+(isCur?"900":"700")+";font-family:monospace;background:"+(isCur?"#1e3a5f":"transparent")+";border-radius:4px;padding:3px 0"},pct+"%"));
+        hrow.appendChild(h("div",{style:"text-align:center;font-size:13px;color:"+color+";font-weight:"+(isCur?"900":"700")+";font-family:monospace;background:"+(isCur?"#1e3a5f":"transparent")+";border-radius:4px;padding:3px 0"},pct+"%"));
       });
       // 5년 평균 = 직전 5년 (cy 제외)
       var fySum=0;
@@ -4660,9 +4660,9 @@ function renderYearlyReview(){
       const allAvg=allCnt>0?Math.round(allSum/allCnt):0;
       // 장기 평균 (2,400일 기준 = HABIT_START_DATE~현재 누적, 분모 2400)
       const ltPct=calcHabitLongtermPct(hb);
-      hrow.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#0d9488;font-weight:700;font-family:monospace"},fyAvg+"%"));
-      hrow.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#a855f7;font-weight:700;font-family:monospace"},allAvg+"%"));
-      hrow.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#f59e0b;font-weight:700;font-family:monospace"},ltPct+"%"));
+      hrow.appendChild(h("div",{style:"text-align:center;font-size:13px;color:#0d9488;font-weight:700;font-family:monospace"},fyAvg+"%"));
+      hrow.appendChild(h("div",{style:"text-align:center;font-size:13px;color:#a855f7;font-weight:700;font-family:monospace"},allAvg+"%"));
+      hrow.appendChild(h("div",{style:"text-align:center;font-size:13px;color:#f59e0b;font-weight:700;font-family:monospace"},ltPct+"%"));
       habBox.appendChild(hrow);
     });
     wrap.appendChild(habBox);
@@ -6368,12 +6368,12 @@ function renderWeeklyReview(){
     const cyRD=countRecordedDaysInYear(state.year);
 
     const summaryBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:14px;border:1px solid #1e293b"});
-    summaryBox.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},"📊 주간 실적 ("+baseM+"월)"));
+    summaryBox.appendChild(h("div",{style:"font-size:13px;color:#64748b;font-weight:700;margin-bottom:10px;letter-spacing:.5px"},"📊 주간 실적 ("+baseM+"월)"));
 
     function fmtAvg(v){return v>=0.05?v.toFixed(1):"–";}
     const nW=weekData.length;
     const tblWrap=h("div",{});
-    const tbl=h("div",{style:"display:grid;grid-template-columns:24px repeat("+nW+",1fr) 36px 36px 36px;gap:2px;font-size:9px;font-family:'JetBrains Mono',monospace"});
+    const tbl=h("div",{style:"display:grid;grid-template-columns:24px repeat("+nW+",1fr) 42px 42px 42px;gap:2px;font-size:12px;font-family:'JetBrains Mono',monospace"});
     tbl.appendChild(h("span",{style:"text-align:center"},""));
     weekData.forEach(function(wk){
       const isCur=wk.sunD.getTime()===sunDate.getTime();
@@ -6415,7 +6415,7 @@ function renderWeeklyReview(){
     tbl.appendChild(h("span",{style:"text-align:center;color:#a855f7;font-weight:900;border-top:1px solid #334155;padding-top:3px;margin-top:1px"},fmtAvg(cyAvgT)));
     tblWrap.appendChild(tbl);
     summaryBox.appendChild(tblWrap);
-    summaryBox.appendChild(h("div",{style:"font-size:8px;color:#475569;margin-top:10px;text-align:right"},"일평균 (h/일) · 분모=기록일수 · 이번달/지난달/연="+cmRD+"/"+lmRD+"/"+cyRD+"일"));
+    summaryBox.appendChild(h("div",{style:"font-size:10px;color:#475569;margin-top:10px;text-align:right"},"일평균 (h/일) · 분모=기록일수 · 이번달/지난달/연="+cmRD+"/"+lmRD+"/"+cyRD+"일"));
     wrap.appendChild(summaryBox);
   })();
 
@@ -6433,7 +6433,7 @@ function renderWeeklyReview(){
     function calcYrPct(hb){var done=0,wd=0;for(var m=1;m<=12;m++){var days=daysInMonth(state.year,m);for(var d=1;d<=days;d++){if(isWeekday(state.year,m,d)){wd++;if(isHabitDone(hb,state.year,m,d))done++;}}}return wd>0?Math.round(done/wd*100):0;}
 
     const habBox=h("div",{style:"background:#0c0f1a;border-radius:10px;padding:12px;margin-bottom:14px;border:1px solid #1e293b"});
-    habBox.appendChild(h("div",{style:"font-size:10px;color:#64748b;font-weight:700;margin-bottom:8px;letter-spacing:.5px"},"🔁 주간 습관 달성률 ("+baseM+"월)"));
+    habBox.appendChild(h("div",{style:"font-size:13px;color:#64748b;font-weight:700;margin-bottom:8px;letter-spacing:.5px"},"🔁 주간 습관 달성률 ("+baseM+"월)"));
 
     const nW=sundays.length;
     const tplCols="1fr repeat("+nW+",42px) 36px 36px 36px";
@@ -6442,11 +6442,11 @@ function renderWeeklyReview(){
     hdrRow.appendChild(h("div",{},""));
     sundays.forEach(function(sunD,_idx){
       const isCur=sunD.getTime()===sunDate.getTime();
-      hdrRow.appendChild(h("div",{style:"text-align:center;font-size:9px;color:"+(isCur?"#3b82f6":"#94a3b8")+";font-weight:"+(isCur?"700":"400")+";background:"+(isCur?"#1e3a5f":"transparent")+";border-radius:4px;padding:2px 0"},(_idx+1)+"주"));
+      hdrRow.appendChild(h("div",{style:"text-align:center;font-size:11px;color:"+(isCur?"#3b82f6":"#94a3b8")+";font-weight:"+(isCur?"700":"400")+";background:"+(isCur?"#1e3a5f":"transparent")+";border-radius:4px;padding:2px 0"},(_idx+1)+"주"));
     });
-    hdrRow.appendChild(h("div",{style:"text-align:center;font-size:9px;color:#0d9488;font-weight:700"},"이번달"));
-    hdrRow.appendChild(h("div",{style:"text-align:center;font-size:9px;color:#94a3b8;font-weight:700"},"지난달"));
-    hdrRow.appendChild(h("div",{style:"text-align:center;font-size:9px;color:#a855f7;font-weight:700"},"연평균"));
+    hdrRow.appendChild(h("div",{style:"text-align:center;font-size:11px;color:#0d9488;font-weight:700"},"이번달"));
+    hdrRow.appendChild(h("div",{style:"text-align:center;font-size:11px;color:#94a3b8;font-weight:700"},"지난달"));
+    hdrRow.appendChild(h("div",{style:"text-align:center;font-size:11px;color:#a855f7;font-weight:700"},"연평균"));
     habBox.appendChild(hdrRow);
 
     habits.forEach(function(hb){
@@ -6455,34 +6455,34 @@ function renderWeeklyReview(){
       const nameCell=h("div",{style:"display:flex;align-items:center;gap:4px;overflow:hidden;min-width:0;cursor:pointer",
         onClick:function(){navigateToGoal("habits",hb);}
       });
-      nameCell.appendChild(h("span",{style:"font-size:9px;font-weight:700;color:"+(cat?cat.color:"#94a3b8")+";font-family:monospace;flex-shrink:0;background:"+(cat?cat.color+"22":"#1e293b")+";border-radius:3px;padding:1px 4px"},hb.cat));
-      nameCell.appendChild(h("span",{style:"font-size:11px;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},hb.name));
+      nameCell.appendChild(h("span",{style:"font-size:11px;font-weight:700;color:"+(cat?cat.color:"#94a3b8")+";font-family:monospace;flex-shrink:0;background:"+(cat?cat.color+"22":"#1e293b")+";border-radius:3px;padding:1px 4px"},hb.cat));
+      nameCell.appendChild(h("span",{style:"font-size:13px;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},hb.name));
       hrow.appendChild(nameCell);
 
       sundays.forEach(function(sunD){
         const isCur=sunD.getTime()===sunDate.getTime();
         const pct=calcHabitWeeklyPct(hb,sunD);
         const color=pct===100?"#0d9488":pct>=60?"#f59e0b":pct>0?"#94a3b8":"#334155";
-        hrow.appendChild(h("div",{style:"text-align:center;font-size:10px;color:"+color+";font-weight:"+(isCur?"900":"700")+";font-family:monospace;background:"+(isCur?"#1e3a5f":"transparent")+";border-radius:4px;padding:3px 0"},pct+"%"));
+        hrow.appendChild(h("div",{style:"text-align:center;font-size:13px;color:"+color+";font-weight:"+(isCur?"900":"700")+";font-family:monospace;background:"+(isCur?"#1e3a5f":"transparent")+";border-radius:4px;padding:3px 0"},pct+"%"));
       });
       const cmPct=getHabitMonthPct(hb,baseY,baseM);
       const lmPct=getHabitMonthPct(hb,lmY,lmM);
       const cyPct=calcYrPct(hb);
-      hrow.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#0d9488;font-weight:700;font-family:monospace"},cmPct+"%"));
-      hrow.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#94a3b8;font-weight:700;font-family:monospace"},lmPct+"%"));
-      hrow.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#a855f7;font-weight:700;font-family:monospace"},cyPct+"%"));
+      hrow.appendChild(h("div",{style:"text-align:center;font-size:13px;color:#0d9488;font-weight:700;font-family:monospace"},cmPct+"%"));
+      hrow.appendChild(h("div",{style:"text-align:center;font-size:13px;color:#94a3b8;font-weight:700;font-family:monospace"},lmPct+"%"));
+      hrow.appendChild(h("div",{style:"text-align:center;font-size:13px;color:#a855f7;font-weight:700;font-family:monospace"},cyPct+"%"));
       habBox.appendChild(hrow);
     });
 
     const sumRow=h("div",{style:"display:grid;grid-template-columns:"+tplCols+";gap:4px;align-items:center;padding:4px 0;border-top:1px solid #334155;margin-top:2px"});
-    sumRow.appendChild(h("span",{style:"font-size:9px;color:#475569;font-weight:700"},"평균"));
+    sumRow.appendChild(h("span",{style:"font-size:11px;color:#475569;font-weight:700"},"평균"));
     sundays.forEach(function(sunD){
       const isCur=sunD.getTime()===sunDate.getTime();
       var sum=0;
       habits.forEach(function(hb){sum+=calcHabitWeeklyPct(hb,sunD);});
       const wkAvg=Math.round(sum/habits.length);
       const color=wkAvg===100?"#0d9488":wkAvg>=60?"#f59e0b":wkAvg>0?"#94a3b8":"#334155";
-      sumRow.appendChild(h("div",{style:"text-align:center;font-size:10px;color:"+color+";font-weight:"+(isCur?"900":"700")+";font-family:monospace"},wkAvg+"%"));
+      sumRow.appendChild(h("div",{style:"text-align:center;font-size:13px;color:"+color+";font-weight:"+(isCur?"900":"700")+";font-family:monospace"},wkAvg+"%"));
     });
     var cmSumA=0,lmSumA=0,cySumA=0;
     habits.forEach(function(hb){
@@ -6493,9 +6493,9 @@ function renderWeeklyReview(){
     const cmAvgH=Math.round(cmSumA/habits.length);
     const lmAvgH=Math.round(lmSumA/habits.length);
     const cyAvgH=Math.round(cySumA/habits.length);
-    sumRow.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#0d9488;font-weight:900;font-family:monospace"},cmAvgH+"%"));
-    sumRow.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#94a3b8;font-weight:900;font-family:monospace"},lmAvgH+"%"));
-    sumRow.appendChild(h("div",{style:"text-align:center;font-size:10px;color:#a855f7;font-weight:900;font-family:monospace"},cyAvgH+"%"));
+    sumRow.appendChild(h("div",{style:"text-align:center;font-size:13px;color:#0d9488;font-weight:900;font-family:monospace"},cmAvgH+"%"));
+    sumRow.appendChild(h("div",{style:"text-align:center;font-size:13px;color:#94a3b8;font-weight:900;font-family:monospace"},lmAvgH+"%"));
+    sumRow.appendChild(h("div",{style:"text-align:center;font-size:13px;color:#a855f7;font-weight:900;font-family:monospace"},cyAvgH+"%"));
     habBox.appendChild(sumRow);
 
     wrap.appendChild(habBox);
